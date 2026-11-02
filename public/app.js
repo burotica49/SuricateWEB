@@ -341,13 +341,20 @@ async function viewDashboard() {
   }
 
   const state = bad.length ? 'crit' : warn.length ? 'warn' : 'ok';
-  const names = (arr) => arr.slice(0, 3).map((w) => w.name).join(', ') + (arr.length > 3 ? ` et ${arr.length - 3} autre(s)` : '');
+  const problems = [...bad, ...warn];
+  const siteTag = (w) => h('a', {
+    class: `chip ${w.status === 'warning' ? 'warn' : 'crit'}`,
+    href: `#/sites/${w.id}`,
+    title: `Ouvrir le détail de ${w.name}`,
+  }, w.name);
   root.append(h('div', { class: `health ${state}` },
     h('div', { class: 'big' }, ic(state === 'ok' ? 'checkCircle' : 'alert')),
-    h('div', {},
+    h('div', { class: 'health-body' },
       h('h2', {}, state === 'crit' ? `${plural(bad.length, 'site demande', 'sites demandent')} une action immédiate` : state === 'warn' ? `${plural(warn.length, 'site à vérifier', 'sites à vérifier')}` : 'Tous vos sites sont intacts'),
-      h('p', {}, state === 'crit' ? names(bad) : state === 'warn' ? names(warn) : `${plural(active.length, 'site surveillé', 'sites surveillés')} · aucune anomalie détectée`,
-        ` · dernier contrôle ${rel(last)}`))));
+      h('p', {}, state === 'ok'
+        ? `${plural(active.length, 'site surveillé', 'sites surveillés')} · aucune anomalie détectée · dernier contrôle ${rel(last)}`
+        : `Dernier contrôle ${rel(last)}`),
+      problems.length ? h('div', { class: 'health-tags' }, ...problems.map(siteTag)) : null)));
 
   if (!tgOk) {
     root.append(h('div', { class: 'callout' }, ic('send'),

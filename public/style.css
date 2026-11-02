@@ -146,6 +146,10 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .health.idle .big { background: var(--accent); }
 .health h2 { font-size: 19px; }
 .health p { color: var(--text-2); margin-top: 2px; }
+.health-body { min-width: 0; flex: 1; }
+.health-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.health-tags a.chip { max-width: 100%; text-decoration: none; background: var(--surface); border: 1px solid color-mix(in srgb, currentColor 32%, var(--border)); }
+.health-tags a.chip:hover { text-decoration: none; background: var(--surface-2); }
 .callout { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: var(--radius); background: var(--info-soft); color: var(--info); margin-bottom: 18px; border: 1px solid color-mix(in srgb, var(--info) 25%, transparent); }
 .callout .ic { font-size: 20px; }
 .callout div { flex: 1; color: var(--text); }

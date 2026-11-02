@@ -750,6 +750,11 @@ export async function runCheck(id) {
   }
   for (const [key, i] of Object.entries(prevInc)) if (!incidents[key] && !evaluated.has(catOf(key))) state.incidents[key] = i;
 
+  // Un acquittement ne vaut que pour l'incident en cours : s'il disparaît puis revient, il redevient visible.
+  if (state.incidentAck) {
+    for (const k of Object.keys(state.incidentAck)) if (!state.incidents[k]) delete state.incidentAck[k];
+  }
+
   if (page || domainOnly) state.baseline = true;
 
   // ── Maintenance : alertes retenues pendant la fenêtre, puis un seul récapitulatif à la reprise ──

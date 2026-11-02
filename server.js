@@ -181,19 +181,30 @@ function domainExpiryAcked(w, ctx) {
   return !!(seen && !seen.unread && rank <= seen.max);
 }
 
+/** Incidents du CMS (mises à jour, PHP, sécurité) : acquittables, leurs données et alertes restent. */
+const isCmsIncident = (key) => key.startsWith('cms_') || key === 'php_eol';
+
+/** Acquitté tant que l'incident n'est ni plus grave ni plus gros (plus de fichiers ou de comptes) qu'au moment du clic. */
+function cmsIncidentAcked(w, key, i) {
+  const stored = w.state.incidentAck?.[key];
+  return !!stored && (SEV[i.severity] || 0) <= (SEV[stored.severity] || 0) && (i.count ?? 0) <= (stored.count ?? 0);
+}
+
 /** Mémorise l'acquittement sur le site : il survit aux contrôles suivants, même sans alerte non lue. */
 function rememberDomainAck(id) {
   const w = getWatch(id);
-  const inc = w?.state.incidents?.rdap_expiring;
-  if (!inc) return;
-  updateWatch(id, {
-    state: { ...w.state, domainAck: { ...(w.state.domainAck || {}), rdap_expiring: { severity: inc.severity, expires: w.state.rdap?.expires ?? null } } },
-  });
+  if (!w) return;
+  const state = { ...w.state };
+  const inc = state.incidents?.rdap_expiring;
+  if (inc) state.domainAck = { ...(state.domainAck || {}), rdap_expiring: { severity: inc.severity, expires: state.rdap?.expires ?? null } };
+  const cms = Object.entries(state.incidents || {}).filter(([k]) => isCmsIncident(k));
+  if (cms.length) state.incidentAck = { ...(state.incidentAck || {}), ...Object.fromEntries(cms.map(([k, i]) => [k, { severity: i.severity, count: i.count ?? 0 }])) };
+  if (inc || cms.length) updateWatch(id, { state });
 }
 
 function summarize(w, ctx) {
   const quietDomain = domainExpiryAcked(w, ctx);
-  const incidents = Object.entries(w.state.incidents || {}).map(([key, i]) => ({ key, ...i, ...(key === 'rdap_expiring' && quietDomain ? { acked: true } : {}) }));
+  const incidents = Object.entries(w.state.incidents || {}).map(([key, i]) => ({ key, ...i, ...((key === 'rdap_expiring' && quietDomain) || (isCmsIncident(key) && cmsIncidentAcked(w, key, i)) ? { acked: true } : {}) }));
   const open = incidents.filter((i) => !i.acked);
   const unread = ctx.unread[w.id] || { critical: 0, warning: 0, info: 0 };
   let status = 'ok';

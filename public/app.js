@@ -160,7 +160,7 @@ const cmsPending = (report) => {
   return [report.core, ...(report.extensions || []), ...(report.themes || [])].filter((i) => i?.available).length;
 };
 /** Anomalies de sécurité en cours : fichiers modifiés ou ajoutés, PHP dans les médias, nouveaux administrateurs. */
-const cmsSecurityCount = (w) => w.incidents.filter((i) => /^cms_(integrity|admins)/.test(i.key)).reduce((n, i) => n + (i.count || 1), 0);
+const cmsSecurityCount = (w) => w.incidents.filter((i) => !i.acked && /^cms_(integrity|admins)/.test(i.key)).reduce((n, i) => n + (i.count || 1), 0);
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 
 const STATUS = {
@@ -803,7 +803,7 @@ async function viewDetail(id, tab, tok, openSnap) {
   const root = h('div', {});
   const unread = w.unread.critical + w.unread.warning + w.unread.info;
   // L'échéance déjà lue ne compte plus dans « non lues », mais elle laisse le site « À vérifier » tant qu'elle n'est pas acquittée.
-  const domainOpen = w.incidents.some((i) => i.key === 'rdap_expiring' && !i.acked);
+  const domainOpen = w.incidents.some((i) => (i.key === 'rdap_expiring' || /^(cms_|php_eol)/.test(i.key)) && !i.acked);
 
   const doCheck = guard(async (e) => {
     const b = e.currentTarget;
@@ -848,7 +848,7 @@ async function viewDetail(id, tab, tok, openSnap) {
       }) }, active ? 'Terminer maintenant' : 'Annuler')));
   }
 
-  for (const i of w.incidents) {
+  for (const i of w.incidents.filter((x) => !(x.acked && /^(cms_|php_eol)/.test(x.key)))) { // l'échéance du domaine acquittée reste visible ici
     root.append(h('div', { class: `incident ${i.severity === 'warning' ? 'warn' : ''}` }, ic('alert'),
       h('div', {}, h('b', {}, i.title), i.detail ? h('p', {}, i.detail) : null, h('small', {}, `Depuis ${rel(i.since)}`))));
   }
@@ -1497,7 +1497,7 @@ async function viewAlerts() {
   const root = h('div', {});
   const unread = alerts.filter((a) => !a.read).length;
   root.append(h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Alertes'), h('p', {}, 'Tout ce que VigieWeb a détecté, du plus récent au plus ancien.')),
-    h('div', { class: 'actions' }, h('button', { class: 'btn', disabled: !list.some((w) => w.unread.critical + w.unread.warning + w.unread.info || w.incidents.some((i) => i.key === 'rdap_expiring' && !i.acked)), onclick: guard(async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); toast('Toutes les alertes sont marquées comme lues'); route(); }) }, ic('check'), 'Tout marquer comme lu'))));
+    h('div', { class: 'actions' }, h('button', { class: 'btn', disabled: !list.some((w) => w.unread.critical + w.unread.warning + w.unread.info || w.incidents.some((i) => (i.key === 'rdap_expiring' || /^(cms_|php_eol)/.test(i.key)) && !i.acked)), onclick: guard(async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); toast('Toutes les alertes sont marquées comme lues'); route(); }) }, ic('check'), 'Tout marquer comme lu'))));
   root.append(h('div', { class: 'toolbar' }, h('div', { class: 'seg' }, ...[['', 'Toutes'], ['critical', 'Critiques'], ['warning', 'Attention'], ['info', 'Infos'], ['recovery', 'Rétablis']].map(([k, l]) =>
     h('button', { class: S.alertSev === k ? 'on' : '', onclick: () => { S.alertSev = k; route(); } }, l)))));
   void unread;

@@ -614,7 +614,10 @@ export async function runCheck(id) {
   // ── Transitions d'incidents ──
   const prevInc = state.incidents || {};
   for (const [key, i] of Object.entries(incidents)) {
-    if (!prevInc[key]) add(key.split(':')[0], i.severity, i.title, i.detail);
+    const prev = prevInc[key];
+    // Sous 7 jours l'échéance devient critique : on ré-alerte, même si le rappel à 30 jours a été marqué comme lu.
+    const escalated = prev && key === 'rdap_expiring' && (SEV[i.severity] || 0) > (SEV[prev.severity] || 0);
+    if (!prev || escalated) add(key.split(':')[0], i.severity, i.title, i.detail);
   }
   for (const [key, i] of Object.entries(prevInc)) {
     if (incidents[key] || !evaluated.has(catOf(key))) continue;

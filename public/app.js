@@ -673,13 +673,18 @@ function signalChips(w) {
   const t = daysLeft(w.tlsExpires);
   if (t != null) chips.push(h('span', { class: `chip ${t < 14 ? 'crit' : t < 30 ? 'warn' : ''}`, title: `Certificat TLS valide jusqu'au ${dday(w.tlsExpires)}` }, ic('lock'), t < 0 ? 'expiré' : `${t} j`));
   const d = daysLeft(w.domainExpires);
-  if (d != null) chips.push(h('span', { class: `chip ${d < 7 ? 'crit' : d < 30 ? 'warn' : ''}`, title: `Nom de domaine valide jusqu'au ${dday(w.domainExpires)}` }, ic('globe'), d < 0 ? 'expiré' : `${d} j`));
+  if (d != null) {
+    // Échéance déjà lue : le délai reste indiqué, sans le traiter comme une alerte d'accueil.
+    const loud = w.incidents.some((i) => i.key === 'rdap_expiring' && !i.acked);
+    chips.push(h('span', { class: `chip ${loud ? (d < 7 ? 'crit' : d < 30 ? 'warn' : '') : ''}`, title: `Nom de domaine valide jusqu'au ${dday(w.domainExpires)}` }, ic('globe'), d < 0 ? 'expiré' : `${d} j`));
+  }
   return chips;
 }
 
 /** opts.handle : poignée de glisser-déposer · opts.chip : affiche le groupe (vue « Par état », où les groupes ne sont pas visibles). */
 function siteRow(w, opts = {}) {
-  const top = w.incidents.find((i) => i.severity === 'critical') || w.incidents[0];
+  const visible = w.incidents.filter((i) => !i.acked);
+  const top = visible.find((i) => i.severity === 'critical') || visible[0];
   const grp = opts.chip ? S.groups.find((g) => g.id === w.groupId) : null;
   const checkBtn = h('button', { class: 'btn ghost icon sm', title: 'Vérifier maintenant', 'aria-label': `Vérifier ${w.name} maintenant`, onclick: guard(async (e) => {
     e.stopPropagation();

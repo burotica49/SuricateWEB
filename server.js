@@ -19,7 +19,7 @@ import { fetchPage, analyze, describeError } from './src/checker.js';
 import { diffLines, collapse } from './src/diff.js';
 import * as tg from './src/telegram.js';
 import { bus } from './src/events.js';
-import { clamp, registrable } from './src/util.js';
+import { clamp, registrable, SEV } from './src/util.js';
 import { readCredentials, checkLogin, sessionKey } from './src/auth.js';
 
 // L'application ne démarre pas sans identifiants : pas de fenêtre où elle serait ouverte à tous.
@@ -150,14 +150,28 @@ const SELECTOR_CHECK = async (cfg) => {
 
 const RESET_KEYS = ['selector', 'excludeSelector', 'ignoreRegex', 'images'];
 
+/**
+ * Le rappel « le domaine expire bientôt » est acquitté dès que son alerte est lue,
+ * tant qu'il n'est pas devenu plus grave (30 jours → moins de 7). L'accueil redevient calme ;
+ * la date reste dans le détail du site.
+ */
+function domainExpiryAcked(w, ctx) {
+  const seen = ctx.domainExpiry?.get(w.id);
+  const cur = w.state.incidents?.rdap_expiring;
+  if (!seen || !cur) return false;
+  return !seen.unread && (SEV[cur.severity] || 0) <= seen.max;
+}
+
 function summarize(w, ctx) {
-  const inc = Object.values(w.state.incidents || {});
+  const quietDomain = domainExpiryAcked(w, ctx);
+  const incidents = Object.entries(w.state.incidents || {}).map(([key, i]) => ({ key, ...i, ...(key === 'rdap_expiring' && quietDomain ? { acked: true } : {}) }));
+  const open = incidents.filter((i) => !i.acked);
   const unread = ctx.unread[w.id] || { critical: 0, warning: 0, info: 0 };
   let status = 'ok';
   if (!w.enabled) status = 'paused';
   else if (!w.lastCheck) status = 'pending';
-  else if (inc.some((i) => i.severity === 'critical') || unread.critical) status = 'critical';
-  else if (inc.some((i) => i.severity === 'warning') || unread.warning) status = 'warning';
+  else if (open.some((i) => i.severity === 'critical') || unread.critical) status = 'critical';
+  else if (open.some((i) => i.severity === 'warning') || unread.warning) status = 'warning';
   if (status === 'critical' && w.state.incidents?.down) status = 'down';
   const stats = ctx.stats[w.id] || {};
   const now = Date.now();
@@ -168,7 +182,7 @@ function summarize(w, ctx) {
     status, running: isRunning(w.id),
     lastCheck: w.lastCheck, nextRun: w.enabled ? w.nextRun : null, lastCode: w.lastCode, lastMs: w.lastMs, lastError: w.lastError,
     title: w.state.title || '', finalUrl: w.state.finalUrl || '',
-    incidents: Object.entries(w.state.incidents || {}).map(([key, i]) => ({ key, ...i })),
+    incidents,
     unread, avgMs: stats.avgMs ?? null, spark: stats.spark || [],
     uptime: domainOnly ? null : uptimeBetween(w, now - DAY_MS, now, now).uptime,
     uptime30: domainOnly ? null : uptimeBetween(w, now - 30 * DAY_MS, now, now).uptime,
@@ -181,6 +195,13 @@ function buildCtx() {
   for (const r of db.prepare("SELECT watch_id, severity, COUNT(*) n FROM alerts WHERE read = 0 AND severity IN ('critical','warning','info') GROUP BY watch_id, severity").all()) {
     (unread[r.watch_id] ||= { critical: 0, warning: 0, info: 0 })[r.severity] = r.n;
   }
+  // Dernière alerte d'échéance déjà émise : sert à la retirer de l'accueil une fois lue.
+  const domainExpiry = new Map();
+  for (const r of db.prepare(`
+    SELECT watch_id, MIN(read) = 0 AS unread,
+           MAX(CASE severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END) AS max
+    FROM alerts WHERE type = 'rdap_expiring' GROUP BY watch_id
+  `).all()) domainExpiry.set(r.watch_id, { unread: !!r.unread, max: r.max });
   const stats = {};
   const since = Date.now() - 864e5;
   for (const r of db.prepare('SELECT watch_id, COUNT(*) n, SUM(ok) ok, AVG(CASE WHEN ok = 1 THEN ms END) avg FROM checks WHERE ts > ? GROUP BY watch_id').all(since)) {
@@ -190,7 +211,7 @@ function buildCtx() {
   for (const w of db.prepare('SELECT id FROM watches').all()) {
     (stats[w.id] ||= {}).spark = spark.all(w.id).reverse().map((r) => (r.ok ? r.ms : null));
   }
-  return { unread, stats, shots: latestScreenshots() };
+  return { unread, stats, shots: latestScreenshots(), domainExpiry };
 }
 
 const alertRow = (r) => ({

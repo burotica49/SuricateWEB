@@ -226,6 +226,23 @@ test('registre : échéance proche = incident ; transfert daté sans changement 
   assert.ok(types(await runCheck(w.id)).includes('rdap_transfer'));
 });
 
+test('registre : l\'échéance ré-alerte en passant sous 7 jours, pas à chaque jour de moins', async () => {
+  dns = baseDns();
+  rdap = { ...baseRdap(), expires: Date.now() + 20 * DAY_MS };
+  const w = dbm.createWatch({ name: 'Rappel', url: 'https://rappel.test', interval: 5, config: { mode: 'domain' } });
+  assert.equal(sev(await runCheck(w.id), 'rdap_expiring'), 'warning', 'moins de 30 jours');
+
+  rdap = { ...rdap, expires: Date.now() + 12 * DAY_MS };
+  dueNow(w.id);
+  assert.deepEqual(types(await runCheck(w.id)), [], 'même palier : pas une nouvelle alerte');
+
+  rdap = { ...rdap, expires: Date.now() + 5 * DAY_MS };
+  dueNow(w.id);
+  const r = await runCheck(w.id);
+  assert.equal(sev(r, 'rdap_expiring'), 'critical', 'moins de 7 jours : on ré-alerte');
+  assert.equal(dbm.getWatch(w.id).state.incidents.rdap_expiring.severity, 'critical');
+});
+
 test('mode domaine : aucune requête HTTP, aucune panne, contrôle toujours « ok »', async () => {
   let fetched = 0;
   const orig = hooks.fetchPage;

@@ -154,6 +154,10 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_watch ON maintenance(watch_id, end);
     db.exec('UPDATE watches SET position = id');
   }
   // 0 = pas de relevé CMS planifié. Une valeur > 0 est l'échéance du prochain appel au plugin.
+  // Page réellement capturée (adresse finale après redirections, titre) : sert à comprendre une capture inattendue.
+  const scols = new Set(db.prepare('PRAGMA table_info(screenshots)').all().map((c) => c.name));
+  if (!scols.has('final_url')) db.exec('ALTER TABLE screenshots ADD COLUMN final_url TEXT');
+  if (!scols.has('page_title')) db.exec('ALTER TABLE screenshots ADD COLUMN page_title TEXT');
   if (!cols.has('next_cms')) db.exec('ALTER TABLE watches ADD COLUMN next_cms INTEGER NOT NULL DEFAULT 0');
   // Alertes survenues pendant une maintenance : 1 = retenue (non envoyée), 2 = déjà reprise dans le récapitulatif de fin.
   const acols = new Set(db.prepare('PRAGMA table_info(alerts)').all().map((c) => c.name));
@@ -431,15 +435,15 @@ export function updateWatch(id, p) {
 export const SHOTS_DIR = join(DATA_DIR, 'screenshots');
 
 export function insertScreenshot(s) {
-  const r = db.prepare('INSERT INTO screenshots(watch_id, ts, kind, file, thumb, size, width, height) VALUES(?,?,?,?,?,?,?,?)')
-    .run(s.watchId, s.ts, s.kind, s.file, s.thumb ?? null, s.size ?? 0, s.width ?? null, s.height ?? null);
+  const r = db.prepare('INSERT INTO screenshots(watch_id, ts, kind, file, thumb, size, width, height, final_url, page_title) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    .run(s.watchId, s.ts, s.kind, s.file, s.thumb ?? null, s.size ?? 0, s.width ?? null, s.height ?? null, s.finalUrl ?? null, s.title ?? null);
   return Number(r.lastInsertRowid);
 }
 
 export const getScreenshot = (id) => db.prepare('SELECT * FROM screenshots WHERE id = ?').get(id);
 
 export const listScreenshots = (watchId, limit = 120) =>
-  db.prepare('SELECT id, ts, kind, size, width, height FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?').all(watchId, limit);
+  db.prepare('SELECT id, ts, kind, size, width, height, final_url AS finalUrl, page_title AS title FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?').all(watchId, limit);
 
 /** Dernière capture de chaque site : { [watchId]: { id, ts } }. */
 export const latestScreenshots = () =>

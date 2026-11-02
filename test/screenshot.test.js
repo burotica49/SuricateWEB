@@ -122,7 +122,7 @@ engine.capture = async () => {
   calls++;
   await new Promise((r) => setTimeout(r, 20));
   if (failWith) throw new Error(failWith);
-  return { image: JPEG, thumb: JPEG.subarray(0, 20), width: 1280, height: 800 };
+  return { image: JPEG, thumb: JPEG.subarray(0, 20), width: 1280, height: 800, finalUrl: 'https://autre.example/accueil', title: 'Page de l’hébergeur' };
 };
 
 test('capture : fichiers + ligne + prochaine échéance ; dédoublonnage des captures simultanées', async () => {
@@ -134,6 +134,8 @@ test('capture : fichiers + ligne + prochaine échéance ; dédoublonnage des cap
   assert.equal((await shots.shotFiles(w.id)).length, 2, 'image + miniature');
   const [row] = dbm.listScreenshots(w.id);
   assert.equal(row.kind, 'scheduled');
+  assert.equal(row.finalUrl, 'https://autre.example/accueil', 'adresse réellement capturée conservée');
+  assert.equal(row.title, 'Page de l’hébergeur');
   const after = dbm.getWatch(w.id);
   assert.ok(Math.abs(after.nextShot - (a.ts + 30 * 60e3)) < 1000, 'prochaine capture dans 30 min');
   assert.equal(after.shotError, null);

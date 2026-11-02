@@ -1049,6 +1049,8 @@ const SHOT_KIND = { scheduled: ['Planifiée', ''], manual: ['Manuelle', 'info'],
 // L'image est mise en cache un an : la date de capture fait partie de l'adresse, pour qu'un numéro de capture réutilisé
 // (base recréée, volume réinitialisé) ne ressorte jamais l'image d'un autre site depuis le cache du navigateur.
 const shotUrl = (s, thumb) => `/api/screenshots/${s.id}/image?v=${s.ts}${thumb ? '&thumb=1' : ''}`;
+/** Adresse capturée : un nom de domaine différent de celui du site (redirection, page d'hébergeur) est signalé. */
+const shotOffSite = (it, w) => { try { return !!it.finalUrl && host(it.finalUrl) !== host(w.url) && !host(it.finalUrl).endsWith(`.${host(w.url)}`) && !host(w.url).endsWith(`.${host(it.finalUrl)}`); } catch { return false; } };
 const everyLabel = (min) => (min < 60 ? `${min} min` : min < 1440 ? `${min / 60} h` : `${min / 1440} j`);
 
 function captureNowButton(w) {
@@ -1109,7 +1111,7 @@ async function capturesTab(w) {
     const [label, cls] = SHOT_KIND[it.kind] || SHOT_KIND.scheduled;
     return h('button', { class: 'shot', onclick: () => openLightbox(d.items, i, w), 'aria-label': `Capture du ${dt(it.ts)}` },
       h('img', { src: shotUrl(it, true), loading: 'lazy', alt: '' }),
-      h('div', { class: 'shot-meta' }, h('b', {}, dt(it.ts)), cls ? h('span', { class: `pill ${cls}` }, label) : h('span', { class: 'muted' }, rel(it.ts))));
+      h('div', { class: 'shot-meta', title: it.finalUrl ? `${it.finalUrl}${it.title ? ` — ${it.title}` : ''}` : '' }, h('b', {}, dt(it.ts)), shotOffSite(it, w) ? h('span', { class: 'pill warn' }, 'Autre domaine') : null, cls ? h('span', { class: `pill ${cls}` }, label) : h('span', { class: 'muted' }, rel(it.ts))));
   })));
   return root;
 }
@@ -1130,7 +1132,8 @@ function openLightbox(items, start, w) {
     const cur = items[i];
     const prev = items[i + 1];
     const [label, cls] = SHOT_KIND[cur.kind] || SHOT_KIND.scheduled;
-    title.replaceChildren(h('b', {}, w.name), h('span', {}, `${dt(cur.ts)} · ${rel(cur.ts)}`), cls ? h('span', { class: `pill ${cls}` }, label) : null, h('span', { class: 'muted' }, `${i + 1} / ${items.length}`));
+    title.replaceChildren(h('b', {}, w.name), h('span', {}, `${dt(cur.ts)} · ${rel(cur.ts)}`),
+      cur.finalUrl ? h('span', { class: 'muted', title: cur.finalUrl }, `${host(cur.finalUrl)}${cur.title ? ` — « ${cur.title} »` : ''}`) : null, shotOffSite(cur, w) ? h('span', { class: 'pill warn' }, 'Autre domaine que le site') : null, cls ? h('span', { class: `pill ${cls}` }, label) : null, h('span', { class: 'muted' }, `${i + 1} / ${items.length}`));
     const two = compare && prev;
     stage.className = `lb-stage${two ? ' two' : ''}`;
     stage.replaceChildren(...(two ? [fig('Avant', prev), fig('Après', cur)] : [fig(null, cur)]));

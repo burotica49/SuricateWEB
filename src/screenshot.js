@@ -287,12 +287,16 @@ export async function capture(url, { width = 1280, height = 800, fullPage = fals
       const full = Math.ceil(m.cssContentSize?.height || m.contentSize?.height || height);
       clip = { x: 0, y: 0, width, height: Math.min(Math.max(full, height), 5000), scale: 1 };
     }
+    // Ce que Chrome affiche vraiment : adresse finale (après redirections) et titre de la page.
+    const where = await S('Runtime.evaluate', { expression: '({ u: location.href, t: document.title })', returnByValue: true }).then((r) => r.result?.value, () => null);
     const shot = await S('Page.captureScreenshot', { format: 'jpeg', quality, ...(clip ? { clip, captureBeyondViewport: true } : {}) });
     // Miniature : le haut de la page, réduite (≈ 10 Ko) pour que le tableau de bord reste léger.
     const small = await S('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width, height, scale: 360 / width } });
     return {
       image: Buffer.from(shot.data, 'base64'),
       thumb: Buffer.from(small.data, 'base64'),
+      finalUrl: String(where?.u || '').slice(0, 500) || null,
+      title: String(where?.t || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null,
       width,
       height: clip ? clip.height : height,
     };
@@ -365,7 +369,7 @@ async function doCapture(id, kind) {
     const thumb = r.thumb ? `${id}/${now}.t.jpg` : null;
     await writeFile(join(SHOTS_DIR, file), r.image);
     if (thumb) await writeFile(join(SHOTS_DIR, thumb), r.thumb);
-    const shotId = insertScreenshot({ watchId: id, ts: now, kind, file, thumb, size: r.image.length, width: r.width, height: r.height });
+    const shotId = insertScreenshot({ watchId: id, ts: now, kind, file, thumb, size: r.image.length, width: r.width, height: r.height, finalUrl: r.finalUrl, title: r.title });
     setShotState(id, { nextShot: now + sc.interval * 60e3, error: null });
     await pruneShots(id);
     bus.emit('event', { type: 'shot', watchId: id });

@@ -782,7 +782,7 @@ function siteRow(w, opts = {}) {
   if (w.running) checkBtn.firstChild.classList.add('spin');
   // « e.target === e.currentTarget » : Entrée sur un bouton de la ligne (poignée, vérifier) ne doit pas ouvrir le site.
   return h('div', { class: `site ${w.enabled ? '' : 'dim'}`, 'data-id': w.id, tabindex: 0, role: 'link', onclick: () => (location.hash = `#/sites/${w.id}`), onkeydown: (e) => e.target === e.currentTarget && e.key === 'Enter' && (location.hash = `#/sites/${w.id}`) },
-    h('div', { class: 'id' }, opts.handle ? handleBtn('site', w.id, `Déplacer « ${w.name} »`) : null, w.shot ? h('img', { class: 'thumb', src: shotUrl(w.shot.id, true), loading: 'lazy', alt: '', title: `Capture ${rel(w.shot.ts)}` }) : avatar(w.name), h('div', { class: 't' },
+    h('div', { class: 'id' }, opts.handle ? handleBtn('site', w.id, `Déplacer « ${w.name} »`) : null, w.shot ? h('img', { class: 'thumb', src: shotUrl(w.shot, true), loading: 'lazy', alt: '', title: `Capture ${rel(w.shot.ts)}` }) : avatar(w.name), h('div', { class: 't' },
       h('div', { class: 'name' }, h('span', { class: 'n' }, w.name), statusPill(w), w.maintenanceUntil ? maintPill(w, true) : null, grp ? h('span', { class: 'gchip', style: `--gc:${grp.color}`, title: `Groupe « ${grp.name} »` }, h('span', { class: 'grp-dot' }), grp.name) : null),
       top ? h('div', { class: `issue ${top.severity === 'warning' ? 'warn' : ''}` }, top.title) : h('div', { class: 'url' }, host(w.url) + (w.tags.length ? '  ·  ' + w.tags.join(', ') : '')))),
     h('div', { class: 'sigs' }, ...signalChips(w)),
@@ -1046,7 +1046,9 @@ function responseChart(checks, { daily = false, agg = false } = {}) {
 
 // ───────────── Captures d'écran ─────────────
 const SHOT_KIND = { scheduled: ['Planifiée', ''], manual: ['Manuelle', 'info'], alert: ['Alerte', 'crit'] };
-const shotUrl = (id, thumb) => `/api/screenshots/${id}/image${thumb ? '?thumb=1' : ''}`;
+// L'image est mise en cache un an : la date de capture fait partie de l'adresse, pour qu'un numéro de capture réutilisé
+// (base recréée, volume réinitialisé) ne ressorte jamais l'image d'un autre site depuis le cache du navigateur.
+const shotUrl = (s, thumb) => `/api/screenshots/${s.id}/image?v=${s.ts}${thumb ? '&thumb=1' : ''}`;
 const everyLabel = (min) => (min < 60 ? `${min} min` : min < 1440 ? `${min / 60} h` : `${min / 1440} j`);
 
 function captureNowButton(w) {
@@ -1072,7 +1074,7 @@ function previewCard(w) {
     ? h('button', { class: 'pv-img', title: 'Agrandir', 'aria-label': 'Agrandir la capture', onclick: guard(async () => {
       const d = await api(`/watches/${w.id}/screenshots`);
       openLightbox(d.items, Math.max(0, d.items.findIndex((x) => x.id === s.id)), w);
-    }) }, h('img', { src: shotUrl(s.id), alt: `Capture de ${w.name}` }))
+    }) }, h('img', { src: shotUrl(s), alt: `Capture de ${w.name}` }))
     : h('div', { class: 'pv-empty' }, ic('image'),
       h('b', {}, !avail ? 'Navigateur introuvable' : !on ? 'Captures désactivées' : w.shotError ? 'Capture impossible' : 'Première capture en cours…'),
       h('span', {}, !avail ? 'Installez Chrome ou Chromium sur le serveur, ou définissez CHROME_PATH.' : !on ? 'Activez-les dans « Modifier › Capture d\'écran ».' : w.shotError || 'Elle apparaît dans quelques secondes.'));
@@ -1106,7 +1108,7 @@ async function capturesTab(w) {
   root.append(h('div', { class: 'shots' }, ...d.items.map((it, i) => {
     const [label, cls] = SHOT_KIND[it.kind] || SHOT_KIND.scheduled;
     return h('button', { class: 'shot', onclick: () => openLightbox(d.items, i, w), 'aria-label': `Capture du ${dt(it.ts)}` },
-      h('img', { src: shotUrl(it.id, true), loading: 'lazy', alt: '' }),
+      h('img', { src: shotUrl(it, true), loading: 'lazy', alt: '' }),
       h('div', { class: 'shot-meta' }, h('b', {}, dt(it.ts)), cls ? h('span', { class: `pill ${cls}` }, label) : h('span', { class: 'muted' }, rel(it.ts))));
   })));
   return root;
@@ -1122,7 +1124,7 @@ function openLightbox(items, start, w) {
   const older = h('button', { class: 'btn sm', onclick: () => go(i + 1), title: 'Capture plus ancienne (←)' }, ic('back'), 'Plus ancienne');
   const newer = h('button', { class: 'btn sm', onclick: () => go(i - 1), title: 'Capture plus récente (→)' }, 'Plus récente', ic('right'));
   const cmp = h('button', { class: 'btn sm', onclick: () => { compare = !compare; render(); }, title: 'Comparer avec la capture précédente' }, ic('columns'), 'Comparer');
-  const fig = (label, it) => h('figure', {}, label ? h('figcaption', {}, h('b', {}, label), ` · ${dt(it.ts)}`) : null, h('img', { src: shotUrl(it.id), alt: `Capture du ${dt(it.ts)}` }));
+  const fig = (label, it) => h('figure', {}, label ? h('figcaption', {}, h('b', {}, label), ` · ${dt(it.ts)}`) : null, h('img', { src: shotUrl(it), alt: `Capture du ${dt(it.ts)}` }));
   const go = (n) => { if (n >= 0 && n < items.length) { i = n; render(); } };
   function render() {
     const cur = items[i];
@@ -1146,7 +1148,7 @@ function openLightbox(items, start, w) {
   };
   const lb = h('div', { class: 'lb', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Capture d\'écran', onclick: (e) => e.target === lb && close() },
     h('div', { class: 'lb-bar' }, title, h('div', { class: 'lb-actions' }, older, newer, cmp,
-      h('a', { class: 'btn sm', href: shotUrl(items[start].id), target: '_blank', rel: 'noopener' }, ic('external'), 'Original'),
+      h('a', { class: 'btn sm', href: shotUrl(items[start]), target: '_blank', rel: 'noopener' }, ic('external'), 'Original'),
       h('button', { class: 'btn sm icon', 'aria-label': 'Fermer', onclick: close }, ic('x')))),
     stage);
   document.body.append(lb);

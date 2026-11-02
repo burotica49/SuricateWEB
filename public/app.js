@@ -1381,7 +1381,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     minSev: h('select', { class: 'input', value: c.minSeverity }, h('option', { value: '' }, 'Réglage général'), h('option', { value: 'info' }, 'Tout (infos incluses)'), h('option', { value: 'warning' }, 'Attention et critique'), h('option', { value: 'critical' }, 'Critique uniquement')),
     cmsType: h('select', { class: 'input', value: (c.cms?.type === 'wordpress' || c.cms?.type === 'prestashop') ? c.cms.type : '' }, h('option', { value: '' }, 'Aucun'), h('option', { value: 'wordpress' }, 'WordPress'), h('option', { value: 'prestashop' }, 'PrestaShop')),
     cmsToken: h('input', { class: 'input mono', value: c.cms?.token || '', autocomplete: 'off', spellcheck: false }),
-    cmsPath: h('input', { class: 'input mono', placeholder: 'vide si le site est à la racine', value: c.cms?.path || '', autocomplete: 'off', spellcheck: false }),
+    cmsPath: h('input', { class: 'input mono', placeholder: 'racine du site', value: c.cms?.path || '', autocomplete: 'off', spellcheck: false }),
     cmsEvery: h('select', { class: 'input', value: String(c.cms?.intervalMin || 720) }, ...[[60, 'Toutes les heures'], [360, 'Toutes les 6 heures'], [720, 'Toutes les 12 heures'], [1440, 'Toutes les 24 heures'], [10080, 'Tous les 7 jours']].map(([v, l]) => h('option', { value: String(v) }, l))),
   };
   const checks = {};

@@ -27,9 +27,9 @@ const GROUPS = [['Clients', '#10b981'], ['Boutiques en ligne', '#f59e0b'], ['Int
 
 const DEFS = [
   { slug: 'dupont', group: 0, ms: 210, server: 'nginx', registrar: 'Gandi SAS', dnssec: true, story: 'defaced' },
-  { slug: 'martin', group: 0, ms: 165, server: 'Apache', registrar: 'OVH SAS', dnssec: true, story: 'mx' },
+  { slug: 'martin', group: 0, ms: 165, server: 'Apache', registrar: 'OVH SAS', dnssec: true, story: 'mx', cms: 'wordpress' },
   { slug: 'leroy', group: 0, ms: 320, server: 'nginx', registrar: 'Gandi SAS', dnssec: false, story: 'tls' },
-  { slug: 'nova', group: 1, ms: 140, server: 'cloudflare', registrar: 'Cloudflare, Inc.', dnssec: true, story: 'links' },
+  { slug: 'nova', group: 1, ms: 140, server: 'cloudflare', registrar: 'Cloudflare, Inc.', dnssec: true, story: 'links', cms: 'prestashop' },
   { slug: 'lumiere', group: 1, ms: 260, server: 'nginx', registrar: 'OVH SAS', dnssec: false, story: 'down' },
   { slug: 'intranet', group: 2, ms: 55, server: 'nginx', registrar: 'Gandi SAS', dnssec: true, story: 'server' },
   { slug: 'wiki', group: 2, ms: 80, server: 'nginx', registrar: 'Gandi SAS', dnssec: true },
@@ -44,6 +44,44 @@ const OUTAGES = {
   lumiere: [{ ago: 17 * D, dur: 125 * MIN, reason: 'Erreur HTTP 503', code: 503 }, { ago: 27 * MIN, open: true, reason: 'Connexion refusée par le serveur' }],
   intranet: [],
   wiki: [{ ago: 3 * D, dur: 9 * MIN, reason: 'Délai dépassé' }],
+};
+
+// Relevés « plugin » fictifs (onglet Mises à jour). Noms et versions inventés : aucune vraie boutique ni installation.
+const DEMO_CMS_TOKEN = 'ZGVtby1qZXRvbi1mYXV4LXBvdXItbGEtZG9jdW1lbnRhdGlvbg';
+const item = (name, slug, current, available = null, o = {}) => ({ name, slug, current, available, active: true, known: true, ...o });
+const CMS_REPORTS = {
+  martin: {
+    php: '8.2.27', cms: 'wordpress', cmsVersion: '6.7.1',
+    core: { current: '6.7.1', available: '6.8.3', known: true },
+    extensions: [
+      item('Yoast SEO', 'wordpress-seo', '24.2', '25.4'),
+      item('Contact Form 7', 'contact-form-7', '5.9.8', '6.1.1'),
+      item('Complianz', 'complianz-gdpr', '7.4.0'),
+      item('Akismet Anti-spam', 'akismet', '5.3.5'),
+      item('Redirection', 'redirection', '5.5.0'),
+      item('Hello Dolly', 'hello-dolly', '1.7.2', null, { active: false }),
+    ],
+    themes: [
+      item('Cabinet Martin (thème enfant)', 'cabinet-martin-child', '2.4.0'),
+      item('Twenty Twenty-Five', 'twentytwentyfive', '1.0', '1.3', { active: false }),
+    ],
+  },
+  nova: {
+    php: '8.1.30', cms: 'prestashop', cmsVersion: '8.1.7',
+    core: { current: '8.1.7', available: '8.2.1', known: true },
+    extensions: [
+      item('Paiement par carte', 'paymentcard', '3.5.2', '3.6.0'),
+      item('Panier', 'ps_shoppingcart', '2.0.7', '2.0.9'),
+      item('Newsletter', 'ps_emailsubscription', '2.9.0'),
+      item('Paiement par chèque', 'ps_checkpayment', '2.0.2'),
+      item('Export du catalogue (sur mesure)', 'nova_feed', '1.4', null, { known: false }),
+      item('Transporteur local', 'novashipping', '0.9.3', null, { known: false, active: false }),
+    ],
+    themes: [
+      item('Classic', 'classic', '2.0.3', '2.1.0', { active: false }),
+      item('Nova (thème sur mesure)', 'nova', '1.2.0', null, { known: false }),
+    ],
+  },
 };
 
 const hex = (n, seed) => { const r = rng(seed); return Array.from({ length: n }, () => Math.floor(r() * 256).toString(16).padStart(2, '0').toUpperCase()).join(':'); };
@@ -83,7 +121,8 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     watches.push({ ...def, id: w.id, ...extra });
     return w.id;
   };
-  DEFS.forEach((d, i) => addWatch({ ...d, name: SITES[d.slug].name, url: `https://${SITES[d.slug].domain}/`, tags: d.slug === 'dupont' ? ['client', 'wordpress'] : [] }, { i }));
+  DEFS.forEach((d, i) => addWatch({ ...d, name: SITES[d.slug].name, url: `https://${SITES[d.slug].domain}/`, tags: d.slug === 'dupont' ? ['client', 'wordpress'] : [],
+    config: d.cms ? { cms: { type: d.cms, token: DEMO_CMS_TOKEN, path: '', intervalMin: 720 } } : {} }, { i }));
   addWatch({ slug: 'domain', name: 'exemple-societe.example', url: 'https://exemple-societe.example/', group: null, config: { mode: 'domain' }, story: 'domain', registrar: 'Gandi SAS', dnssec: true, ms: 0 }, { i: 7 });
 
   db.exec('BEGIN');
@@ -160,6 +199,7 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
       rdap: { checkedAt: now - 22 * MIN, registrar: w.registrar, registered: now - (3 + w.i) * 365 * D, expires: rdapExpires, transferred: 0, changed: now - (30 + w.i * 9) * D,
         locked: true, status: ['client transfer prohibited', 'client update prohibited'], nameservers: ns, dnssec: w.dnssec },
     };
+    if (CMS_REPORTS[w.slug]) state.cms = { ...CMS_REPORTS[w.slug], checkedAt: now - 3 * H, ok: true, error: null };
     if (w.slug !== 'domain') state.tls = { fp: hex(32, 77 + w.i), issuer: "Let's Encrypt", subject: domainName, expires: tlsExpires, authorized: true, protocol: 'TLSv1.3' };
 
     if (w.story === 'defaced') {

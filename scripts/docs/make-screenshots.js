@@ -127,6 +127,15 @@ try {
   await fit({ max: 2400 });
   await save('domaine-dns.png', await page.screenshot());
 
+  // Onglet « Mises à jour » (relevé du plugin WordPress / PrestaShop), puis le réglage du plugin dans le formulaire du site.
+  await go(`#/sites/${id('Cabinet Martin')}/mises-a-jour`, '.table');
+  await fit({ max: 2000 });
+  await save('mises-a-jour.png', await page.screenshot());
+
+  await go(`#/sites/${id('Nova Boutique')}/mises-a-jour`, '.table');
+  await fit({ max: 2000 });
+  await save('mises-a-jour-prestashop.png', await page.screenshot());
+
   await go('#/alertes', '.alert');
   await fit({ max: 2000 });
   await save('alertes.png', await page.screenshot());
@@ -142,6 +151,16 @@ try {
   await waitFor('document.querySelector(".drawer")');
   await sleep(500);
   await save('formulaire.png', await page.screenshot());
+  await page.run(`document.querySelector('.drawer .drawer-head .btn').click(); true`);
+
+  // Formulaire d'un site WordPress : bloc « WordPress / PrestaShop » (jeton, dossier, fréquence, plugin à télécharger).
+  await go(`#/sites/${id('Cabinet Martin')}`, '.ub');
+  await page.viewport(W, 1000);
+  await page.run(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Modifier').click()`);
+  await waitFor('document.querySelector(".drawer details.acc[open]")');
+  await page.run(`[...document.querySelectorAll('.drawer details')].find((d) => d.textContent.includes('WordPress / PrestaShop')).scrollIntoView({ block: 'start' })`);
+  await sleep(500);
+  await save('formulaire-cms.png', await page.screenshot());
   await page.run(`document.querySelector('.drawer .drawer-head .btn').click(); true`);
 
   // Message Telegram (aperçu du vrai message produit par l'application).

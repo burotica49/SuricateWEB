@@ -17,6 +17,12 @@ add_action('admin_menu', function () {
     add_options_page('VigieWeb', 'VigieWeb', 'manage_options', 'vigieweb', 'vigieweb_options_page');
 });
 
+add_filter('plugin_action_links_' . plugin_basename(__FILE__), function ($links) {
+    $url = admin_url('options-general.php?page=vigieweb');
+    array_unshift($links, '<a href="' . esc_url($url) . '">Réglages</a>');
+    return $links;
+});
+
 add_action('admin_init', function () {
     register_setting('vigieweb', 'vigieweb_token', array(
         'type' => 'string',

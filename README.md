@@ -12,7 +12,7 @@ Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io)
 
 ## Sommaire
 
-[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
+[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop-mises-à-jour) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
 
 ## Aperçu
 
@@ -45,6 +45,12 @@ Un seul message par contrôle, avec la sévérité, le détail, un extrait des l
 | ![Disponibilité : pannes, temps de réponse](docs/screenshots/disponibilite.png) | ![Domaine & DNS : registre, DNSSEC, enregistrements](docs/screenshots/domaine-dns.png) |
 
 ![Journal des alertes, classées par jour et par sévérité](docs/screenshots/alertes.png)
+
+### Mises à jour WordPress et PrestaShop
+
+Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **version de PHP** et les **mises à jour disponibles** du noyau, des extensions (modules) et des thèmes, avec la version actuelle en regard de la version disponible. [Mise en place et garde-fous](#wordpress-et-prestashop-mises-à-jour).
+
+![Onglet Mises à jour : PHP, noyau, extensions et thèmes avec versions actuelles et disponibles](docs/screenshots/mises-a-jour.png)
 
 ### Thème sombre et mobile
 
@@ -114,7 +120,7 @@ Pour le laisser tourner en continu : `pm2 start server.js --name vigieweb --node
 npm run demo
 ```
 
-Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : VigieWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. En mode démo, les contrôles et les captures sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
+Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : VigieWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. Les relevés de mises à jour de « Cabinet Martin » (WordPress) et « Nova Boutique » (PrestaShop) sont fictifs. En mode démo, les contrôles, les captures et les relevés sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
 
 Les images de ce document sont produites par le même jeu de données :
 
@@ -265,6 +271,54 @@ Deux familles d'alertes : les **incidents** (état anormal persistant : une aler
 
 Le premier contrôle établit la référence et ne déclenche aucune alerte de changement.
 
+## WordPress et PrestaShop (mises à jour)
+
+Pour un site WordPress ou PrestaShop, VigieWeb ajoute l'onglet **Mises à jour** : la **version de PHP** du serveur et, pour le noyau, les extensions (les modules, sous PrestaShop) et les thèmes, la **version installée** et la **version disponible**. C'est un tableau de bord : un relevé n'envoie pas d'alerte Telegram.
+
+| WordPress | PrestaShop |
+|---|---|
+| ![Onglet Mises à jour d'un site WordPress](docs/screenshots/mises-a-jour.png) | ![Onglet Mises à jour d'un site PrestaShop](docs/screenshots/mises-a-jour-prestashop.png) |
+
+### Ce que l'onglet affiche
+
+- **En-tête** : le CMS et sa version, la version de PHP, la date du relevé et le bouton **Actualiser** (relevé immédiat).
+- **Trois tableaux**, *Noyau*, *Extensions* (ou *Modules*) et *Thèmes*, avec la version actuelle, la version disponible et un état :
+  - **Mise à jour** : une version plus récente existe (ces lignes passent en premier) ;
+  - **À jour** ;
+  - **Inconnue** : le CMS ne sait pas dire si une version plus récente existe (module hors catalogue, thème sur mesure).
+- Un élément désactivé est marqué **inactif** : il reste pourtant installé sur le serveur, donc à tenir à jour ou à supprimer.
+- Une **pastille** sur l'onglet donne le nombre de mises à jour disponibles (noyau, extensions et thèmes réunis).
+- Si un relevé échoue (plugin désactivé, jeton refusé, site en panne…), le tableau reste celui du **dernier relevé réussi**, avec le message d'erreur, et VigieWeb réessaie plus tôt que d'habitude (au plus 30 minutes plus tard).
+
+### Mise en place
+
+Le relevé se fait **depuis le site**, là où ces informations existent : un petit plugin, installé sur le site, ne répond qu'à VigieWeb. Il n'envoie rien de lui-même.
+
+![Formulaire d'un site : bloc WordPress / PrestaShop avec le jeton, le dossier, la fréquence du relevé et le lien de téléchargement du plugin](docs/screenshots/formulaire-cms.png)
+
+1. **Modifier** le site, bloc **WordPress / PrestaShop** : choisissez le CMS. Un **jeton** aléatoire est généré (boutons **Générer** et **Copier**), et l'**adresse interrogée** s'affiche. Renseignez le **Dossier** seulement si le CMS n'est pas à la racine du domaine (`blog` pour `exemple.fr/blog`) et la **fréquence du relevé** : 1 h, 6 h, **12 h (par défaut)**, 24 h ou 7 jours. Enregistrez.
+2. **Téléchargez le plugin** (liens dans le même bloc, ou dans l'onglet Mises à jour tant qu'aucun relevé n'a eu lieu), installez-le et activez-le.
+3. Collez le jeton dans les réglages du plugin (WordPress : *Réglages › VigieWeb* ; PrestaShop : *Modules › Gestionnaire de modules › VigieWeb › Configurer*).
+4. Ouvrez l'onglet **Mises à jour** et cliquez sur **Actualiser**.
+
+L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fixe : `/?rest_route=/vigieweb/v1/status` pour WordPress (avec ou sans permaliens), `/modules/vigieweb/status.php` pour PrestaShop. Le téléchargement du plugin n'est possible que connecté à VigieWeb ; l'archive est fabriquée à la demande depuis le dossier `plugins/`.
+
+### Ce qui circule, et les garde-fous
+
+- **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Ni contenu, ni utilisateur, ni mot de passe, ni donnée client.
+- **Cette liste reste sensible** : elle indique à un attaquant quelles failles tenter. Sans jeton valide (comparé en temps constant), le plugin répond « non autorisé » et ne renvoie aucune donnée. Gardez le jeton secret et surveillez un site **en HTTPS** : en HTTP, le jeton transiterait en clair.
+- Le jeton est envoyé dans l'en-tête `Authorization`, jamais dans l'adresse.
+- VigieWeb ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
+- **Actualiser** demande au plugin de recalculer ses données. Sous WordPress, le plugin vide alors le cache des mises à jour, au plus **une fois toutes les 15 minutes**, pour ne pas solliciter wordpress.org à chaque clic.
+
+### Ce que le relevé ne peut pas dire
+
+- Une mise à jour de **PHP** : seule la version installée est lue.
+- Une mise à jour d'une extension WordPress **premium**, sauf si son propre système de mise à jour la déclare à WordPress.
+- Une mise à jour d'un module PrestaShop **absent du catalogue Addons**, ou d'un thème sur mesure : la version actuelle est affichée, la version disponible reste « inconnue ».
+- Si une mise à jour **corrige une faille**, ou si une faille est exploitable sur votre site : VigieWeb indique les versions, pas les vulnérabilités.
+- En **mode démo**, aucun site n'est interrogé : les relevés affichés sont fictifs.
+
 ## Réduire le bruit
 
 - **Sélecteur CSS** (`main`, `#contenu`, `.article > p`) pour ne comparer qu'une zone ; **exclusion** (`.horloge, .pub`).
@@ -280,29 +334,8 @@ Le premier contrôle établit la référence et ne déclenche aucune alerte de c
 - **La disponibilité est mesurée depuis votre serveur VigieWeb.** Une panne réseau de ce serveur peut apparaître comme une panne du site, et un site injoignable seulement depuis certains pays n'est pas vu. Pour plus de fiabilité, hébergez VigieWeb ailleurs que les sites surveillés.
 - **Pas de rétroactivité** : la disponibilité n'est calculée qu'à partir de l'installation de cette fonction ; avant, les sites sont considérés disponibles.
 - Les résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9) doivent être joignables en UDP/53 depuis le serveur ; sinon la cohérence entre résolveurs est simplement ignorée.
+- **Le relevé des mises à jour n'est pas un scanner de vulnérabilités** : il compare des numéros de version fournis par le CMS (voir [ce qu'il ne peut pas dire](#ce-que-le-relevé-ne-peut-pas-dire)).
 - Les adresses IP derrière un CDN tournent : VigieWeb ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
-
-## WordPress et PrestaShop
-
-Pour un site WordPress ou PrestaShop, VigieWeb peut afficher la **version de PHP**, et pour le noyau, les extensions (ou modules) et les thèmes : la **version actuelle** et la **version disponible**.
-
-Le relevé se fait **depuis le site**, là où ces informations existent. Un plugin, installé sur le site, répond uniquement à VigieWeb. Il n'envoie rien de lui-même : VigieWeb l'interroge (toutes les 12 heures par défaut, ou tout de suite avec **Actualiser**).
-
-1. Dans la fiche du site, ouvrez **WordPress / PrestaShop**, choisissez le CMS et copiez le jeton.
-2. Téléchargez le plugin (lien dans le même bloc), installez-le et activez-le.
-3. Collez le jeton dans les réglages du plugin (WordPress : Réglages › VigieWeb ; PrestaShop : Modules › VigieWeb).
-4. L'onglet **Mises à jour** du site affiche le relevé.
-
-Si le CMS est dans un sous-dossier (`exemple.fr/blog`), indiquez ce dossier. L'adresse appelée est toujours celle du site surveillé.
-
-Ce que le relevé ne peut pas inventer :
-
-- une mise à jour de **PHP** (seule la version installée est lue) ;
-- une extension WordPress **premium**, sauf si son propre système de mise à jour la déclare à WordPress ;
-- un module PrestaShop **absent du catalogue Addons**, ou un thème sur mesure : la version actuelle est affichée, la version disponible reste « inconnue » ;
-- le mode démo n'interroge aucun site.
-
-Le point d'accès du plugin ne répond qu'avec le jeton et ne renvoie que des numéros de version.
 
 ## Architecture
 

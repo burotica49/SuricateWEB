@@ -16,7 +16,7 @@ class Vigieweb extends Module
         parent::__construct();
         $this->displayName = $this->l('VigieWeb');
         $this->description = $this->l('Indique à VigieWeb la version de PHP et les mises à jour disponibles. VigieWeb interroge la boutique ; le module n’envoie rien de lui-même.');
-        $this->ps_versions_compliancy = array('min' => '1.7.7.0', 'max' => _PS_VERSION_);
+        $this->ps_versions_compliancy = array('min' => '1.7.6.0', 'max' => _PS_VERSION_);
     }
 
     public function install()
@@ -77,7 +77,7 @@ class Vigieweb extends Module
         }
         try {
             $report = $this->buildReport($this->wantsRefresh());
-        } catch (Throwable $e) {
+        } catch (Exception $e) {
             http_response_code(500);
             echo '{"error":"failed"}';
             exit;
@@ -206,7 +206,7 @@ class Vigieweb extends Module
                 if ($rows) {
                     return $rows;
                 }
-            } catch (Throwable $e) {
+            } catch (Exception $e) {
                 $rows = array();
             }
         }

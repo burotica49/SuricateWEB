@@ -22,6 +22,8 @@ WORKDIR /app
 COPY --chown=node:node package.json server.js ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
+# Plugins WordPress / PrestaShop : l'application les empaquette en ZIP à la demande (onglet Mises à jour).
+COPY --chown=node:node plugins ./plugins
 
 # Base SQLite et captures d'écran : à monter sur un volume persistant.
 # Pas de USER ici : l'entrypoint démarre en root le temps de corriger le volume (souvent root:root),

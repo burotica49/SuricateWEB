@@ -6,7 +6,7 @@
  */
 @ini_set('display_errors', '0');
 ob_start();
-require_once dirname(__DIR__, 2) . '/config/config.inc.php';
+require_once dirname(dirname(__DIR__)) . '/config/config.inc.php';
 ob_end_clean();
 
 header('Content-Type: application/json; charset=utf-8');

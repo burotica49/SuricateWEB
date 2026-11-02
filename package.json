@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/burotica49/vigieweb.git"
+    "url": "git+https://github.com/burotica49/VigieWeb.git"
   },
-  "homepage": "https://github.com/burotica49/vigieweb#readme",
+  "homepage": "https://github.com/burotica49/VigieWeb#readme",
   "bugs": {
-    "url": "https://github.com/burotica49/vigieweb/issues"
+    "url": "https://github.com/burotica49/VigieWeb/issues"
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",

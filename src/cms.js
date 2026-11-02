@@ -1,6 +1,7 @@
 // Relevé des versions PHP / CMS. VigieWeb appelle le plugin du site (le plugin n'appelle jamais VigieWeb).
 import { getWatch, getSettings, setCmsReport } from './db.js';
 import { describeError } from './checker.js';
+import { carrySince } from './cms-alerts.js';
 
 const MAX_BODY = 1024 * 1024;
 const MAX_ITEMS = 400;
@@ -190,7 +191,7 @@ export async function pollCms(id, { refresh = false } = {}) {
   if (!current) return { ok: !error, error, cms: report };
   const prev = current.state.cms && typeof current.state.cms === 'object' ? current.state.cms : {};
   const saved = report
-    ? { ...report, checkedAt: Date.now(), ok: true, error: null }
+    ? { ...carrySince(prev, report, Date.now()), checkedAt: Date.now(), ok: true, error: null }
     : { ...prev, checkedAt: Date.now(), ok: false, error };
   const nextCms = Date.now() + (report ? interval : Math.min(interval, RETRY_MS));
   setCmsReport(id, saved, nextCms);

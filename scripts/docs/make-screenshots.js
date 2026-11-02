@@ -136,6 +136,19 @@ try {
   await fit({ max: 2000 });
   await save('mises-a-jour-prestashop.png', await page.screenshot());
 
+  // Maintenance : bandeaux d'une fenêtre en cours et d'une fenêtre prévue, puis le dialogue de planification.
+  await go(`#/sites/${id('Wiki technique')}`, '.incident.info');
+  await fit({ max: 1000 });
+  await save('maintenance.png', await page.screenshot());
+
+  await go(`#/sites/${id('Intranet équipe')}`, '.detail-head');
+  await page.viewport(W, 900);
+  await page.run(`[...document.querySelectorAll('.detail-head .btn')].find((b) => b.textContent.trim().includes('Maintenance')).click()`);
+  await waitFor('document.querySelector(".modal")');
+  await sleep(300);
+  await save('maintenance-dialogue.png', await page.screenshot({ clipSelector: '.modal' }));
+  await page.run(`document.querySelector('.overlay').click(); true`);
+
   await go('#/alertes', '.alert');
   await fit({ max: 2000 });
   await save('alertes.png', await page.screenshot());

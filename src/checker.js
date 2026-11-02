@@ -12,8 +12,9 @@ import dnsP from 'node:dns/promises';
 import tls from 'node:tls';
 import {
   getWatch, getSettings, saveRun, insertSnapshot, latestSnapshot, snapshotLines, insertCheck, insertAlert, markNotified,
-  prune, openOutage, closeOutage, upsertDaily,
+  prune, openOutage, closeOutage, upsertDaily, activeMaintenance, pendingMaintenanceAlerts, markMaintenanceSummarized,
 } from './db.js';
+import { cmsIncidents } from './cms-alerts.js';
 import { parseHtml, selectAll, textLines, extractFeatures } from './html.js';
 import { diffLines, preview } from './diff.js';
 import { sendMessage, sendPhoto, buildMessage } from './telegram.js';
@@ -323,6 +324,7 @@ const catOf = (key) => {
   const b = key.split(':')[0];
   if (['down', 'http', 'downgrade'].includes(b)) return 'net';
   if (b.startsWith('tls')) return 'tls';
+  if (b.startsWith('cms') || b === 'php_eol') return 'cms';
   if (b.startsWith('rdap')) return 'rdap';
   if (b.startsWith('dns')) return 'dns';
   return 'content';
@@ -350,6 +352,8 @@ export async function runCheck(id) {
   const url = new URL(w.url);
   const host = url.hostname;
   const domain = registrable(host);
+  // Fenêtre de maintenance en cours : les alertes sont retenues et aucune panne n'est comptée (voir plus bas).
+  const maint = activeMaintenance(w.id, now);
 
   const rdapDue = c.rdap && !isIp(host) && domain.includes('.') && (!state.rdap || now - (state.rdap.checkedAt || 0) > (state.rdap.unsupported ? 7 * DAY : RDAP_EVERY));
   const none = () => Promise.reject(null);
@@ -394,14 +398,15 @@ export async function runCheck(id) {
         error = `Erreur HTTP ${code}`;
       }
     }
-    if (down) {
+    if (down && !maint) {
       state.fails = (state.fails || 0) + 1;
       state.failSince ||= now; // la panne est datée du premier échec, pas de sa confirmation
     } else {
+      // Un échec pendant une maintenance n'est pas une panne : il ne compte pas, même rétroactivement à la reprise.
       state.fails = 0;
       state.failSince = null;
     }
-    const confirmed = down && state.fails >= cfg.failThreshold;
+    const confirmed = down && !maint && state.fails >= cfg.failThreshold;
     if (confirmed && !state.outageId) state.outageId = openOutage(w.id, state.failSince, error, code);
     if (!down && state.outageId) {
       closedOutage = closeOutage(state.outageId, now);
@@ -611,16 +616,31 @@ export async function runCheck(id) {
     state.rdap = { ...(state.rdap || {}), checkedAt: now - RDAP_EVERY + 10 * 60e3 }; // réessai dans 10 min
   }
 
+  // ── Mises à jour du CMS et support de PHP : évalués sur le dernier relevé du plugin (relevé séparé, 12 h par défaut) ──
+  if (!domainOnly && cfg.cms.type && cfg.cms.alerts !== false) {
+    if (state.cms?.core && state.cms.checkedAt) {
+      evaluated.add('cms');
+      for (const i of cmsIncidents(state.cms, { afterDays: settings.cmsAfterDays, now })) inc(i.key, i.severity, i.title, i.detail);
+    }
+  } else {
+    // Alertes désactivées pour ce site (ou CMS retiré) : ses incidents disparaissent sans message « rétabli ».
+    for (const k of Object.keys(state.incidents || {})) if (catOf(k) === 'cms') delete state.incidents[k];
+  }
+
   // ── Transitions d'incidents ──
   const prevInc = state.incidents || {};
   for (const [key, i] of Object.entries(incidents)) {
     const prev = prevInc[key];
-    // Sous 7 jours l'échéance devient critique : on ré-alerte, même si le rappel à 30 jours a été marqué comme lu.
-    const escalated = prev && key === 'rdap_expiring' && (SEV[i.severity] || 0) > (SEV[prev.severity] || 0);
-    if (!prev || escalated) add(key.split(':')[0], i.severity, i.title, i.detail);
+    // L'échéance du domaine (sous 7 jours), un CMS en retard ou PHP en fin de support deviennent critiques : on ré-alerte,
+    // même si le premier rappel a été marqué comme lu.
+    const escalated = prev && (key === 'rdap_expiring' || key === 'php_eol' || key.startsWith('cms_')) && (SEV[i.severity] || 0) > (SEV[prev.severity] || 0);
+    // Incident apparu pendant une maintenance : son alerte a été retenue, on prévient dès la reprise s'il est toujours là.
+    const deferred = prev?.muted && !maint;
+    if (!prev || escalated || deferred) add(key.split(':')[0], i.severity, i.title, i.detail);
   }
   for (const [key, i] of Object.entries(prevInc)) {
     if (incidents[key] || !evaluated.has(catOf(key))) continue;
+    if (i.muted) continue; // apparu et disparu pendant la maintenance : personne n'en a été prévenu, pas de « rétabli »
     if (closedOutage && ['down', 'http'].includes(key)) continue; // remplacé par le message de fin de panne, avec sa durée
     add('recovery', 'recovery', `Rétabli : ${i.title}`, '', { was: i.severity });
   }
@@ -628,20 +648,42 @@ export async function runCheck(id) {
     add('recovery', 'recovery', 'Le site est de nouveau accessible', `Indisponible pendant ${fmtDuration(closedOutage.end - closedOutage.start)}.`, { was: 'critical' });
   }
   state.incidents = {};
-  for (const [key, i] of Object.entries(incidents)) state.incidents[key] = { ...i, since: prevInc[key]?.since || now };
+  for (const [key, i] of Object.entries(incidents)) {
+    const prev = prevInc[key];
+    state.incidents[key] = { ...i, since: prev?.since || now, ...(maint && (!prev || prev.muted) ? { muted: true } : {}) };
+  }
   for (const [key, i] of Object.entries(prevInc)) if (!incidents[key] && !evaluated.has(catOf(key))) state.incidents[key] = i;
 
   if (page || domainOnly) state.baseline = true;
 
+  // ── Maintenance : alertes retenues pendant la fenêtre, puis un seul récapitulatif à la reprise ──
+  if (maint) {
+    for (const a of alerts) a.maintenance = true;
+  } else {
+    const held = pendingMaintenanceAlerts(w.id);
+    if (held.length) {
+      const notable = held.filter((a) => a.severity === 'critical' || a.severity === 'warning');
+      if (notable.length) {
+        const worst = notable.some((a) => a.severity === 'critical') ? 'critical' : 'warning';
+        add('maintenance_summary', worst,
+          `Fin de la maintenance : ${notable.length} alerte${notable.length > 1 ? 's' : ''} retenue${notable.length > 1 ? 's' : ''} pendant la fenêtre`,
+          [...new Set(notable.map((a) => `• ${a.title}`))].slice(0, 10).join('\n'));
+      }
+      markMaintenanceSummarized(w.id);
+    }
+  }
+
   // ── Persistance + notification ──
   const up = domainOnly ? true : !down;
   insertCheck({ watchId: w.id, ok: up, code, ms, size, hash, snapshotId, error, alerts: alerts.length });
-  if (!domainOnly) upsertDaily(w.id, now, up, ms);
+  if (!domainOnly && !(maint && down)) upsertDaily(w.id, now, up, ms);
   for (const a of alerts) a.id = insertAlert({ watchId: w.id, ...a });
-  saveRun(w.id, { state, nextRun: now + w.interval * 60e3, code, ms, error });
+  // À la fin d'une maintenance, un contrôle suit de près : les alertes retenues sont reprises sans attendre l'intervalle normal.
+  const nextRun = maint && maint.end + 30e3 < now + w.interval * 60e3 ? maint.end + 30e3 : now + w.interval * 60e3;
+  saveRun(w.id, { state, nextRun, code, ms, error });
   prune(w.id);
 
-  const { photo } = await notify(w, alerts, settings);
+  const { photo } = await notify(w, alerts.filter((a) => !a.maintenance), settings);
   bus.emit('event', { type: 'check', watchId: w.id, alerts: alerts.length });
   return { code, ms, error, alerts, photo };
 }

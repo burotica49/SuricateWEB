@@ -72,6 +72,7 @@ const ICONS = {
   right: '<path d="M9 18l6-6-6-6"/>',
   grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   layers: '<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/>',
 };
 const ic = (name) => {
@@ -170,6 +171,12 @@ const STATUS = {
 };
 const statusPill = (w) => h('span', { class: `pill ${STATUS[w.status].cls}` }, h('span', { class: 'dot' }), STATUS[w.status].label);
 
+/** compact : icône seule (dans la liste, où le nom du site doit garder sa place). */
+const maintPill = (w, compact = false) => {
+  const title = `Maintenance jusqu'à ${dt(w.maintenanceUntil)} : alertes retenues, aucune panne comptée`;
+  return compact ? h('span', { class: 'pill info icon-only', title, 'aria-label': title }, ic('wrench')) : h('span', { class: 'pill info', title }, ic('wrench'), 'Maintenance');
+};
+
 const avatar = (name) => h('div', { class: 'avatar', style: { background: `hsl(${hue(name)} 52% 46%)` } }, (name.trim()[0] || '?'));
 
 // ───────────── API ─────────────
@@ -206,6 +213,43 @@ const guard = (fn) => async (...a) => {
     toast(e.message, 'err');
   }
 };
+
+/** Planifie une fenêtre de maintenance pour un site. Résout true si elle a été enregistrée. */
+function maintenanceDialog(w) {
+  return new Promise((resolve) => {
+    const close = (v) => { ov.remove(); md.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = (e) => e.key === 'Escape' && close(false);
+    const local = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const whenSel = h('select', { class: 'input' }, h('option', { value: 'now' }, 'Maintenant'), h('option', { value: 'later' }, 'À une date et une heure précises'));
+    const startAt = h('input', { class: 'input', type: 'datetime-local', value: local(new Date(Math.ceil((Date.now() + 3600e3) / 36e5) * 36e5)) });
+    const startField = h('div', { class: 'field' }, h('label', {}, 'Début'), startAt);
+    startField.hidden = true;
+    whenSel.addEventListener('change', () => { startField.hidden = whenSel.value !== 'later'; });
+    const dur = h('select', { class: 'input', value: '60' }, ...[[30, '30 minutes'], [60, '1 heure'], [120, '2 heures'], [240, '4 heures'], [480, '8 heures'], [1440, '24 heures'], [4320, '3 jours']].map(([v, l]) => h('option', { value: String(v) }, l)));
+    const note = h('input', { class: 'input', placeholder: 'ex. Mise à jour de WordPress', maxlength: 140 });
+    const submit = guard(async () => {
+      const body = { minutes: Number(dur.value), note: note.value };
+      if (whenSel.value === 'later') {
+        const t = new Date(startAt.value).getTime();
+        if (!Number.isFinite(t) || t <= Date.now()) throw new Error('Choisissez un début dans le futur, ou « Maintenant ».');
+        body.start = t;
+      }
+      await api(`/watches/${w.id}/maintenance`, { method: 'POST', body });
+      close(true);
+    });
+    const ov = h('div', { class: 'overlay', onclick: () => close(false) });
+    const md = h('div', { class: 'modal', role: 'dialog', 'aria-label': 'Planifier une maintenance' },
+      h('h2', {}, `Maintenance de « ${w.name} »`),
+      h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'Pendant la fenêtre, VigieWeb continue de contrôler le site mais retient ses alertes et ne compte aucune panne. Si quelque chose a été détecté, un seul message récapitulatif part à la fin. La surveillance reprend d\'elle-même.'),
+      h('div', { class: 'field' }, h('label', {}, 'Commencer'), whenSel), startField,
+      h('div', { class: 'field' }, h('label', {}, 'Durée'), dur),
+      h('div', { class: 'field' }, h('label', {}, 'Note (facultatif)'), note),
+      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: () => close(false) }, 'Annuler'), h('button', { class: 'btn primary', onclick: submit }, 'Démarrer la maintenance')));
+    document.body.append(ov, md);
+    document.addEventListener('keydown', onKey);
+    dur.focus();
+  });
+}
 
 function confirmDialog({ title, text, confirm = 'Confirmer', danger = false }) {
   return new Promise((resolve) => {
@@ -736,7 +780,7 @@ function siteRow(w, opts = {}) {
   // « e.target === e.currentTarget » : Entrée sur un bouton de la ligne (poignée, vérifier) ne doit pas ouvrir le site.
   return h('div', { class: `site ${w.enabled ? '' : 'dim'}`, 'data-id': w.id, tabindex: 0, role: 'link', onclick: () => (location.hash = `#/sites/${w.id}`), onkeydown: (e) => e.target === e.currentTarget && e.key === 'Enter' && (location.hash = `#/sites/${w.id}`) },
     h('div', { class: 'id' }, opts.handle ? handleBtn('site', w.id, `Déplacer « ${w.name} »`) : null, w.shot ? h('img', { class: 'thumb', src: shotUrl(w.shot.id, true), loading: 'lazy', alt: '', title: `Capture ${rel(w.shot.ts)}` }) : avatar(w.name), h('div', { class: 't' },
-      h('div', { class: 'name' }, h('span', { class: 'n' }, w.name), statusPill(w), grp ? h('span', { class: 'gchip', style: `--gc:${grp.color}`, title: `Groupe « ${grp.name} »` }, h('span', { class: 'grp-dot' }), grp.name) : null),
+      h('div', { class: 'name' }, h('span', { class: 'n' }, w.name), statusPill(w), w.maintenanceUntil ? maintPill(w, true) : null, grp ? h('span', { class: 'gchip', style: `--gc:${grp.color}`, title: `Groupe « ${grp.name} »` }, h('span', { class: 'grp-dot' }), grp.name) : null),
       top ? h('div', { class: `issue ${top.severity === 'warning' ? 'warn' : ''}` }, top.title) : h('div', { class: 'url' }, host(w.url) + (w.tags.length ? '  ·  ' + w.tags.join(', ') : '')))),
     h('div', { class: 'sigs' }, ...signalChips(w)),
     h('div', { class: 'spark-col' }, w.mode === 'domain' ? h('div', { class: 'spark-empty' }, 'DNS + registre') : spark(w.spark)),
@@ -770,12 +814,13 @@ async function viewDetail(id, tab, tok, openSnap) {
     h('a', { class: 'crumb', href: '#/' }, ic('back'), 'Tous les sites'),
     h('div', { class: 'detail-head' },
       h('div', { class: 'id' }, avatar(w.name), h('div', { class: 't' },
-        h('h1', {}, w.name, statusPill(w)),
+        h('h1', {}, w.name, statusPill(w), w.maintenanceUntil ? maintPill(w) : null),
         h('div', { class: 'url' }, h('a', { href: w.url, target: '_blank', rel: 'noopener noreferrer' }, w.url, ' ', ic('external')), w.tags.length ? '  ·  ' + w.tags.join(', ') : ''))),
       h('div', { class: 'actions', style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         unread || domainOpen ? h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/ack`, { method: 'POST' }); toast('Marqué comme vérifié'); route(); }) }, ic('check'), 'Tout est normal') : null,
         h('button', { class: 'btn', onclick: doCheck }, ic('refresh'), 'Vérifier maintenant'),
         h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/toggle`, { method: 'POST' }); toast(w.enabled ? 'Surveillance mise en pause' : 'Surveillance reprise'); route(); }) }, ic(w.enabled ? 'pause' : 'play'), w.enabled ? 'Pause' : 'Reprendre'),
+        h('button', { class: 'btn', title: 'Planifier une maintenance : alertes retenues pendant la fenêtre', onclick: guard(async () => { if (await maintenanceDialog(w)) { toast('Maintenance enregistrée'); route(); } }) }, ic('wrench'), 'Maintenance'),
         h('button', { class: 'btn', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier'),
         h('button', { class: 'btn icon danger', title: 'Supprimer', 'aria-label': 'Supprimer', onclick: guard(async () => {
           if (!(await confirmDialog({ title: `Supprimer « ${w.name} » ?`, text: "L'historique, les versions enregistrées et les alertes de ce site seront définitivement effacés.", confirm: 'Supprimer', danger: true }))) return;
@@ -783,6 +828,20 @@ async function viewDetail(id, tab, tok, openSnap) {
           toast('Site supprimé');
           location.hash = '#/';
         }) }, ic('trash')))));
+
+  for (const m of w.maintenance || []) {
+    const active = m.start <= Date.now();
+    root.append(h('div', { class: 'incident info', 'data-maintenance': m.id }, ic('wrench'),
+      h('div', {}, h('b', {}, active ? `Maintenance en cours jusqu'à ${dt(m.end)}` : `Maintenance prévue du ${dt(m.start)} au ${dt(m.end)}`),
+        h('p', {}, m.note ? `${m.note}. ` : '', active
+          ? 'VigieWeb continue de contrôler le site, mais retient ses alertes et ne compte aucune panne. S\'il s\'est passé quelque chose, un seul message récapitulatif est envoyé à la fin.'
+          : `Durée : ${fmtDur(m.end - m.start)}. Les alertes de ce site seront retenues pendant la fenêtre.`)),
+      h('button', { class: 'btn sm', style: { marginLeft: 'auto', alignSelf: 'center', flex: 'none' }, onclick: guard(async () => {
+        await api(`/maintenance/${m.id}`, { method: 'DELETE' });
+        toast(active ? 'Maintenance terminée : la surveillance reprend' : 'Maintenance annulée');
+        route();
+      }) }, active ? 'Terminer maintenant' : 'Annuler')));
+  }
 
   for (const i of w.incidents) {
     root.append(h('div', { class: `incident ${i.severity === 'warning' ? 'warn' : ''}` }, ic('alert'),
@@ -1133,10 +1192,17 @@ function cmsTable(title, items) {
       h('tbody', {}, ...rows.map((r) => h('tr', {},
         h('td', {}, r.name, r.active === false ? h('span', { class: 'muted' }, ' · inactif') : null),
         h('td', { class: 'mono' }, r.current || '—'),
-        h('td', { class: 'mono' }, r.available || '—'),
+        h('td', { class: 'mono' }, r.available || '—', r.available && r.since ? h('span', { class: 'muted', title: 'Depuis le premier relevé de VigieWeb qui voit cette version disponible' }, ` · ${fmtDur(Date.now() - r.since)}`) : null),
         h('td', {}, cmsRowState(r)),
       )))))
       : h('div', { class: 'empty', style: { padding: '22px' } }, h('p', { style: { margin: 0 } }, 'Rien à afficher pour le moment.')));
+}
+
+const dUtc = (ts) => new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+function phpPill(sup) {
+  if (sup?.status === 'ended') return h('span', { class: 'pill crit', style: { marginLeft: '10px' }, title: 'Plus aucun correctif de sécurité n\'est publié pour cette branche de PHP.' }, sup.endsAt ? `PHP ${sup.branch} non maintenu depuis le ${dUtc(sup.endsAt)}` : `PHP ${sup.branch} non maintenu`);
+  if (sup?.status === 'ending') return h('span', { class: 'pill warn', style: { marginLeft: '10px' } }, `Fin du support de PHP ${sup.branch} le ${dUtc(sup.endsAt)}`);
+  return null;
 }
 
 function updatesTab(w) {
@@ -1164,11 +1230,11 @@ function updatesTab(w) {
   }
   root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
     h('div', { class: 'card-head' },
-      h('div', {}, h('h2', {}, `${kind} ${report.cmsVersion || report.core?.current || ''}`.trim()), h('span', { class: 'muted' }, `PHP ${report.php || '—'} · relevé ${rel(report.checkedAt)}`)),
+      h('div', {}, h('h2', {}, `${kind} ${report.cmsVersion || report.core?.current || ''}`.trim()), h('span', { class: 'muted' }, `PHP ${report.php || '—'} · relevé ${rel(report.checkedAt)}`), phpPill(report.phpSupport)),
       refresh),
     report.error ? h('div', { class: 'card-pad', style: { paddingBottom: 0 } }, h('div', { class: 'callout' }, ic('alert'), h('div', {}, report.error, h('span', { class: 'muted' }, ' Le tableau reste celui du dernier relevé réussi.')))) : null,
   ));
-  root.append(cmsTable('Noyau', report.core ? [{ name: kind, current: report.core.current, available: report.core.available, known: report.core.known, active: true }] : []));
+  root.append(cmsTable('Noyau', report.core ? [{ name: kind, current: report.core.current, available: report.core.available, known: report.core.known, since: report.core.since, active: true }] : []));
   root.append(cmsTable(extLabel, report.extensions));
   root.append(cmsTable('Thèmes', report.themes));
   return root;
@@ -1284,7 +1350,7 @@ function alertList(alerts, showSite = true) {
         h('div', { class: 'meta' }, h('span', { title: new Date(a.ts).toLocaleString('fr-FR') }, `${dt(a.ts)} · ${rel(a.ts)}`),
           h('span', { class: `pill ${a.severity === 'critical' ? 'crit' : a.severity === 'warning' ? 'warn' : a.severity === 'recovery' ? 'ok' : 'info'}` }, SEV_LABEL[a.severity]),
           a.snapshotId && a.prevSnapshotId ? h('a', { href: `#/sites/${a.watchId}/modifications/${a.snapshotId}` }, 'Voir les changements') : null,
-          a.notified ? h('span', { class: 'chip ok' }, ic('send'), 'Envoyé sur Telegram') : a.notifyError ? h('span', { class: 'chip crit', title: a.notifyError }, ic('alert'), 'Échec Telegram') : null))));
+          a.maintenance ? h('span', { class: 'chip', title: 'Retenue pendant une maintenance : non envoyée sur Telegram, reprise dans le message récapitulatif de fin.' }, ic('wrench'), 'Retenue (maintenance)') : a.notified ? h('span', { class: 'chip ok' }, ic('send'), 'Envoyé sur Telegram') : a.notifyError ? h('span', { class: 'chip crit', title: a.notifyError }, ic('alert'), 'Échec Telegram') : null))));
   }
   return box;
 }
@@ -1382,6 +1448,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     cmsType: h('select', { class: 'input', value: (c.cms?.type === 'wordpress' || c.cms?.type === 'prestashop') ? c.cms.type : '' }, h('option', { value: '' }, 'Aucun'), h('option', { value: 'wordpress' }, 'WordPress'), h('option', { value: 'prestashop' }, 'PrestaShop')),
     cmsToken: h('input', { class: 'input mono', value: c.cms?.token || '', autocomplete: 'off', spellcheck: false }),
     cmsPath: h('input', { class: 'input mono', placeholder: 'racine du site', value: c.cms?.path || '', autocomplete: 'off', spellcheck: false }),
+    cmsAlerts: h('input', { type: 'checkbox', checked: c.cms?.alerts !== false }),
     cmsEvery: h('select', { class: 'input', value: String(c.cms?.intervalMin || 720) }, ...[[60, 'Toutes les heures'], [360, 'Toutes les 6 heures'], [720, 'Toutes les 12 heures'], [1440, 'Toutes les 24 heures'], [10080, 'Tous les 7 jours']].map(([v, l]) => h('option', { value: String(v) }, l))),
   };
   const checks = {};
@@ -1439,6 +1506,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
       h('div', { class: 'field' }, h('label', {}, 'Dossier'), f.cmsPath, h('span', { class: 'hint' }, 'Seulement si le CMS n’est pas à la racine du domaine (ex. blog).')),
       h('div', { class: 'field' }, h('label', {}, 'Fréquence du relevé'), f.cmsEvery)),
     h('div', { class: 'field' }, h('label', {}, 'Adresse interrogée'), cmsEndpointEl),
+    toggle(f.cmsAlerts, 'Alerter si des mises à jour tardent ou si PHP n’est plus maintenu', 'Alerte Telegram quand une mise à jour reste en attente plus longtemps que le délai réglé dans Réglages, ou quand la version de PHP ne reçoit plus de correctifs de sécurité. À couper si vous ne maîtrisez pas ces versions (hébergement mutualisé, site client).'),
     h('p', {}, 'Téléchargez le plugin ', h('span', { 'data-cms-kind': '' }, ''), ', installez-le, activez-le, puis collez le jeton.',
       h('span', {}, ' '),
       h('a', { href: '/api/plugins/wordpress.zip' }, 'WordPress'), ' · ', h('a', { href: '/api/plugins/prestashop.zip' }, 'PrestaShop')),
@@ -1509,7 +1577,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
           selector: f.selector.value, excludeSelector: f.exclude.value, ignoreRegex: list(f.ignore), images: f.images.checked,
           forbidden: list(f.forbidden), required: list(f.required), userAgent: f.ua.value, timeoutS: Number(f.timeout.value), failThreshold: Number(f.fails.value),
           minChangePct: Number(f.minPct.value), allowedHosts: list(f.allowed, /[,\n]/), headers, notify: f.notify.checked, minSeverity: f.minSev.value,
-          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value) },
+          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value), alerts: f.cmsAlerts.checked },
         },
       };
       btn.disabled = true;
@@ -1553,6 +1621,7 @@ async function viewSettings() {
     base: h('input', { class: 'input', placeholder: 'http://monserveur:3000 (pour les liens dans les messages)', value: s.baseUrl }),
     interval: h('select', { class: 'input', value: String(s.defaultInterval) }, ...INTERVALS.map(([v, l]) => h('option', { value: String(v) }, l))),
     ua: h('input', { class: 'input', value: s.userAgent }),
+    cmsDays: h('select', { class: 'input', value: String(s.cmsAfterDays) }, ...[...new Set([1, 3, 7, 14, 30, s.cmsAfterDays])].sort((a, b) => a - b).map((v) => h('option', { value: String(v) }, `${v} ${v > 1 ? 'jours' : 'jour'}${v === 7 ? ' (par défaut)' : ''}`))),
     kw: h('textarea', { class: 'input mono', style: { minHeight: '190px' }, value: s.builtinKeywords.join('\n') }),
   };
   const toggle = (input, title, desc) => h('label', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, title), h('span', {}, desc)), h('span', { class: 'switch' }, input, h('i')));
@@ -1575,7 +1644,7 @@ async function viewSettings() {
   const save = guard(async () => {
     S.settings = await api('/settings', { method: 'PUT', body: {
       telegram: { token: f.token.value.trim(), chatId: f.chat.value.trim(), enabled: f.enabled.checked, sendRecovery: f.recovery.checked, includeDiff: f.diff.checked, sendScreenshot: f.photo.checked, minSeverity: f.minSev.value },
-      baseUrl: f.base.value, defaultInterval: Number(f.interval.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
+      baseUrl: f.base.value, defaultInterval: Number(f.interval.value), cmsAfterDays: Number(f.cmsDays.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
     } });
     toast('Réglages enregistrés');
     mountShell(); route();
@@ -1608,6 +1677,8 @@ async function viewSettings() {
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '14px' } }, 'Détection'),
         h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Fréquence par défaut'), f.interval), h('div', { class: 'field' }, h('label', {}, 'User-Agent par défaut'), f.ua)),
+        h('div', { class: 'field' }, h('label', {}, 'Mises à jour WordPress / PrestaShop : alerter après'), f.cmsDays,
+          h('span', { class: 'hint' }, 'Une mise à jour du CMS, d’une extension ou d’un thème qui reste en attente plus longtemps que ce délai déclenche une alerte (le noyau devient critique au bout de 30 jours). Peut se couper site par site.')),
         h('div', { class: 'toggle-row', style: { borderTop: 0, paddingTop: 0, marginBottom: '14px' } }, h('div', { class: 'tt' }, h('b', {}, 'Navigateur pour les captures d\'écran'),
           h('span', {}, s.screenshots.available ? s.screenshots.browser : 'Aucun Chrome / Chromium détecté : installez-en un ou définissez CHROME_PATH.')),
           h('span', { class: `chip ${s.screenshots.available ? 'ok' : 'warn'}` }, ic(s.screenshots.available ? 'check' : 'alert'), s.screenshots.available ? 'Détecté' : 'Introuvable')),

@@ -126,6 +126,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .pill.crit { background: var(--crit-soft); color: var(--crit); }
 .pill.info { background: var(--info-soft); color: var(--info); }
 .pill.mute { background: var(--surface-2); color: var(--muted); }
+.pill.icon-only { padding: 0 6px; }
 .pill .dot { width: 6px; height: 6px; box-shadow: none !important; background: currentColor; }
 .badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--crit); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-grid; place-items: center; }
 .badge.warn { background: var(--warn); color: var(--bg); }
@@ -205,6 +206,8 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .incident.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
 .incident > .ic { font-size: 20px; color: var(--crit); margin-top: 2px; }
 .incident.warn > .ic { color: var(--warn); }
+.incident.info { background: var(--info-soft); border-color: color-mix(in srgb, var(--info) 30%, transparent); }
+.incident.info > .ic { color: var(--info); }
 .incident b { display: block; }
 .incident p { color: var(--text-2); font-size: 13px; white-space: pre-line; word-break: break-word; }
 .incident small { color: var(--muted); }

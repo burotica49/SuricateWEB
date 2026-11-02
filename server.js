@@ -12,9 +12,11 @@ import {
   uptimeBetween, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, closeOutage, DAY_MS, UPTIME_PERIODS,
   getScreenshot, listScreenshots, latestScreenshots, SHOTS_DIR,
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
+  addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap,
 } from './src/db.js';
 import { enqueue, isRunning, startScheduler } from './src/scheduler.js';
 import { cmsConfigError, pollCms } from './src/cms.js';
+import { phpSupport } from './src/cms-alerts.js';
 import { zipDirectory } from './src/zip.js';
 import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, NO_CHROME } from './src/screenshot.js';
 import { fetchPage, analyze, describeError } from './src/checker.js';
@@ -208,6 +210,7 @@ function summarize(w, ctx) {
     uptime: domainOnly ? null : uptimeBetween(w, now - DAY_MS, now, now).uptime,
     uptime30: domainOnly ? null : uptimeBetween(w, now - 30 * DAY_MS, now, now).uptime,
     tlsExpires: w.state.tls?.expires || null, domainExpires: w.state.rdap?.expires || null,
+    maintenanceUntil: ctx.maint?.get(w.id)?.end ?? null,
   };
 }
 
@@ -232,12 +235,12 @@ function buildCtx() {
   for (const w of db.prepare('SELECT id FROM watches').all()) {
     (stats[w.id] ||= {}).spark = spark.all(w.id).reverse().map((r) => (r.ok ? r.ms : null));
   }
-  return { unread, stats, shots: latestScreenshots(), domainExpiry };
+  return { unread, stats, shots: latestScreenshots(), domainExpiry, maint: activeMaintenanceMap() };
 }
 
 const alertRow = (r) => ({
   id: r.id, watchId: r.watch_id, watchName: r.watch_name, ts: r.ts, severity: r.severity, type: r.type, title: r.title,
-  detail: r.detail, snapshotId: r.snapshot_id, prevSnapshotId: r.prev_snapshot_id, read: !!r.read, notified: !!r.notified, notifyError: r.notify_error,
+  detail: r.detail, snapshotId: r.snapshot_id, prevSnapshotId: r.prev_snapshot_id, read: !!r.read, notified: !!r.notified, notifyError: r.notify_error, maintenance: r.maintenance > 0,
 });
 
 const maskToken = (t) => (t ? t.slice(0, 4) + '••••••••' + t.slice(-4) : '');
@@ -247,7 +250,7 @@ function publicSettings() {
   return {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
-    retention: s.retention, authUser: CREDS.user, defaultKeywords: DEFAULT_KEYWORDS,
+    retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: CREDS.user, defaultKeywords: DEFAULT_KEYWORDS,
     screenshots: { available: engine.available(), browser: chromePath() },
     app: APP_INFO,
   };
@@ -334,7 +337,8 @@ route('GET', '/api/watches/:id', (ctx) => {
       server: state.server || '', scripts: state.scripts?.length ?? null, linkHosts: state.linkHosts?.length ?? null,
       baseline: !!state.baseline,
     },
-    cms: state.cms || null,
+    cms: state.cms ? { ...state.cms, phpSupport: phpSupport(state.cms.php) } : null,
+    maintenance: listMaintenance(w.id),
   };
 });
 
@@ -452,6 +456,29 @@ route('POST', '/api/watches/:id/cms', async (ctx) => {
   if (!w) throw new HttpError(404, 'Site introuvable');
   if (w.config.mode === 'domain' || !w.config.cms.type) throw new HttpError(400, 'Aucun CMS configuré pour ce site');
   return pollCms(w.id, { refresh: true });
+});
+
+// ───────────── Fenêtres de maintenance ─────────────
+
+route('POST', '/api/watches/:id/maintenance', (ctx) => {
+  const w = getWatch(Number(ctx.params.id));
+  if (!w) throw new HttpError(404, 'Site introuvable');
+  const now = Date.now();
+  const minutes = Math.round(clamp(ctx.body.minutes, 5, 7 * 24 * 60, 60));
+  const asked = Number(ctx.body.start);
+  // Un début absent ou déjà passé veut dire « maintenant » ; au plus 90 jours à l'avance.
+  const start = Number.isFinite(asked) && asked > now ? Math.min(asked, now + 90 * DAY_MS) : now;
+  const note = String(ctx.body.note ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 140);
+  addMaintenance({ watchId: w.id, start, end: start + minutes * 60e3, note });
+  return { ok: true, maintenance: listMaintenance(w.id) };
+});
+
+route('DELETE', '/api/maintenance/:id', (ctx) => {
+  const r = endMaintenance(Number(ctx.params.id));
+  if (!r) throw new HttpError(404, 'Fenêtre introuvable ou déjà terminée');
+  // Fenêtre arrêtée avant son terme : la surveillance reprend aussitôt (le récapitulatif part sans attendre l'échéance prévue).
+  if (r.start <= Date.now()) enqueue(r.watchId);
+  return { ok: true, maintenance: listMaintenance(r.watchId) };
 });
 
 route('POST', '/api/watches/:id/check', async (ctx) => {
@@ -626,6 +653,7 @@ route('PUT', '/api/settings', (ctx) => {
   }
   if (b.baseUrl !== undefined) patch.baseUrl = String(b.baseUrl).trim().replace(/\/+$/, '');
   if (b.defaultInterval !== undefined) patch.defaultInterval = clamp(b.defaultInterval, 1, 10080, 15);
+  if (b.cmsAfterDays !== undefined) patch.cmsAfterDays = Math.round(clamp(b.cmsAfterDays, 1, 90, 7));
   if (b.userAgent !== undefined) patch.userAgent = String(b.userAgent).trim() || cur.userAgent;
   if (Array.isArray(b.builtinKeywords)) patch.builtinKeywords = b.builtinKeywords.map((s) => String(s).trim()).filter(Boolean).slice(0, 300);
   saveSettings(patch);

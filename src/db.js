@@ -130,6 +130,16 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   max_ms INTEGER,
   PRIMARY KEY (watch_id, day)
 );
+
+-- Fenêtres de maintenance : pendant [start, end[, les alertes du site sont retenues et aucune panne n'est comptée.
+CREATE TABLE IF NOT EXISTS maintenance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  start INTEGER NOT NULL,
+  end INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_maintenance_watch ON maintenance(watch_id, end);
 `);
 
 // Colonnes ajoutées après la 1re version : migration idempotente (SQLite n'a pas de « ADD COLUMN IF NOT EXISTS »).
@@ -145,6 +155,9 @@ CREATE TABLE IF NOT EXISTS daily_stats (
   }
   // 0 = pas de relevé CMS planifié. Une valeur > 0 est l'échéance du prochain appel au plugin.
   if (!cols.has('next_cms')) db.exec('ALTER TABLE watches ADD COLUMN next_cms INTEGER NOT NULL DEFAULT 0');
+  // Alertes survenues pendant une maintenance : 1 = retenue (non envoyée), 2 = déjà reprise dans le récapitulatif de fin.
+  const acols = new Set(db.prepare('PRAGMA table_info(alerts)').all().map((c) => c.name));
+  if (!acols.has('maintenance')) db.exec('ALTER TABLE alerts ADD COLUMN maintenance INTEGER NOT NULL DEFAULT 0');
 }
 
 const json = (s, fallback) => {
@@ -178,6 +191,8 @@ const DEFAULT_SETTINGS = {
   userAgent: 'Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)',
   builtinKeywords: DEFAULT_KEYWORDS,
   retention: { checks: 10000, snapshots: 300, screenshots: 168 },
+  // Une mise à jour du CMS en attente depuis plus de N jours déclenche une alerte.
+  cmsAfterDays: 7,
   sessionSecret: '',
 };
 
@@ -263,7 +278,7 @@ export const defaultConfig = () => ({
     redirect: true, status: true, tls: true, dns: true, rdap: true, server: true,
   },
   // Connecteur WordPress / PrestaShop : VigieWeb interroge le plugin (intervalMin en minutes).
-  cms: { type: '', token: '', path: '', intervalMin: 720 },
+  cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true },
 });
 
 const strList = (v, max = 100) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, max);
@@ -309,6 +324,7 @@ export function normalizeConfig(input = {}) {
     token: String(rawCms.token ?? '').trim().slice(0, 200),
     path: String(rawCms.path ?? '').trim().replace(/^\/+|\/+$/g, '').slice(0, 120),
     intervalMin: Math.round(clamp(rawCms.intervalMin, 60, 10080, 720)),
+    alerts: rawCms.alerts !== false,
   };
   return c;
 }
@@ -579,9 +595,54 @@ export function insertCheck(c) {
 
 export function insertAlert(a) {
   const r = db
-    .prepare('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read) VALUES(?,?,?,?,?,?,?,?,?)')
-    .run(a.watchId, Date.now(), a.severity, a.type, a.title, a.detail ?? '', a.snapshotId ?? null, a.prevSnapshotId ?? null, a.severity === 'recovery' ? 1 : 0);
+    .prepare('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read, maintenance) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    // Une alerte retenue pendant une maintenance est d'emblée « lue » : c'est le récapitulatif de fin qui prévient.
+    .run(a.watchId, Date.now(), a.severity, a.type, a.title, a.detail ?? '', a.snapshotId ?? null, a.prevSnapshotId ?? null, a.severity === 'recovery' || a.maintenance ? 1 : 0, a.maintenance ? 1 : 0);
   return Number(r.lastInsertRowid);
+}
+
+// ───────────── Fenêtres de maintenance ─────────────
+
+const maintRow = (r) => ({ id: r.id, watchId: r.watch_id, start: r.start, end: r.end, note: r.note });
+
+export function addMaintenance({ watchId, start, end, note = '' }) {
+  const id = Number(db.prepare('INSERT INTO maintenance(watch_id, start, end, note) VALUES(?,?,?,?)').run(watchId, start, end, String(note).slice(0, 140)).lastInsertRowid);
+  return maintRow(db.prepare('SELECT * FROM maintenance WHERE id = ?').get(id));
+}
+
+/** Fenêtre en cours pour ce site (celle qui se termine le plus tard), ou null. */
+export function activeMaintenance(watchId, now = Date.now()) {
+  const r = db.prepare('SELECT * FROM maintenance WHERE watch_id = ? AND start <= ? AND end > ? ORDER BY end DESC LIMIT 1').get(watchId, now, now);
+  return r ? maintRow(r) : null;
+}
+
+/** Fenêtres en cours et à venir, dans l'ordre chronologique. */
+export function listMaintenance(watchId, now = Date.now()) {
+  return db.prepare('SELECT * FROM maintenance WHERE watch_id = ? AND end > ? ORDER BY start').all(watchId, now).map(maintRow);
+}
+
+/** Pour le tableau de bord : site → fenêtre en cours. */
+export function activeMaintenanceMap(now = Date.now()) {
+  const map = new Map();
+  for (const r of db.prepare('SELECT * FROM maintenance WHERE start <= ? AND end > ? ORDER BY end').all(now, now)) map.set(r.watch_id, maintRow(r));
+  return map;
+}
+
+/** Termine une fenêtre en cours (elle s'arrête maintenant) ou supprime une fenêtre à venir. */
+export function endMaintenance(id, now = Date.now()) {
+  const r = db.prepare('SELECT * FROM maintenance WHERE id = ?').get(id);
+  if (!r || r.end <= now) return null;
+  if (r.start > now) db.prepare('DELETE FROM maintenance WHERE id = ?').run(id);
+  else db.prepare('UPDATE maintenance SET end = ? WHERE id = ?').run(now, id);
+  return maintRow(r);
+}
+
+/** Alertes retenues pendant une maintenance et pas encore reprises dans un récapitulatif. */
+export const pendingMaintenanceAlerts = (watchId) =>
+  db.prepare("SELECT id, severity, type, title FROM alerts WHERE watch_id = ? AND maintenance = 1 AND severity != 'recovery' ORDER BY id").all(watchId);
+
+export function markMaintenanceSummarized(watchId) {
+  db.prepare('UPDATE alerts SET maintenance = 2 WHERE watch_id = ? AND maintenance = 1').run(watchId);
 }
 
 export function markNotified(ids, error = null) {
@@ -695,6 +756,7 @@ export function prune(watchId) {
   const cutoff = Date.now() - 400 * DAY_MS;
   db.prepare('DELETE FROM outages WHERE watch_id = ? AND end IS NOT NULL AND end < ?').run(watchId, cutoff);
   db.prepare('DELETE FROM daily_stats WHERE watch_id = ? AND day < ?').run(watchId, Math.floor(cutoff / DAY_MS));
+  db.prepare('DELETE FROM maintenance WHERE watch_id = ? AND end < ?').run(watchId, Date.now() - 90 * DAY_MS);
   const { checks, snapshots } = getSettings().retention;
   db.prepare('DELETE FROM checks WHERE watch_id = ? AND id NOT IN (SELECT id FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT ?)').run(watchId, watchId, checks);
   db.prepare('DELETE FROM snapshots WHERE watch_id = ? AND id NOT IN (SELECT id FROM snapshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?)').run(watchId, watchId, snapshots);

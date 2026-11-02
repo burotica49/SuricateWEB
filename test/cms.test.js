@@ -17,11 +17,13 @@ const TOKEN = 'jeton-de-test-assez-long';
 
 test('config CMS : défauts, domaine seul, chemin invalide', () => {
   const d = normalizeConfig({});
-  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720 });
+  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720, alerts: true });
   const wp = normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, path: '/blog/', intervalMin: 10 } });
   assert.equal(wp.cms.type, 'wordpress');
   assert.equal(wp.cms.path, 'blog');
   assert.equal(wp.cms.intervalMin, 60);
+  assert.equal(wp.cms.alerts, true, 'alertes de mises à jour actives par défaut');
+  assert.equal(normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, alerts: false } }).cms.alerts, false, 'et désactivables site par site');
   assert.equal(normalizeConfig({ mode: 'domain', cms: { type: 'prestashop', token: TOKEN } }).cms.type, '');
   assert.equal(cmsConfigError({ type: 'wordpress', token: 'court', path: '' }), 'Le jeton doit contenir au moins 16 caractères');
   assert.equal(cmsConfigError({ type: 'wordpress', token: TOKEN, path: '../secret' }), 'Le chemin du CMS est invalide');

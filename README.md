@@ -12,7 +12,7 @@ Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io)
 
 ## Sommaire
 
-[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop-mises-à-jour) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
+[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop-mises-à-jour) · [Réduire le bruit](#réduire-le-bruit) · [Maintenance](#fenêtres-de-maintenance) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
 
 ## Aperçu
 
@@ -48,7 +48,7 @@ Un seul message par contrôle, avec la sévérité, le détail, un extrait des l
 
 ### Mises à jour WordPress et PrestaShop
 
-Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **version de PHP** et les **mises à jour disponibles** du noyau, des extensions (modules) et des thèmes, avec la version actuelle en regard de la version disponible. [Mise en place et garde-fous](#wordpress-et-prestashop-mises-à-jour).
+Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **version de PHP** et les **mises à jour disponibles** du noyau, des extensions (modules) et des thèmes, avec la version actuelle en regard de la version disponible, et prévient quand une mise à jour tarde ou que PHP n'est plus maintenu. [Mise en place, alertes et garde-fous](#wordpress-et-prestashop-mises-à-jour).
 
 ![Onglet Mises à jour : PHP, noyau, extensions et thèmes avec versions actuelles et disponibles](docs/screenshots/mises-a-jour.png)
 
@@ -120,7 +120,7 @@ Pour le laisser tourner en continu : `pm2 start server.js --name vigieweb --node
 npm run demo
 ```
 
-Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : VigieWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. Les relevés de mises à jour de « Cabinet Martin » (WordPress) et « Nova Boutique » (PrestaShop) sont fictifs. En mode démo, les contrôles, les captures et les relevés sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
+Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : VigieWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. Les relevés de mises à jour de « Cabinet Martin » (WordPress) et « Nova Boutique » (PrestaShop) sont fictifs, et « Wiki technique » est en maintenance. En mode démo, les contrôles, les captures et les relevés sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
 
 Les images de ce document sont produites par le même jeu de données :
 
@@ -170,7 +170,7 @@ docker run -d --name vigieweb -p 3000:3000 -v vigie-data:/data \
 
 ![Réglages : notifications Telegram](docs/screenshots/reglages.png)
 
-Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **adresse de VigieWeb** (ajoute un lien « Ouvrir dans VigieWeb » à chaque message). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
+Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **adresse de VigieWeb** (ajoute un lien « Ouvrir dans VigieWeb » à chaque message). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
 
 Un seul message est envoyé par contrôle, même si plusieurs anomalies sont détectées. Il contient la sévérité, le site, le détail et un extrait des lignes modifiées.
 
@@ -273,7 +273,7 @@ Le premier contrôle établit la référence et ne déclenche aucune alerte de c
 
 ## WordPress et PrestaShop (mises à jour)
 
-Pour un site WordPress ou PrestaShop, VigieWeb ajoute l'onglet **Mises à jour** : la **version de PHP** du serveur et, pour le noyau, les extensions (les modules, sous PrestaShop) et les thèmes, la **version installée** et la **version disponible**. C'est un tableau de bord : un relevé n'envoie pas d'alerte Telegram.
+Pour un site WordPress ou PrestaShop, VigieWeb ajoute l'onglet **Mises à jour** : la **version de PHP** du serveur et, pour le noyau, les extensions (les modules, sous PrestaShop) et les thèmes, la **version installée** et la **version disponible**. Une mise à jour qui tarde, ou une version de PHP qui n'est plus maintenue, déclenche une [alerte Telegram](#alertes-mises-à-jour-en-retard-et-fin-de-support-de-php).
 
 | WordPress | PrestaShop |
 |---|---|
@@ -311,6 +311,24 @@ L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fix
 - VigieWeb ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
 - **Actualiser** demande au plugin de recalculer ses données. Sous WordPress, le plugin vide alors le cache des mises à jour, au plus **une fois toutes les 15 minutes**, pour ne pas solliciter wordpress.org à chaque clic.
 
+### Alertes : mises à jour en retard et fin de support de PHP
+
+VigieWeb alerte comme pour un certificat qui expire : **une fois à l'apparition**, jamais en boucle, puis « ✅ Rétabli » quand la situation est réglée. Tant qu'elle dure, le site reste « À vérifier » (« Alerte » si elle est critique) sur le tableau de bord et l'alerte figure dans l'encadré en haut de sa page.
+
+| Alerte | Quand | Gravité |
+|---|---|---|
+| **Noyau en retard** : « WordPress 6.8.3 est disponible depuis 12 jours » | une mise à jour du noyau est en attente depuis plus que le délai réglé | avertissement ; **critique à partir de 30 jours** |
+| **Mises à jour en attente** : « 2 mises à jour en attente depuis plus de 7 jours » | des extensions (modules) ou des thèmes sont en retard : un seul message, avec la liste (8 lignes au plus), la version actuelle, la version disponible et l'ancienneté | avertissement |
+| **PHP en fin de support** : « PHP 8.2 ne sera plus maintenu le 31/12/2026 » | 90 jours avant la fin du support de sécurité de la branche installée | avertissement |
+| **PHP non maintenu** : « PHP 8.0 n'est plus maintenu » | la branche ne reçoit plus aucun correctif de sécurité | **critique** |
+
+- **Le délai** se règle dans *Réglages › Détection* : 1, 3, **7 (par défaut)**, 14 ou 30 jours.
+- **L'ancienneté** est comptée depuis le **premier relevé de VigieWeb qui voit la mise à jour** : les CMS ne communiquent pas la date de publication. Elle continue tant que la version proposée reste la même, et repart de zéro si une version encore plus récente sort. Elle s'affiche à côté de la version disponible (« 6.8.3 · 12 j »).
+- **Une aggravation est annoncée de nouveau** : noyau qui passe à 30 jours, PHP dont le support se termine.
+- **Les dates de fin de support de PHP** viennent de [php.net/supported-versions](https://www.php.net/supported-versions.php) et sont écrites dans `src/cms-alerts.js` : à relire une fois par an et à compléter quand une nouvelle branche sort. Une branche absente de ce tableau parce que trop récente n'est jamais signalée.
+- **Site par site**, l'interrupteur « Alerter si des mises à jour tardent ou si PHP n'est plus maintenu » (bloc *WordPress / PrestaShop* du formulaire) coupe ces alertes sans message « rétabli ». Il convient quand vous ne maîtrisez pas ces versions (hébergement mutualisé, site d'un client).
+- Les alertes sont calculées à chaque contrôle à partir du **dernier relevé réussi**. Si le plugin devient injoignable, VigieWeb conserve ce relevé et l'affiche avec l'erreur : il ne prévient pas encore que le relevé lui-même échoue.
+
 ### Ce que le relevé ne peut pas dire
 
 - Une mise à jour de **PHP** : seule la version installée est lue.
@@ -326,6 +344,39 @@ L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fix
 - **Seuil de modification** (%) et **niveau minimal de notification** (global ou par site).
 - Désactivez individuellement chaque famille de contrôle sur un site donné.
 
+## Fenêtres de maintenance
+
+Mettre à jour un site, changer d'hébergeur ou renouveler un certificat provoque des pannes, des changements de contenu et des alertes critiques que vous causez vous-même. À force, on cesse de les lire. Une **fenêtre de maintenance** retient les alertes du site pendant l'intervention, puis reprend toute seule.
+
+![Page d'un site avec une maintenance en cours et une maintenance prévue](docs/screenshots/maintenance.png)
+
+### Planifier
+
+Sur la page d'un site, le bouton **Maintenance** ouvre un dialogue :
+
+<img src="docs/screenshots/maintenance-dialogue.png" alt="Dialogue de planification d'une maintenance : début, durée et note" width="420">
+
+- **Commencer** : maintenant, ou à une date et une heure précises (jusqu'à 90 jours à l'avance) ;
+- **Durée** : de 30 minutes à 3 jours (l'API accepte de 5 minutes à 7 jours) ;
+- **Note** facultative (« Mise à jour de WordPress »).
+
+Une fenêtre en cours ou prévue s'affiche en bandeau bleu en haut de la page du site, avec **Terminer maintenant** (la surveillance reprend aussitôt, par un contrôle immédiat) ou **Annuler** (fenêtre à venir). Dans la liste des sites, une icône « clé à molette » signale les sites en maintenance ; son infobulle donne l'heure de fin. Une fenêtre ne concerne qu'**un site** : pour un serveur qui en héberge plusieurs, planifiez chacun.
+
+### Ce qui se passe pendant la fenêtre
+
+- **VigieWeb continue de contrôler le site** : les mesures et les captures restent enregistrées, rien n'est perdu.
+- **Les alertes sont retenues** : elles apparaissent dans le journal avec la mention *Retenue (maintenance)*, déjà lues, et **ne partent pas sur Telegram**.
+- **Aucune panne n'est comptée** : un site coupé pendant l'intervention n'ouvre pas de panne et ne baisse pas la disponibilité. Les échecs de la fenêtre ne s'accumulent pas : si le site est encore coupé à la reprise, la panne est datée du premier échec **après** la fenêtre.
+- **Un état anormal apparu pendant la fenêtre** (texte de piratage, certificat invalide…) est annoncé à la reprise s'il est toujours là. S'il a disparu entre-temps, il n'y a pas de message « rétabli » : personne n'avait été prévenu.
+
+### À la reprise : un seul récapitulatif
+
+Si des alertes d'avertissement ou critiques ont été retenues, VigieWeb envoie **un seul message** « Fin de la maintenance : N alertes retenues pendant la fenêtre », qui les liste et prend la gravité la plus haute. Les simples informations n'en déclenchent pas. Quand un contrôle a eu lieu pendant la fenêtre, le suivant est programmé juste après sa fin, pour que ce message n'attende pas l'intervalle normal.
+
+**Maintenance ou pause ?** La pause arrête tout contrôle, donc toute alerte, jusqu'à ce que vous la leviez : si vous l'oubliez, le site n'est plus surveillé. La maintenance continue de mesurer, garde la trace de ce qui s'est passé, et se termine à l'heure prévue.
+
+> **À savoir** : un changement ponctuel survenu pendant la fenêtre (contenu remplacé, script ajouté) ne vous est signalé qu'à la fin, dans le récapitulatif. Pour une intervention à risque, gardez la fenêtre courte et ouvrez le journal des alertes avant de la terminer.
+
 ## Limites à connaître
 
 - **La comparaison de contenu lit le HTML tel que le serveur le renvoie**, sans l'exécuter. Le contenu généré uniquement par JavaScript (SPA) n'est pas comparé (la capture d'écran, elle, l'affiche), mais DNS, TLS, RDAP, redirections et scripts restent surveillés.
@@ -335,6 +386,7 @@ L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fix
 - **Pas de rétroactivité** : la disponibilité n'est calculée qu'à partir de l'installation de cette fonction ; avant, les sites sont considérés disponibles.
 - Les résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9) doivent être joignables en UDP/53 depuis le serveur ; sinon la cohérence entre résolveurs est simplement ignorée.
 - **Le relevé des mises à jour n'est pas un scanner de vulnérabilités** : il compare des numéros de version fournis par le CMS (voir [ce qu'il ne peut pas dire](#ce-que-le-relevé-ne-peut-pas-dire)).
+- **Un plugin devenu injoignable n'est pas signalé** : VigieWeb garde le dernier relevé et affiche l'erreur dans l'onglet *Mises à jour*, sans alerter.
 - Les adresses IP derrière un CDN tournent : VigieWeb ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
 
 ## Architecture
@@ -350,6 +402,7 @@ src/auth.js          identifiants lus dans l'environnement, comparaison en temps
 src/env.js           chargement du .env (avant l'ouverture de la base)
 src/scheduler.js     planificateur (5 contrôles en parallèle, relevés CMS à part)
 src/cms.js           relevé PHP / mises à jour : appel du plugin WordPress ou PrestaShop
+src/cms-alerts.js    alertes tirées du relevé : mises à jour en retard, fin de support de PHP (fonctions pures, testées)
 src/zip.js           archive ZIP sans compression, pour télécharger les plugins
 src/db.js            SQLite : sites, groupes, contrôles, versions (gzip), alertes, réglages
 plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour)

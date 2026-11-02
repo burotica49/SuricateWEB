@@ -9,6 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SITES, linesOf, DEFACED_LINES } from './fake-sites.js';
+import { cmsIncidents, phpSupport, PHP_WARN_DAYS } from '../../src/cms-alerts.js';
 
 export const DEMO_USER = 'demo';
 export const DEMO_PASSWORD = 'demo-password';
@@ -51,11 +52,11 @@ const DEMO_CMS_TOKEN = 'ZGVtby1qZXRvbi1mYXV4LXBvdXItbGEtZG9jdW1lbnRhdGlvbg';
 const item = (name, slug, current, available = null, o = {}) => ({ name, slug, current, available, active: true, known: true, ...o });
 const CMS_REPORTS = {
   martin: {
-    php: '8.2.27', cms: 'wordpress', cmsVersion: '6.7.1',
-    core: { current: '6.7.1', available: '6.8.3', known: true },
+    php: '8.3.14', cms: 'wordpress', cmsVersion: '6.7.1',
+    core: { current: '6.7.1', available: '6.8.3', known: true, age: 12 },
     extensions: [
-      item('Yoast SEO', 'wordpress-seo', '24.2', '25.4'),
-      item('Contact Form 7', 'contact-form-7', '5.9.8', '6.1.1'),
+      item('Yoast SEO', 'wordpress-seo', '24.2', '25.4', { age: 9 }),
+      item('Contact Form 7', 'contact-form-7', '5.9.8', '6.1.1', { age: 3 }),
       item('Complianz', 'complianz-gdpr', '7.4.0'),
       item('Akismet Anti-spam', 'akismet', '5.3.5'),
       item('Redirection', 'redirection', '5.5.0'),
@@ -63,25 +64,31 @@ const CMS_REPORTS = {
     ],
     themes: [
       item('Cabinet Martin (thème enfant)', 'cabinet-martin-child', '2.4.0'),
-      item('Twenty Twenty-Five', 'twentytwentyfive', '1.0', '1.3', { active: false }),
+      item('Twenty Twenty-Five', 'twentytwentyfive', '1.0', '1.3', { active: false, age: 8 }),
     ],
   },
   nova: {
-    php: '8.1.30', cms: 'prestashop', cmsVersion: '8.1.7',
-    core: { current: '8.1.7', available: '8.2.1', known: true },
+    php: '8.2.27', cms: 'prestashop', cmsVersion: '8.1.7',
+    core: { current: '8.1.7', available: '8.2.1', known: true, age: 4 },
     extensions: [
-      item('Paiement par carte', 'paymentcard', '3.5.2', '3.6.0'),
-      item('Panier', 'ps_shoppingcart', '2.0.7', '2.0.9'),
+      item('Paiement par carte', 'paymentcard', '3.5.2', '3.6.0', { age: 2 }),
+      item('Panier', 'ps_shoppingcart', '2.0.7', '2.0.9', { age: 5 }),
       item('Newsletter', 'ps_emailsubscription', '2.9.0'),
       item('Paiement par chèque', 'ps_checkpayment', '2.0.2'),
       item('Export du catalogue (sur mesure)', 'nova_feed', '1.4', null, { known: false }),
       item('Transporteur local', 'novashipping', '0.9.3', null, { known: false, active: false }),
     ],
     themes: [
-      item('Classic', 'classic', '2.0.3', '2.1.0', { active: false }),
+      item('Classic', 'classic', '2.0.3', '2.1.0', { active: false, age: 6 }),
       item('Nova (thème sur mesure)', 'nova', '1.2.0', null, { known: false }),
     ],
   },
+};
+
+/** Les relevés ci-dessus donnent l'âge de chaque mise à jour en jours ; le relevé enregistré en base porte l'horodatage `since`. */
+const withSince = (report, now) => {
+  const conv = ({ age, ...it }) => (age != null ? { ...it, since: now - age * D } : it);
+  return { ...report, core: conv(report.core), extensions: report.extensions.map(conv), themes: report.themes.map(conv) };
 };
 
 const hex = (n, seed) => { const r = rng(seed); return Array.from({ length: n }, () => Math.floor(r() * 256).toString(16).padStart(2, '0').toUpperCase()).join(':'); };
@@ -96,6 +103,11 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
   const { sha1, fmtDuration } = await import('../../src/util.js');
   const { db } = dbm;
   const now = Date.now();
+  const REPORT = Object.fromEntries(Object.entries(CMS_REPORTS).map(([slug, r]) => [slug, withSince(r, now)]));
+  // Moment où chaque incident CMS a franchi son seuil (le vrai code recalcule titre et détail à cet instant).
+  const phpNova = phpSupport(REPORT.nova.php, now);
+  const AGO = { martin: { cms_core: 5 * D, cms_updates: 2 * D }, nova: { php_eol: phpNova.status === 'ending' ? now - (phpNova.endsAt - PHP_WARN_DAYS * D) : phpNova.endsAt ? now - phpNova.endsAt : 2 * D } };
+  const incidentAt = (slug, key) => cmsIncidents(REPORT[slug], { afterDays: 7, now: now - AGO[slug][key] }).find((i) => i.key === key) ?? cmsIncidents(REPORT[slug], { afterDays: 7, now }).find((i) => i.key === key);
 
   // ── Captures d'écran : les faux sites sont réellement rendus par le moteur de capture de l'application ──
   const shot = async (path) => capture(`${fakeSitesBase}${path}`, { width: 1280, height: 800, settleMs: 150, interact: false, hideBanners: false, timeoutMs: 20000 });
@@ -199,7 +211,10 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
       rdap: { checkedAt: now - 22 * MIN, registrar: w.registrar, registered: now - (3 + w.i) * 365 * D, expires: rdapExpires, transferred: 0, changed: now - (30 + w.i * 9) * D,
         locked: true, status: ['client transfer prohibited', 'client update prohibited'], nameservers: ns, dnssec: w.dnssec },
     };
-    if (CMS_REPORTS[w.slug]) state.cms = { ...CMS_REPORTS[w.slug], checkedAt: now - 3 * H, ok: true, error: null };
+    if (REPORT[w.slug]) {
+      state.cms = { ...REPORT[w.slug], checkedAt: now - 3 * H, ok: true, error: null };
+      for (const i of cmsIncidents(state.cms, { afterDays: 7, now })) state.incidents[i.key] = { severity: i.severity, title: i.title, detail: i.detail, since: now - (AGO[w.slug]?.[i.key] ?? D) };
+    }
     if (w.slug !== 'domain') state.tls = { fp: hex(32, 77 + w.i), issuer: "Let's Encrypt", subject: domainName, expires: tlsExpires, authorized: true, protocol: 'TLSv1.3' };
 
     if (w.story === 'defaced') {
@@ -282,12 +297,23 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
 
   alert(W.intranet, 9 * D, 'info', 'server_changed', 'Le logiciel serveur a changé', '« nginx/1.24 » → « nginx/1.26 »', { read: 1 });
   alert(W.wiki, 3 * D, 'critical', 'down', 'Site inaccessible', 'Délai dépassé', { read: 1 });
+  // Alerte retenue pendant la maintenance en cours de « Wiki technique » : non envoyée, reprise dans le récapitulatif de fin.
+  alert(W.wiki, 14 * MIN, 'warning', 'content_changed', 'Le contenu de la page a changé', '3 ligne(s) ajoutée(s), 2 supprimée(s) · similarité 91 %', { read: 1, maint: 1 });
+  // Mises à jour du CMS et fin de support de PHP : titres et détails produits par le vrai code d'alerte.
+  for (const [slug, key] of [['martin', 'cms_core'], ['martin', 'cms_updates'], ['nova', 'php_eol']]) {
+    const i = incidentAt(slug, key);
+    alert(W[slug], AGO[slug][key], i.severity, key, i.title, i.detail);
+  }
   alert(W.wiki, 3 * D - 9 * MIN, 'recovery', 'recovery', 'Le site est de nouveau accessible', 'Indisponible pendant 9 min.', { read: 1 });
   alert(W.domain, 3 * D, 'warning', 'rdap_expiring', 'Le nom de domaine expire dans 21 jour(s)', `exemple-societe.example · échéance le ${fmtDate(now + 21 * D)}`);
 
-  const insAlert = db.prepare('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read, notified) VALUES(?,?,?,?,?,?,?,?,?,?)');
-  for (const a of alerts.sort((x, y) => x.ts - y.ts)) insAlert.run(a.w, a.ts, a.sev, a.type, a.title, a.detail, a.snap ?? null, a.prev ?? null, a.read ?? 0, a.sev === 'info' ? 0 : 1);
+  const insAlert = db.prepare('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read, notified, maintenance) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+  for (const a of alerts.sort((x, y) => x.ts - y.ts)) insAlert.run(a.w, a.ts, a.sev, a.type, a.title, a.detail, a.snap ?? null, a.prev ?? null, a.read ?? 0, a.sev === 'info' || a.maint ? 0 : 1, a.maint ?? 0);
   db.exec('COMMIT');
+
+  // ── Maintenance : une fenêtre en cours et une prévue demain, sur « Wiki technique » ──
+  dbm.addMaintenance({ watchId: W.wiki, start: now - 20 * MIN, end: now + 40 * MIN, note: 'Mise à jour du serveur de sauvegarde' });
+  dbm.addMaintenance({ watchId: W.wiki, start: now + 20 * H, end: now + 21 * H, note: 'Renouvellement du certificat' });
 
   // ── Captures d'écran enregistrées (images réelles des faux sites) ──
   const SHOTS = join(dataDir, 'screenshots');

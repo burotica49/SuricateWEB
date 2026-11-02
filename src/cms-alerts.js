@@ -1,4 +1,5 @@
-// Alertes tirées du relevé du plugin WordPress / PrestaShop : mises à jour qui tardent, PHP en fin de support.
+// Alertes tirées du relevé du plugin WordPress / PrestaShop : mises à jour qui tardent, PHP en fin de support,
+// intégrité des fichiers et nouveaux comptes administrateurs.
 // Fonctions pures (aucun accès à la base ni au réseau) : le moteur de contrôle (checker.js) les applique au dernier relevé.
 
 const DAY = 86400e3;
@@ -68,16 +69,177 @@ export function carrySince(prev, report, now = Date.now()) {
   return report;
 }
 
+/** Une mise à jour effectuée (version installée différente d'un relevé à l'autre) est conservée ~13 mois pour le rapport mensuel. */
+const HISTORY_MAX = 200;
+const HISTORY_DAYS = 400;
+
+/**
+ * Journal des mises à jour appliquées : { ts, kind: 'core'|'ext'|'theme', name, slug, from, to }.
+ * La date est celle du relevé qui a vu la nouvelle version (à l'intervalle du relevé près).
+ */
+export function carryHistory(prev, report, now = Date.now()) {
+  const history = (prev?.history || []).filter((h) => h && now - h.ts < HISTORY_DAYS * DAY);
+  if (prev?.core?.current || prev?.extensions?.length || prev?.themes?.length) {
+    const was = (kind, list) => new Map((list || []).map((it) => [itemKey(kind, it), it]));
+    if (prev.core?.current && report.core?.current && prev.core.current !== report.core.current) {
+      history.push({ ts: now, kind: 'core', name: label[report.cms] || 'CMS', slug: '', from: prev.core.current, to: report.core.current });
+    }
+    for (const [kind, list, before] of [['ext', report.extensions, was('ext', prev.extensions)], ['theme', report.themes, was('theme', prev.themes)]]) {
+      for (const it of list || []) {
+        const old = before.get(itemKey(kind, it));
+        if (!it.current) continue;
+        if (!old) history.push({ ts: now, kind, name: it.name, slug: it.slug, from: null, to: it.current });
+        else if (old.current && old.current !== it.current) history.push({ ts: now, kind, name: it.name, slug: it.slug, from: old.current, to: it.current });
+      }
+    }
+  }
+  report.history = history.slice(-HISTORY_MAX);
+  return report;
+}
+
+/**
+ * Comptes administrateurs : un nouvel administrateur est un classique après une intrusion.
+ * Le relevé donne un compteur et les créations récentes ; VigieWeb garde la référence (`known`, `baseCount`) jusqu'à ce
+ * que l'utilisateur déclare connaître les comptes. Le premier relevé fixe la référence sans alerter.
+ *   added : créations récentes absentes de la référence · extra : comptes en plus sans création récente (compte promu ?).
+ */
+export function carryAdmins(prev, report, now = Date.now()) {
+  const cur = report.admins;
+  if (!cur || cur.count == null) {
+    delete report.admins;
+    return report;
+  }
+  const old = prev?.admins;
+  if (!old || !Array.isArray(old.known)) {
+    report.admins = { ...cur, known: cur.recent.map((r) => r.id).slice(0, 200), baseCount: cur.count, added: [], extra: 0 };
+    return report;
+  }
+  const known = new Set(old.known);
+  const baseCount = Math.min(old.baseCount ?? cur.count, cur.count);
+  const room = Math.max(0, cur.count - baseCount);
+  const added = cur.recent.filter((r) => !known.has(r.id)).map((r) => ({ ...r, since: old.added?.find((a) => a.id === r.id)?.since ?? now }));
+  // Un compte créé il y a plus de 30 jours sort de la liste « récente » mais reste un compte en trop : on le garde tant que le compteur le montre.
+  for (const a of old.added || []) if (added.length < room && !added.some((x) => x.id === a.id)) added.push(a);
+  report.admins = { ...cur, known: old.known, baseCount, added, extra: Math.max(0, room - added.length) };
+  return report;
+}
+
+/** L'utilisateur déclare connaître les comptes actuels : nouvelle référence, plus d'alerte. */
+export function acceptAdmins(admins) {
+  if (!admins) return admins;
+  const known = [...new Set([...(admins.known || []), ...(admins.recent || []).map((r) => r.id), ...(admins.added || []).map((a) => a.id)])];
+  return { ...admins, known: known.slice(-200), baseCount: admins.count, added: [], extra: 0 };
+}
+
 const label = { wordpress: 'WordPress', prestashop: 'PrestaShop' };
 const KIND = { wordpress: { ext: 'extension', theme: 'thème' }, prestashop: { ext: 'module', theme: 'thème' } };
 
-/**
- * Incidents à déclarer pour ce relevé : { key, severity, title, detail }.
- * `afterDays` : ancienneté à partir de laquelle une mise à jour en attente est signalée.
- */
-export function cmsIncidents(report, { afterDays = 7, now = Date.now() } = {}) {
+/** Groupe d'un incident CMS : « security » (intégrité, administrateurs) ou « updates » (versions, PHP). */
+export const cmsIncidentGroup = (key) => (/^cms_(integrity|admins)/.test(key) ? 'security' : 'updates');
+
+const fmtDay = (t) => new Date(t).toLocaleDateString('fr-FR', { timeZone: 'UTC' });
+const bullets = (lines, max = 8) => [...lines.slice(0, max), ...(lines.length > max ? [`… et ${lines.length - max} autre(s)`] : [])];
+
+/** Fichiers modifiés / ajoutés / manquants d'une section d'intégrité, en lignes lisibles. */
+function fileLines(sec, prefix = '') {
+  return [
+    ...(sec.modified || []).map((f) => `• ${prefix}${f} (modifié)`),
+    ...(sec.added || []).map((f) => `• ${prefix}${f} (fichier PHP ajouté)`),
+    ...(sec.missing || []).map((f) => `• ${prefix}${f} (manquant)`),
+  ];
+}
+
+const sectionParts = (sec) => [
+  sec.modified?.length ? plural(sec.modified.length, 'fichier modifié', 'fichiers modifiés') : '',
+  sec.added?.length ? plural(sec.added.length, 'fichier PHP ajouté', 'fichiers PHP ajoutés') : '',
+  sec.missing?.length ? plural(sec.missing.length, 'fichier manquant', 'fichiers manquants') : '',
+].filter(Boolean);
+
+/** Incidents d'intégrité des fichiers : noyau, extensions du dépôt officiel, PHP dans les dossiers de médias. */
+function integrityIncidents(report) {
   const out = [];
-  if (!report) return out;
+  const integ = report.integrity;
+  if (!integ) return out;
+  const cms = label[report.cms] || 'Le CMS';
+  const tail = 'Ces fichiers ne correspondent pas aux sommes de contrôle publiées par wordpress.org. Si vous ne les avez pas modifiés vous-même, le site est peut-être compromis : comparez avec une sauvegarde saine.';
+
+  const core = integ.core;
+  if (core?.known) {
+    const parts = sectionParts(core);
+    if (parts.length) {
+      const bad = core.modified?.length || core.added?.length;
+      const n = (core.modified?.length || 0) + (core.added?.length || 0) + (core.missing?.length || 0);
+      out.push({
+        key: 'cms_integrity_core',
+        severity: bad ? 'critical' : 'warning',
+        title: `Noyau ${cms} : ${parts.join(', ')}`,
+        detail: [...bullets(fileLines(core)), '', bad ? `${tail} Un fichier PHP ajouté dans le noyau est le plus souvent une porte dérobée.` : 'Des fichiers du noyau ont disparu : site cassé, ou nettoyage excessif.'].join('\n'),
+        count: n,
+      });
+    }
+  }
+
+  const flagged = (integ.plugins || []).filter((p) => p.known && (p.modified?.length || p.added?.length || p.missing?.length));
+  if (flagged.length) {
+    const bad = flagged.some((p) => p.modified?.length || p.added?.length);
+    const lines = flagged.flatMap((p) => fileLines(p, `${p.name} : `));
+    const names = flagged.slice(0, 3).map((p) => p.name).join(', ');
+    out.push({
+      key: 'cms_integrity_plugins',
+      severity: bad ? 'critical' : 'warning',
+      title: `${plural(flagged.length, 'extension', 'extensions')} du dépôt officiel avec des fichiers inattendus : ${names}${flagged.length > 3 ? '…' : ''}`,
+      detail: [...bullets(lines), '', bad ? tail : 'Des fichiers de ces extensions ont disparu.'].join('\n'),
+      count: lines.length,
+    });
+  }
+
+  const up = integ.uploads;
+  if (up?.php?.length) {
+    const shop = report.cms === 'prestashop';
+    const where = shop ? "les dossiers d'images et de téléversements (img/, upload/, download/)" : 'le dossier des téléversements (uploads)';
+    out.push({
+      key: 'cms_integrity_uploads',
+      severity: 'critical',
+      title: `${plural(up.php.length + (up.more || 0), 'fichier PHP trouvé', 'fichiers PHP trouvés')} dans ${shop ? 'les dossiers de médias' : 'uploads'}`,
+      detail: [...bullets(up.php.map((f) => `• ${f}`)), '', `${shop ? 'Ces dossiers' : 'Ce dossier'} ne devrai${shop ? 'ent' : 't'} contenir que des médias : un fichier PHP dans ${where} est presque toujours une porte dérobée déposée après une intrusion.`].join('\n'),
+      count: up.php.length + (up.more || 0),
+    });
+  }
+  return out;
+}
+
+/** Nouveaux comptes administrateurs depuis la dernière référence. */
+function adminIncidents(report) {
+  const a = report.admins;
+  if (!a || (!a.added?.length && !a.extra)) return [];
+  const lines = [
+    ...a.added.map((u) => `• ${u.login || `compte n° ${u.id}`}${u.registered ? ` (créé le ${fmtDay(u.registered)})` : ''}`),
+    ...(a.extra ? [`• ${plural(a.extra, 'compte administrateur de plus', 'comptes administrateur de plus')}, sans création récente : un compte existant a peut-être été promu`] : []),
+  ];
+  const n = a.added.length + a.extra;
+  return [{
+    key: 'cms_admins',
+    severity: 'critical',
+    title: n === 1 && a.added.length === 1 ? `Nouvel administrateur : ${a.added[0].login || `compte n° ${a.added[0].id}`}` : `${n} ${n > 1 ? 'nouveaux comptes administrateur' : 'nouveau compte administrateur'} (${a.baseCount} → ${a.count})`,
+    detail: [...lines, '', "Si vous ne connaissez pas ce compte, supprimez-le et changez les mots de passe. Sinon, cliquez sur « Je connais ces comptes » dans l'onglet Sécurité."].join('\n'),
+    count: n,
+  }];
+}
+
+/**
+ * Incidents à déclarer pour ce relevé : { key, severity, title, detail, count? }.
+ * `afterDays` : ancienneté à partir de laquelle une mise à jour en attente est signalée.
+ * `updates` / `security` : groupes d'alertes actifs (réglables site par site).
+ */
+export function cmsIncidents(report, { afterDays = 7, now = Date.now(), updates = true, security = true } = {}) {
+  if (!report) return [];
+  const out = updates ? updateIncidents(report, afterDays, now) : [];
+  if (security) out.push(...integrityIncidents(report), ...adminIncidents(report));
+  return out;
+}
+
+function updateIncidents(report, afterDays, now) {
+  const out = [];
   const cms = label[report.cms] || 'Le CMS';
   const days = (since) => Math.max(0, Math.floor((now - since) / DAY));
 

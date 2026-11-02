@@ -159,6 +159,8 @@ const cmsPending = (report) => {
   if (!report) return 0;
   return [report.core, ...(report.extensions || []), ...(report.themes || [])].filter((i) => i?.available).length;
 };
+/** Anomalies de sécurité en cours : fichiers modifiés ou ajoutés, PHP dans les médias, nouveaux administrateurs. */
+const cmsSecurityCount = (w) => w.incidents.filter((i) => /^cms_(integrity|admins)/.test(i.key)).reduce((n, i) => n + (i.count || 1), 0);
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 
 const STATUS = {
@@ -579,6 +581,7 @@ function groupSection({ group, all, shown }, { canDnd, filtering }) {
     h('span', { class: 'muted grp-count' }, plural(all.length, 'site', 'sites') + (filtering && shown.length !== all.length ? ` · ${shown.length} affiché(s)` : '')),
     summary,
     group ? h('div', { class: 'grp-actions' },
+      all.length ? h('a', { class: 'btn ghost icon sm', href: `/api/groups/${gid}/report?tz=${tzParam()}`, target: '_blank', rel: 'noopener noreferrer', title: 'Rapport mensuel du groupe (tous ses sites)', 'aria-label': `Rapport mensuel du groupe « ${group.name} » (nouvel onglet)` }, ic('file')) : null,
       h('button', { class: 'btn ghost icon sm', title: 'Ajouter un site dans ce groupe', 'aria-label': `Ajouter un site dans « ${group.name} »`, onclick: () => openSiteForm(null, '', gid) }, ic('plus')),
       h('button', { class: 'btn ghost icon sm', title: 'Renommer, changer la couleur', 'aria-label': `Modifier le groupe « ${group.name} »`, onclick: guard(async () => {
         const r = await groupDialog(group);
@@ -821,6 +824,8 @@ async function viewDetail(id, tab, tok, openSnap) {
         h('button', { class: 'btn', onclick: doCheck }, ic('refresh'), 'Vérifier maintenant'),
         h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/toggle`, { method: 'POST' }); toast(w.enabled ? 'Surveillance mise en pause' : 'Surveillance reprise'); route(); }) }, ic(w.enabled ? 'pause' : 'play'), w.enabled ? 'Pause' : 'Reprendre'),
         h('button', { class: 'btn', title: 'Planifier une maintenance : alertes retenues pendant la fenêtre', onclick: guard(async () => { if (await maintenanceDialog(w)) { toast('Maintenance enregistrée'); route(); } }) }, ic('wrench'), 'Maintenance'),
+        // Rapport mensuel : une page HTML à imprimer ou enregistrer en PDF (Imprimer → Enregistrer au format PDF), mois précédent par défaut.
+        w.mode !== 'domain' ? h('a', { class: 'btn', href: `/api/watches/${id}/report?tz=${tzParam()}`, target: '_blank', rel: 'noopener noreferrer', title: 'Rapport mensuel client : disponibilité, incidents, mises à jour' }, ic('file'), 'Rapport') : null,
         h('button', { class: 'btn', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier'),
         h('button', { class: 'btn icon danger', title: 'Supprimer', 'aria-label': 'Supprimer', onclick: guard(async () => {
           if (!(await confirmDialog({ title: `Supprimer « ${w.name} » ?`, text: "L'historique, les versions enregistrées et les alertes de ce site seront définitivement effacés.", confirm: 'Supprimer', danger: true }))) return;
@@ -851,18 +856,21 @@ async function viewDetail(id, tab, tok, openSnap) {
   const domainOnly = w.mode === 'domain';
   const cmsOn = !domainOnly && (w.config?.cms?.type === 'wordpress' || w.config?.cms?.type === 'prestashop');
   const cmsN = cmsPending(w.cms);
+  const cmsSecN = cmsSecurityCount(w);
   const tabs = domainOnly
     ? [['apercu', 'Aperçu', 'activity'], ['domaine', 'Domaine & DNS', 'globe'], ['alertes', 'Alertes', 'bell']]
-    : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers']] : []), ['alertes', 'Alertes', 'bell']];
+    : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers'], ['securite', 'Sécurité', 'shield']] : []), ['alertes', 'Alertes', 'bell']];
   root.append(h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map(([k, l, icn]) => h('a', { href: `#/sites/${id}/${k}`, class: tab === k ? 'on' : '', role: 'tab' }, ic(icn), l,
     k === 'alertes' && unread ? h('span', { class: 'badge' }, unread) : null,
-    k === 'mises-a-jour' && cmsN ? h('span', { class: 'badge warn' }, cmsN) : null))));
+    k === 'mises-a-jour' && cmsN ? h('span', { class: 'badge warn' }, cmsN) : null,
+    k === 'securite' && cmsSecN ? h('span', { class: 'badge' }, cmsSecN) : null))));
 
   if (tab === 'modifications' && !domainOnly) root.append(await changesTab(w, openSnap));
   else if (tab === 'captures' && !domainOnly) root.append(await capturesTab(w));
   else if (tab === 'disponibilite' && !domainOnly) root.append(await uptimeTab(w));
   else if (tab === 'domaine') root.append(await domainTab(w));
   else if (tab === 'mises-a-jour' && cmsOn) root.append(updatesTab(w));
+  else if (tab === 'securite' && cmsOn) root.append(securityTab(w));
   else if (tab === 'alertes') {
     const alerts = await api(`/alerts?watch=${id}&limit=100`);
     root.append(alerts.length ? alertList(alerts, false) : empty('bell', 'Aucune alerte', 'Ce site n\'a déclenché aucune alerte pour le moment.'));
@@ -932,7 +940,32 @@ async function overviewTab(w) {
     ['URL finale', w.finalUrl || '—'], ['Logiciel', s.server || '—'], ['Scripts chargés', s.scripts ?? '—'], ['Domaines externes liés', s.linkHosts ?? '—'],
   ]));
   root.append(h('div', { class: 'signals' }, ...cards));
+  if (w.pages?.length) root.append(pagesCard(w));
   return root;
+}
+
+/** Pages supplémentaires (panier, contact, connexion…) : dernier état connu de chacune. */
+function pagesCard(w) {
+  const state = (p) => {
+    const st = p.state;
+    if (!p.href) return ['crit', 'Adresse invalide'];
+    if (!st) return ['mute', 'En attente'];
+    if (st.error) return [st.fails >= w.config.failThreshold ? 'crit' : 'warn', st.fails >= w.config.failThreshold ? 'Inaccessible' : 'Échec isolé'];
+    if (st.code >= 400 && ![401, 403, 429].includes(st.code)) return ['crit', `HTTP ${st.code}`];
+    return ['ok', st.baseline ? 'Surveillée' : 'Référence en cours'];
+  };
+  return h('div', { class: 'card', style: { marginTop: '16px' } },
+    h('div', { class: 'card-head' }, h('h2', {}, 'Pages surveillées'), h('span', { class: 'muted' }, 'scripts, iframes, formulaires et textes suspects')),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Page'), h('th', {}, 'État'), h('th', {}, 'Code'), h('th', {}, 'Réponse'), h('th', {}, 'Dernier contrôle'))),
+      h('tbody', {}, ...w.pages.map((p) => {
+        const [cls, label] = state(p);
+        return h('tr', {},
+          h('td', {}, p.label || p.url, h('div', { class: 'muted mono', style: { fontSize: '12px', wordBreak: 'break-all' } }, p.href || p.url)),
+          h('td', {}, h('span', { class: `pill ${cls}`, title: p.state?.error || '' }, label)),
+          h('td', { class: 'mono' }, p.state?.code ?? '—'), h('td', { class: 'mono' }, fmtMs(p.state?.ms)),
+          h('td', { class: 'muted' }, p.state?.checkedAt ? rel(p.state.checkedAt) : '—'));
+      })))));
 }
 
 function dnsSignal(s, c) {
@@ -1237,6 +1270,108 @@ function updatesTab(w) {
   root.append(cmsTable('Noyau', report.core ? [{ name: kind, current: report.core.current, available: report.core.available, known: report.core.known, since: report.core.since, active: true }] : []));
   root.append(cmsTable(extLabel, report.extensions));
   root.append(cmsTable('Thèmes', report.themes));
+  if (report.history?.length) {
+    const KIND = { core: 'noyau', ext: w.config.cms.type === 'prestashop' ? 'module' : 'extension', theme: 'thème' };
+    root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+      h('div', { class: 'card-head' }, h('h2', {}, 'Mises à jour effectuées'), h('span', { class: 'muted' }, 'vues par VigieWeb d’un relevé à l’autre')),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Élément'), h('th', {}, 'Version'))),
+        h('tbody', {}, ...[...report.history].reverse().slice(0, 15).map((e) => h('tr', {},
+          h('td', {}, dt(e.ts)), h('td', {}, e.name, h('span', { class: 'muted' }, ` · ${KIND[e.kind] || e.kind}`)),
+          h('td', { class: 'mono' }, e.from ? `${e.from} → ${e.to}` : `installé : ${e.to}`))))))));
+  }
+  return root;
+}
+
+// ───────────── Sécurité du CMS : intégrité des fichiers et comptes administrateurs ─────────────
+
+const pathItems = (list, tag) => list.map((f) => h('li', {}, h('span', { class: 'mono', style: { wordBreak: 'break-all' } }, f), h('span', { class: 'muted' }, ` · ${tag}`)));
+
+function integritySection(title, sec, hint) {
+  const bad = sec.modified.length + sec.added.length;
+  const pill = !sec.known ? h('span', { class: 'pill mute' }, 'Non vérifiable')
+    : bad ? h('span', { class: 'pill crit' }, plural(bad, 'anomalie', 'anomalies'))
+      : sec.missing.length ? h('span', { class: 'pill warn' }, plural(sec.missing.length, 'fichier manquant', 'fichiers manquants'))
+        : h('span', { class: 'pill ok' }, 'Conforme');
+  return h('div', { class: 'card', style: { marginBottom: '16px' } },
+    h('div', { class: 'card-head' }, h('h2', {}, title), h('span', { class: 'muted' }, sec.known ? `${sec.checked} fichiers comparés` : ''), pill),
+    bad || sec.missing.length
+      ? h('div', { class: 'card-pad' }, h('ul', { class: 'plain', style: { margin: 0, paddingLeft: '18px' } }, ...pathItems(sec.modified, 'modifié'), ...pathItems(sec.added, 'fichier PHP ajouté'), ...pathItems(sec.missing, 'manquant')),
+        sec.more ? h('p', { class: 'muted' }, `… et ${sec.more} autre(s) non listé(s).`) : null)
+      : hint ? h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, hint)) : null);
+}
+
+function securityTab(w) {
+  const report = w.cms;
+  const shop = w.config.cms.type === 'prestashop';
+  const kind = shop ? 'PrestaShop' : 'WordPress';
+  const root = h('div', {});
+  const refresh = h('button', { class: 'btn', onclick: guard(async (e) => {
+    e.currentTarget.disabled = true;
+    const r = await api(`/watches/${w.id}/cms`, { method: 'POST' });
+    toast(r.ok ? 'Contrôles actualisés' : (r.error || 'Relevé impossible'), r.ok ? 'ok' : 'err');
+    route();
+  }) }, ic('refresh'), 'Actualiser');
+  if (w.config.cms.security === false) {
+    root.append(h('div', { class: 'callout' }, ic('info'), h('div', {}, 'Le contrôle de sécurité est désactivé pour ce site. Réactivez-le dans « Modifier › WordPress / PrestaShop ».')));
+    return root;
+  }
+  const integ = report?.integrity;
+  const admins = report?.admins;
+  root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+    h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, `Sécurité de ${kind}`), h('span', { class: 'muted' }, integ?.checkedAt ? `intégrité contrôlée ${rel(integ.checkedAt)}` : 'en attente du premier contrôle')), refresh),
+    h('div', { class: 'card-pad' },
+      integ?.error ? h('div', { class: 'callout', style: { marginBottom: '12px' } }, ic('alert'), h('div', {}, integ.error, integ.core ? h('span', { class: 'muted' }, ' Les résultats ci-dessous sont ceux du dernier contrôle réussi.') : null)) : null,
+      h('p', { class: 'muted', style: { margin: 0 } }, shop
+        ? 'Sous PrestaShop, le module cherche des fichiers PHP là où il ne devrait pas y en avoir (img/, upload/, download/). PrestaShop ne publie pas de sommes de contrôle utilisables pour son cœur ni pour les modules : la couverture est partielle.'
+        : 'Le plugin compare les fichiers du noyau et des extensions du dépôt officiel aux sommes de contrôle publiées par wordpress.org, et cherche des fichiers PHP dans le dossier des téléversements. Les extensions et thèmes premium ou sur mesure ne sont pas comparables.'),
+      h('p', { class: 'muted', style: { margin: '8px 0 0' } }, 'Le contrôle s’exécute depuis le site lui-même : un attaquant qui en a pris le contrôle pourrait en fausser le résultat. Il complète une sauvegarde saine et une analyse externe, il ne les remplace pas.'))));
+
+  if (integ?.core) {
+    if (!shop) {
+      root.append(integritySection(`Noyau ${kind}${integ.core.version ? ` ${integ.core.version}` : ''}`, integ.core,
+        integ.core.known ? 'Tous les fichiers du noyau correspondent à la distribution officielle.' : 'Les sommes de contrôle de cette version n’ont pas pu être récupérées auprès de wordpress.org.'));
+      const rows = [...integ.plugins].sort((a, b) => (b.modified.length + b.added.length) - (a.modified.length + a.added.length) || a.name.localeCompare(b.name, 'fr'));
+      root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+        h('div', { class: 'card-head' }, h('h2', {}, 'Extensions'), h('span', { class: 'muted' }, `${integ.plugins.filter((p) => p.known).length} vérifiées sur ${integ.plugins.length}`)),
+        rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Extension'), h('th', {}, 'Version'), h('th', {}, 'État'), h('th', {}, 'Fichiers'))),
+          h('tbody', {}, ...rows.map((p) => {
+            const bad = p.modified.length + p.added.length;
+            return h('tr', {},
+              h('td', {}, p.name), h('td', { class: 'mono' }, p.version || '—'),
+              h('td', {}, !p.known ? h('span', { class: 'pill mute', title: p.skipped ? 'Contrôle interrompu (délai) : repris au prochain relevé' : 'Hors du dépôt officiel de wordpress.org, ou version inconnue de celui-ci' }, p.skipped ? 'Reporté' : 'Non vérifiable') : bad ? h('span', { class: 'pill crit' }, plural(bad, 'anomalie', 'anomalies')) : p.missing.length ? h('span', { class: 'pill warn' }, 'Fichiers manquants') : h('span', { class: 'pill ok' }, 'Conforme')),
+              h('td', {}, bad || p.missing.length ? h('ul', { class: 'plain', style: { margin: 0, paddingLeft: '16px' } }, ...pathItems(p.modified, 'modifié'), ...pathItems(p.added, 'ajouté'), ...pathItems(p.missing, 'manquant')) : h('span', { class: 'muted' }, p.known ? `${p.checked} comparés` : '—')));
+          })))) : h('div', { class: 'empty', style: { padding: '22px' } }, h('p', { style: { margin: 0 } }, 'Aucune extension à vérifier.'))));
+    }
+    const up = integ.uploads;
+    root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+      h('div', { class: 'card-head' }, h('h2', {}, shop ? 'Fichiers PHP dans les dossiers de médias' : 'Fichiers PHP dans uploads'), h('span', { class: 'muted' }, `${up.scanned} fichiers parcourus${shop && integ.dirs?.length ? ` (${integ.dirs.join(', ')})` : ''}`),
+        up.php.length ? h('span', { class: 'pill crit' }, plural(up.php.length + up.more, 'fichier', 'fichiers')) : h('span', { class: 'pill ok' }, 'Aucun')),
+      up.php.length ? h('div', { class: 'card-pad' }, h('ul', { class: 'plain', style: { margin: 0, paddingLeft: '18px' } }, ...pathItems(up.php, 'PHP')), up.more ? h('p', { class: 'muted' }, `… et ${up.more} autre(s).`) : null,
+        h('p', { class: 'muted' }, 'Ces dossiers ne devraient contenir que des images et des fichiers téléversés : un fichier PHP s’y trouve presque toujours à cause d’une intrusion.'))
+        : up.truncated ? h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, 'Le parcours a été interrompu (trop de fichiers ou délai) : résultat partiel.')) : null));
+  } else if (!integ?.error) {
+    root.append(h('div', { class: 'empty', style: { padding: '28px' } }, h('p', {}, 'Aucun contrôle d’intégrité pour le moment. Cliquez sur « Actualiser » ; le plugin doit être en version 1.1 ou plus.')));
+  }
+
+  // Comptes administrateurs
+  const flagged = (admins?.added?.length || 0) + (admins?.extra || 0);
+  root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+    h('div', { class: 'card-head' }, h('h2', {}, 'Comptes administrateurs'), h('span', { class: 'muted' }, admins ? plural(admins.count, 'compte', 'comptes') : ''),
+      !admins ? h('span', { class: 'pill mute' }, 'Non relevé') : flagged ? h('span', { class: 'pill crit' }, plural(flagged, 'à vérifier', 'à vérifier')) : h('span', { class: 'pill ok' }, 'Inchangés')),
+    h('div', { class: 'card-pad' },
+      !admins ? h('p', { class: 'muted', style: { margin: 0 } }, 'Le plugin n’a pas encore transmis le nombre d’administrateurs. Mettez-le à jour (version 1.1 ou plus) puis actualisez.')
+        : h('div', {},
+          h('p', { class: 'muted', style: { margin: '0 0 8px' } }, shop
+            ? 'Le module ne renvoie que le nombre d’administrateurs actifs, sans identité ni mot de passe. VigieWeb alerte quand ce nombre augmente.'
+            : `Le plugin ne renvoie que le nombre d’administrateurs et ceux créés ces ${admins.windowDays || 30} derniers jours (identifiant de connexion et date), sans mot de passe ni e-mail. VigieWeb alerte à chaque nouveau compte.`),
+          admins.recent?.length ? h('ul', { class: 'plain', style: { margin: '0 0 8px', paddingLeft: '18px' } }, ...admins.recent.map((u) => {
+            const isNew = admins.added?.some((a) => a.id === u.id);
+            return h('li', {}, h('b', {}, u.login || `compte n° ${u.id}`), u.registered ? h('span', { class: 'muted' }, ` · créé le ${dday(u.registered)}`) : null, isNew ? h('span', { class: 'pill crit', style: { marginLeft: '8px' } }, 'Nouveau') : null);
+          })) : null,
+          admins.extra ? h('p', {}, h('span', { class: 'pill crit' }, plural(admins.extra, 'compte de plus', 'comptes de plus')), ' sans création récente : un compte existant a peut-être été promu administrateur.') : null,
+          flagged ? h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${w.id}/cms/admins/accept`, { method: 'POST' }); toast('Comptes enregistrés comme référence'); route(); }) }, ic('check'), 'Je connais ces comptes') : null))));
   return root;
 }
 
@@ -1450,7 +1585,12 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     cmsPath: h('input', { class: 'input mono', placeholder: 'racine du site', value: c.cms?.path || '', autocomplete: 'off', spellcheck: false }),
     cmsAlerts: h('input', { type: 'checkbox', checked: c.cms?.alerts !== false }),
     cmsEvery: h('select', { class: 'input', value: String(c.cms?.intervalMin || 720) }, ...[[60, 'Toutes les heures'], [360, 'Toutes les 6 heures'], [720, 'Toutes les 12 heures'], [1440, 'Toutes les 24 heures'], [10080, 'Tous les 7 jours']].map(([v, l]) => h('option', { value: String(v) }, l))),
+    cmsSecurity: h('input', { type: 'checkbox', checked: c.cms?.security !== false }),
+    pages: h('textarea', { class: 'input mono', rows: 4, placeholder: '/panier | Panier\n/contact\n/mon-compte | Connexion', value: (c.pages || []).map((p) => (p.label ? `${p.url} | ${p.label}` : p.url)).join('\n') }),
+    statusOn: h('input', { type: 'checkbox', checked: !!c.statusPage?.enabled }),
+    statusTitle: h('input', { class: 'input', placeholder: 'Nom affiché sur la page (par défaut : le nom du site)', maxlength: 80, value: c.statusPage?.title || '' }),
   };
+  let statusToken = c.statusPage?.token || '';
   const checks = {};
   const toggle = (input, title, desc) => h('label', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, title), desc ? h('span', {}, desc) : null), h('span', { class: 'switch' }, input, h('i')));
   // Les groupes « contenu » et « disponibilité » n'ont pas de sens pour un domaine seul : masqués dans ce mode.
@@ -1507,6 +1647,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
       h('div', { class: 'field' }, h('label', {}, 'Fréquence du relevé'), f.cmsEvery)),
     h('div', { class: 'field' }, h('label', {}, 'Adresse interrogée'), cmsEndpointEl),
     toggle(f.cmsAlerts, 'Alerter si des mises à jour tardent ou si PHP n’est plus maintenu', 'Alerte Telegram quand une mise à jour reste en attente plus longtemps que le délai réglé dans Réglages, ou quand la version de PHP ne reçoit plus de correctifs de sécurité. À couper si vous ne maîtrisez pas ces versions (hébergement mutualisé, site client).'),
+    toggle(f.cmsSecurity, 'Surveiller l’intégrité des fichiers et les comptes administrateurs', 'Alerte Telegram si un fichier du noyau ou d’une extension du dépôt officiel ne correspond plus aux sommes de contrôle de wordpress.org, si un fichier PHP apparaît dans le dossier des téléversements, ou si un nouvel administrateur est créé. Sous PrestaShop, seuls les dossiers d’images et de téléversements sont contrôlés. Nécessite la version 1.1 du plugin.'),
     h('p', {}, 'Téléchargez le plugin ', h('span', { 'data-cms-kind': '' }, ''), ', installez-le, activez-le, puis collez le jeton.',
       h('span', {}, ' '),
       h('a', { href: '/api/plugins/wordpress.zip' }, 'WordPress'), ' · ', h('a', { href: '/api/plugins/prestashop.zip' }, 'PrestaShop')),
@@ -1515,6 +1656,16 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
   f.cmsPath.addEventListener('input', syncCms);
   f.url.addEventListener('input', syncCms);
   syncCms();
+
+  const statusUrl = () => `${(S.settings?.baseUrl || location.origin).replace(/\/+$/, '')}/status/${statusToken}`;
+  const statusLink = h('span', { class: 'mono', style: { wordBreak: 'break-all' } }, '');
+  const statusBox = h('div', { class: 'field' }, h('label', {}, 'Adresse publique'),
+    statusLink,
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn sm', type: 'button', onclick: guard(async () => { if (!statusToken) return toast('Enregistrez d’abord le site pour obtenir l’adresse'); await navigator.clipboard.writeText(statusUrl()); toast('Adresse copiée'); }) }, 'Copier'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => { statusToken = randomToken(); syncStatus(); toast('Nouvelle adresse — enregistrez ; l’ancienne cessera de fonctionner'); } }, 'Nouvelle adresse')));
+  const syncStatus = () => { statusLink.textContent = statusToken ? statusUrl() : 'L’adresse apparaîtra après l’enregistrement.'; };
+  syncStatus();
 
   const body = h('form', { class: mode === 'domain' ? 'domain-mode' : '', onsubmit: (e) => e.preventDefault() },
     h('div', { class: 'field' }, h('label', {}, 'Type de surveillance'), modeSeg, modeHint),
@@ -1526,6 +1677,15 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
       h('div', { class: 'field' }, h('label', {}, 'CMS'), f.cmsType, h('span', { class: 'hint' }, 'VigieWeb interroge un plugin installé sur le site pour lire la version de PHP et les mises à jour. Le plugin n’envoie rien de lui-même.')),
       cmsBox,
     ], !!(c.cms?.type))),
+    siteOnly(details('Pages supplémentaires', [
+      h('div', { class: 'field' }, h('label', {}, 'Autres pages à surveiller'), f.pages,
+        h('span', { class: 'hint' }, 'Une par ligne : un chemin (/panier) ou une adresse du même site, puis « | » et un nom facultatif. 10 pages au plus. Panier, paiement, connexion et contact sont les cibles favorites des pirates : VigieWeb y vérifie la disponibilité, les textes suspects, les nouveaux scripts, iframes et formulaires détournés. Ces pages ne comptent pas dans la disponibilité du site.')),
+    ], !!(c.pages && c.pages.length))),
+    siteOnly(details('Page de statut publique', [
+      toggle(f.statusOn, 'Publier une page de statut en lecture seule', 'Une adresse à donner à votre client : disponibilité sur 90 jours, pannes et maintenances. Aucune alerte de sécurité ni détail technique n’y figure. Toute personne qui connaît l’adresse peut la consulter.'),
+      h('div', { class: 'field', style: { marginTop: '12px' } }, h('label', {}, 'Titre affiché'), f.statusTitle),
+      statusBox,
+    ], !!c.statusPage?.enabled)),
     h('h3', { style: { margin: '22px 0 4px' } }, 'Que surveiller ?'), h('p', { class: 'muted', style: { marginBottom: '8px' } }, 'La configuration recommandée surveille tout. Désactivez ce qui produit trop de bruit sur ce site.'),
     ...groups,
     siteOnly(details('Capture d\'écran', [
@@ -1577,7 +1737,9 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
           selector: f.selector.value, excludeSelector: f.exclude.value, ignoreRegex: list(f.ignore), images: f.images.checked,
           forbidden: list(f.forbidden), required: list(f.required), userAgent: f.ua.value, timeoutS: Number(f.timeout.value), failThreshold: Number(f.fails.value),
           minChangePct: Number(f.minPct.value), allowedHosts: list(f.allowed, /[,\n]/), headers, notify: f.notify.checked, minSeverity: f.minSev.value,
-          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value), alerts: f.cmsAlerts.checked },
+          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value), alerts: f.cmsAlerts.checked, security: f.cmsSecurity.checked },
+          pages: mode === 'domain' ? [] : list(f.pages),
+          statusPage: { enabled: mode !== 'domain' && f.statusOn.checked, token: statusToken, title: f.statusTitle.value },
         },
       };
       btn.disabled = true;

@@ -1,11 +1,13 @@
 // Relevé des versions PHP / CMS. VigieWeb appelle le plugin du site (le plugin n'appelle jamais VigieWeb).
-import { getWatch, getSettings, setCmsReport } from './db.js';
+import { getWatch, getSettings, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
-import { carrySince } from './cms-alerts.js';
+import { carrySince, carryAdmins, carryHistory, acceptAdmins } from './cms-alerts.js';
 
 const MAX_BODY = 1024 * 1024;
 const MAX_ITEMS = 400;
 const TIMEOUT_S = 20;
+/** Le contrôle d'intégrité lit tous les fichiers du site : il peut être long sur un hébergement lent. */
+const INTEGRITY_TIMEOUT_S = 90;
 const RETRY_MS = 30 * 60 * 1000;
 
 const running = new Set();
@@ -27,8 +29,11 @@ export function cmsConfigError(cms) {
   return null;
 }
 
-/** Adresse appelée : toujours l'origine du site + un chemin fixe. Jamais une URL libre. */
-export function cmsEndpoint(pageUrl, cms) {
+/**
+ * Adresse appelée : toujours l'origine du site + un chemin fixe. Jamais une URL libre.
+ * `scope` : « status » (versions, administrateurs) ou « integrity » (sommes de contrôle des fichiers).
+ */
+export function cmsEndpoint(pageUrl, cms, scope = 'status') {
   if (cms?.type !== 'wordpress' && cms?.type !== 'prestashop') return null;
   let url;
   try {
@@ -43,10 +48,10 @@ export function cmsEndpoint(pageUrl, cms) {
   if (cms.type === 'wordpress') {
     // Fonctionne avec ou sans permaliens réécrits.
     url.pathname = `${base}/`.replace(/\/{2,}/g, '/');
-    url.search = 'rest_route=/vigieweb/v1/status';
+    url.search = `rest_route=/vigieweb/v1/${scope === 'integrity' ? 'integrity' : 'status'}`;
   } else {
     url.pathname = `${base}/modules/vigieweb/status.php`.replace(/\/{2,}/g, '/');
-    url.search = '';
+    url.search = scope === 'integrity' ? 'scope=integrity' : '';
   }
   url.hash = '';
   return url.href;
@@ -80,6 +85,24 @@ function itemList(arr) {
   return out;
 }
 
+const count = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.min(Math.floor(Number(v)), 1e6) : null);
+
+/** Comptes administrateurs : un compteur et les créations récentes (identifiant, nom de connexion, date). */
+function parseAdmins(a) {
+  if (!a || typeof a !== 'object') return null;
+  const total = count(a.count);
+  if (total == null) return null;
+  const recent = [];
+  for (const r of Array.isArray(a.recent) ? a.recent : []) {
+    if (!r || typeof r !== 'object' || recent.length >= 50) continue;
+    const id = count(r.id);
+    if (id == null) continue;
+    const registered = Date.parse(r.registered);
+    recent.push({ id, login: labelOf(r.login).slice(0, 60), registered: Number.isFinite(registered) ? registered : null });
+  }
+  return { count: total, windowDays: count(a.windowDays) ?? 0, recent };
+}
+
 /** Réponse du plugin, bornée. Lève si le JSON n'est pas un relevé du CMS attendu. */
 export function parseCmsReport(body, expectedType) {
   const data = typeof body === 'string' ? JSON.parse(body) : body;
@@ -97,6 +120,39 @@ export function parseCmsReport(body, expectedType) {
     },
     extensions: itemList(data.extensions),
     themes: itemList(data.themes),
+    admins: parseAdmins(data.admins),
+  };
+}
+
+const pathOf = (v) => String(v ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 200);
+const pathList = (arr) => (Array.isArray(arr) ? arr.map(pathOf).filter(Boolean).slice(0, 50) : []);
+
+function integritySection(sec) {
+  const o = sec && typeof sec === 'object' ? sec : {};
+  return { known: o.known === true, checked: count(o.checked) ?? 0, modified: pathList(o.modified), added: pathList(o.added), missing: pathList(o.missing), more: count(o.more) ?? 0 };
+}
+
+/** Réponse de la route d'intégrité, bornée. Un plugin trop ancien répond sans la section « integrity ». */
+export function parseIntegrityReport(body, expectedType) {
+  const data = typeof body === 'string' ? JSON.parse(body) : body;
+  if (!data || typeof data !== 'object' || Array.isArray(data) || data.cms !== expectedType) throw new Error('Réponse invalide');
+  const i = data.integrity;
+  if (!i || typeof i !== 'object') throw Object.assign(new Error(`${expectedType === 'prestashop' ? 'Module' : 'Plugin'} trop ancien : mettez-le à jour pour contrôler l'intégrité des fichiers.`), { code: 'PLUGIN_OLD' });
+  const up = i.uploads && typeof i.uploads === 'object' ? i.uploads : {};
+  const plugins = [];
+  for (const p of Array.isArray(i.plugins) ? i.plugins : []) {
+    if (!p || typeof p !== 'object' || plugins.length >= 150) continue;
+    plugins.push({
+      name: labelOf(p.name) || labelOf(p.slug) || '—', slug: labelOf(p.slug).slice(0, 80), version: versionOf(p.version),
+      ...integritySection(p), skipped: p.skipped === true,
+    });
+  }
+  return {
+    core: { ...integritySection(i.core), version: versionOf(i.core?.version) },
+    plugins,
+    uploads: { php: pathList(up.php), more: count(up.more) ?? 0, scanned: count(up.scanned) ?? 0, truncated: up.truncated === true },
+    dirs: Array.isArray(i.dirs) ? i.dirs.map(pathOf).filter(Boolean).slice(0, 10) : [],
+    partial: i.partial === true,
   };
 }
 
@@ -118,7 +174,7 @@ async function readLimited(res) {
   return Buffer.concat(chunks);
 }
 
-async function fetchReport(target, token, refresh) {
+async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFound } = {}) {
   const started = new URL(target);
   let cur = target;
   for (let hop = 0; hop <= 4; hop++) {
@@ -129,7 +185,7 @@ async function fetchReport(target, token, refresh) {
       'user-agent': getSettings().userAgent,
     };
     if (refresh) headers['x-vigie-refresh'] = '1';
-    const res = await fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(TIMEOUT_S * 1000) });
+    const res = await fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(timeoutS * 1000) });
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
       await res.body?.cancel().catch(() => {});
@@ -142,6 +198,7 @@ async function fetchReport(target, token, refresh) {
     const buf = await readLimited(res);
     const text = buf.toString('utf8');
     if (res.status === 401 || res.status === 403) throw new Error('Le plugin a refusé le jeton');
+    if (res.status === 404 && notFound) throw new Error(notFound);
     if (res.status === 404) throw new Error('Plugin introuvable à cette adresse. Vérifiez qu’il est installé et activé, et le chemin si le site n’est pas à la racine.');
     if (res.status < 200 || res.status >= 300) throw new Error(`Le plugin a répondu HTTP ${res.status}`);
     return text;
@@ -175,12 +232,26 @@ export async function pollCms(id, { refresh = false } = {}) {
   const interval = cms.intervalMin * 60 * 1000;
   let error = null;
   let report = null;
+  let integrity = null;
+  let integrityError = null;
   try {
     if (!cms.token) throw new Error('Jeton manquant : copiez-le dans le plugin.');
     const target = cmsEndpoint(w.url, cms);
     if (!target) throw new Error('Adresse du site invalide pour le relevé CMS');
     const text = await fetchReport(target, cms.token, refresh);
     report = parseCmsReport(text, cms.type);
+    if (cms.security !== false) {
+      // Relevé séparé : un plugin sans cette route (ancienne version) ne doit pas faire échouer le relevé des versions.
+      try {
+        const sum = await fetchReport(cmsEndpoint(w.url, cms, 'integrity'), cms.token, refresh, {
+          timeoutS: INTEGRITY_TIMEOUT_S,
+          notFound: `${cms.type === 'prestashop' ? 'Module' : 'Plugin'} trop ancien : mettez-le à jour pour contrôler l'intégrité des fichiers.`,
+        });
+        integrity = parseIntegrityReport(sum, cms.type);
+      } catch (e) {
+        integrityError = e instanceof SyntaxError ? 'Réponse invalide' : describeError(e).message || 'Contrôle d’intégrité impossible';
+      }
+    }
   } catch (e) {
     if (e instanceof SyntaxError) error = 'Réponse invalide';
     else error = describeError(e).message || 'Relevé impossible';
@@ -190,10 +261,36 @@ export async function pollCms(id, { refresh = false } = {}) {
   const current = getWatch(id);
   if (!current) return { ok: !error, error, cms: report };
   const prev = current.state.cms && typeof current.state.cms === 'object' ? current.state.cms : {};
+  const now = Date.now();
+  if (report) {
+    carrySince(prev, report, now);
+    carryHistory(prev, report, now);
+    carryAdmins(prev, report, now);
+    if (cms.security !== false) {
+      // Un contrôle d'intégrité qui échoue garde le dernier résultat réussi, avec l'erreur : pas de « tout va bien » inventé.
+      if (integrity) report.integrity = { ...integrity, checkedAt: now, ok: true, error: null };
+      else report.integrity = { ...(prev.integrity || {}), ok: false, error: integrityError, ...(prev.integrity?.checkedAt ? {} : { checkedAt: now }) };
+    }
+  }
   const saved = report
-    ? { ...carrySince(prev, report, Date.now()), checkedAt: Date.now(), ok: true, error: null }
-    : { ...prev, checkedAt: Date.now(), ok: false, error };
-  const nextCms = Date.now() + (report ? interval : Math.min(interval, RETRY_MS));
+    ? { ...report, checkedAt: now, ok: true, error: null }
+    : { ...prev, checkedAt: now, ok: false, error };
+  const nextCms = now + (report ? interval : Math.min(interval, RETRY_MS));
   setCmsReport(id, saved, nextCms);
+  // Les incidents (mises à jour, intégrité, administrateurs) sont évalués par le contrôle du site : on le lance sans attendre.
+  if (report) wakeWatch(id);
   return { ok: !!report, error, cms: saved };
+}
+
+/** « Je connais ces comptes » : l'état actuel des administrateurs devient la référence, l'incident disparaît sans message « rétabli ». */
+export function acceptCmsAdmins(id) {
+  const w = getWatch(id);
+  const admins = w?.state.cms?.admins;
+  if (!admins) return null;
+  const state = { ...w.state, cms: { ...w.state.cms, admins: acceptAdmins(admins) } };
+  if (state.incidents?.cms_admins) {
+    state.incidents = { ...state.incidents };
+    delete state.incidents.cms_admins;
+  }
+  return updateWatch(id, { state });
 }

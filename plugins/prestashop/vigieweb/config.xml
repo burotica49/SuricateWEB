@@ -2,8 +2,8 @@
 <module>
     <name>vigieweb</name>
     <displayName><![CDATA[VigieWeb]]></displayName>
-    <version><![CDATA[1.0.0]]></version>
-    <description><![CDATA[Indique à VigieWeb la version de PHP et les mises à jour du noyau, des modules et des thèmes.]]></description>
+    <version><![CDATA[1.1.0]]></version>
+    <description><![CDATA[Indique à VigieWeb la version de PHP, les mises à jour, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers de médias.]]></description>
     <author><![CDATA[VigieWeb]]></author>
     <tab><![CDATA[administration]]></tab>
     <is_configurable>1</is_configurable>

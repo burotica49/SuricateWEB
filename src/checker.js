@@ -14,7 +14,8 @@ import {
   getWatch, getSettings, saveRun, insertSnapshot, latestSnapshot, snapshotLines, insertCheck, insertAlert, markNotified,
   prune, openOutage, closeOutage, upsertDaily, activeMaintenance, pendingMaintenanceAlerts, markMaintenanceSummarized,
 } from './db.js';
-import { cmsIncidents } from './cms-alerts.js';
+import { cmsIncidents, cmsIncidentGroup } from './cms-alerts.js';
+import { resolvePage, pageName } from './pages.js';
 import { parseHtml, selectAll, textLines, extractFeatures } from './html.js';
 import { diffLines, preview } from './diff.js';
 import { sendAlert, sendPhoto } from './telegram.js';
@@ -325,6 +326,7 @@ const catOf = (key) => {
   if (['down', 'http', 'downgrade'].includes(b)) return 'net';
   if (b.startsWith('tls')) return 'tls';
   if (b.startsWith('cms') || b === 'php_eol') return 'cms';
+  if (b.startsWith('page_')) return 'pages';
   if (b.startsWith('rdap')) return 'rdap';
   if (b.startsWith('dns')) return 'dns';
   return 'content';
@@ -355,6 +357,10 @@ export async function runCheck(id) {
   // Fenêtre de maintenance en cours : les alertes sont retenues et aucune panne n'est comptée (voir plus bas).
   const maint = activeMaintenance(w.id, now);
 
+  // Pages supplémentaires (panier, contact, connexion) : récupérées en parallèle du reste du passage.
+  const extra = domainOnly ? [] : (cfg.pages || []).map((p) => ({ p, href: resolvePage(w.url, p) })).filter((x) => x.href);
+  const extraJob = extra.length ? Promise.allSettled(extra.map((x) => hooks.fetchPage(x.href, cfg, settings))) : null;
+
   const rdapDue = c.rdap && !isIp(host) && domain.includes('.') && (!state.rdap || now - (state.rdap.checkedAt || 0) > (state.rdap.unsupported ? 7 * DAY : RDAP_EVERY));
   const none = () => Promise.reject(null);
   const [pageR, dnsR, tlsR, rdapR] = await Promise.allSettled([
@@ -368,7 +374,7 @@ export async function runCheck(id) {
   const incidents = {};
   const evaluated = new Set();
   const add = (type, severity, title, detail = '', extra = {}) => alerts.push({ type, severity, title, detail, ...extra });
-  const inc = (key, severity, title, detail = '') => (incidents[key] = { severity, title, detail });
+  const inc = (key, severity, title, detail = '', count = null) => (incidents[key] = { severity, title, detail, ...(count != null ? { count } : {}) });
   const baseline = !first; // les évènements de changement ne sont émis qu'à partir du 2e passage
 
   let code = null;
@@ -525,6 +531,87 @@ export async function runCheck(id) {
     }
   }
 
+  // ── Pages supplémentaires : disponibilité, mots-clés de piratage et signaux techniques (scripts, iframes, formulaires) ──
+  // Pas de comparaison du texte : un panier ou un espace client change à chaque visite. Ces pages ne comptent pas dans la disponibilité du site.
+  const wanted = new Set(extra.map((x) => x.href));
+  for (const k of Object.keys(state.incidents || {})) {
+    if (catOf(k) === 'pages' && !wanted.has(k.slice(k.indexOf(':') + 1))) delete state.incidents[k]; // page retirée de la liste : pas de message « rétabli »
+  }
+  if (extraJob) {
+    evaluated.add('pages');
+    const results = await extraJob;
+    const prevPages = state.pages || {};
+    const nextPages = {};
+    const words = [...new Set([...settings.builtinKeywords, ...cfg.forbidden].map((s) => s.toLowerCase().trim()).filter(Boolean))];
+    const pageCfg = { ...cfg, selector: '', excludeSelector: '' };
+    extra.forEach(({ p, href }, idx) => {
+      const r = results[idx];
+      const name = pageName(href, p);
+      const ps = { ...(prevPages[href] || {}) };
+      const pbaseline = !!ps.baseline;
+      const tag = (title) => `${title} — page « ${name} »`;
+      const padd = (type, sev, title, detail = '') => add(`page_${type}`, sev, tag(title), `${href}${detail ? `\n${detail}` : ''}`);
+      let problem = null;
+      if (r.status === 'rejected') problem = describeError(r.reason).message;
+      else if (isDownCode(r.value.status)) problem = `Erreur HTTP ${r.value.status}`;
+      if (problem) {
+        // Comme pour le site : plusieurs échecs de suite avant d'alerter ; une panne passagère ne déclenche rien, et rien n'est « rétabli » en attendant.
+        ps.fails = maint ? 0 : (ps.fails || 0) + 1;
+        ps.error = problem;
+        const confirmed = ps.fails >= cfg.failThreshold;
+        if (confirmed) inc(`page_down:${href}`, 'warning', tag('Page inaccessible'), `${href}\n${problem}`);
+        // La page ne répond pas : ce qu'on savait d'elle (texte suspect) reste vrai tant qu'on ne peut pas le revérifier.
+        for (const [k, i] of Object.entries(state.incidents || {})) {
+          if (!k.endsWith(`:${href}`) || (confirmed && k.startsWith('page_down:'))) continue;
+          incidents[k] = { severity: i.severity, title: i.title, detail: i.detail, ...(i.count != null ? { count: i.count } : {}) };
+        }
+        ps.checkedAt = now;
+        nextPages[href] = ps;
+        return;
+      }
+      const page = r.value;
+      ps.fails = 0;
+      ps.error = null;
+      ps.code = page.status;
+      ps.ms = page.ms;
+      ps.checkedAt = now;
+      ps.finalUrl = page.finalUrl;
+      const a = analyze(page, pageCfg);
+      const f = a.features;
+      if (c.keywords && a.fullLines.length) {
+        const text = a.fullLines.join('\n').toLowerCase();
+        const hits = words.filter((k) => wordIndex(text, k) >= 0).slice(0, 12);
+        if (hits.length) {
+          inc(`page_forbidden:${href}`, 'critical', tag(hits.length === 1 ? `Texte suspect détecté : « ${hits[0]} »` : `${hits.length} textes suspects détectés`), `${href}\n${context(text, hits[0])}`, hits.length);
+        }
+      }
+      if (f) {
+        if (pbaseline) {
+          const fresh = f.suspects.filter((s) => !(ps.suspects || []).includes(s));
+          if (fresh.length) padd('script_suspect', 'critical', 'Script JavaScript suspect (obfusqué / redirection)', fresh[0]);
+          if (c.title && ps.title !== undefined && ps.title !== f.title) padd('title_changed', 'warning', 'Le titre de la page a changé', `« ${ps.title} » → « ${f.title} »`);
+          if (c.scripts && ps.scripts) {
+            const added = f.scripts.filter((s) => !ps.scripts.includes(s));
+            if (added.length) {
+              const ext = added.filter((s) => registrable(new URL(s).hostname) !== domain);
+              padd('script_added', ext.length ? 'critical' : 'warning', ext.length ? 'Nouveau script externe chargé par la page' : 'Nouveau script ajouté à la page', added.slice(0, 5).join('\n'));
+            }
+          }
+          if (c.links && ps.linkHosts) {
+            const nf = f.iframeHosts.filter((h) => !(ps.iframeHosts || []).includes(h));
+            const nfo = f.formHosts.filter((h) => !(ps.formHosts || []).includes(h));
+            if (nf.length) padd('iframe_added', 'critical', 'Iframe externe injectée dans la page', nf.join(', '));
+            if (nfo.length) padd('form_hijacked', 'critical', 'Un formulaire envoie désormais ses données vers un domaine externe', nfo.join(', '));
+            if (f.metaRefresh && f.metaRefresh !== ps.metaRefresh) padd('meta_refresh', 'critical', 'Redirection <meta refresh> détectée', f.metaRefresh);
+          }
+        }
+        Object.assign(ps, { baseline: true, title: f.title, scripts: f.scripts, linkHosts: f.linkHosts, iframeHosts: f.iframeHosts, formHosts: f.formHosts, metaRefresh: f.metaRefresh, suspects: f.suspects });
+      } else ps.baseline = true;
+      nextPages[href] = ps;
+    });
+    state.pages = nextPages;
+  } else if (state.pages) delete state.pages;
+
   // ── DNS : détournement de zone, de site ou de messagerie ──
   if (dnsR.status === 'fulfilled') {
     const d = dnsR.value;
@@ -616,14 +703,20 @@ export async function runCheck(id) {
     state.rdap = { ...(state.rdap || {}), checkedAt: now - RDAP_EVERY + 10 * 60e3 }; // réessai dans 10 min
   }
 
-  // ── Mises à jour du CMS et support de PHP : évalués sur le dernier relevé du plugin (relevé séparé, 12 h par défaut) ──
-  if (!domainOnly && cfg.cms.type && cfg.cms.alerts !== false) {
-    if (state.cms?.core && state.cms.checkedAt) {
+  // ── CMS : mises à jour, support de PHP, intégrité des fichiers, comptes administrateurs (relevé séparé du plugin, 12 h par défaut) ──
+  if (!domainOnly && cfg.cms.type) {
+    const updates = cfg.cms.alerts !== false;
+    const security = cfg.cms.security !== false;
+    // Un groupe d'alertes désactivé : ses incidents disparaissent sans message « rétabli ».
+    for (const k of Object.keys(state.incidents || {})) {
+      if (catOf(k) === 'cms' && !(cmsIncidentGroup(k) === 'security' ? security : updates)) delete state.incidents[k];
+    }
+    if ((updates || security) && state.cms?.core && state.cms.checkedAt) {
       evaluated.add('cms');
-      for (const i of cmsIncidents(state.cms, { afterDays: settings.cmsAfterDays, now })) inc(i.key, i.severity, i.title, i.detail);
+      for (const i of cmsIncidents(state.cms, { afterDays: settings.cmsAfterDays, now, updates, security })) inc(i.key, i.severity, i.title, i.detail, i.count);
     }
   } else {
-    // Alertes désactivées pour ce site (ou CMS retiré) : ses incidents disparaissent sans message « rétabli ».
+    // CMS retiré : ses incidents disparaissent sans message « rétabli ».
     for (const k of Object.keys(state.incidents || {})) if (catOf(k) === 'cms') delete state.incidents[k];
   }
 
@@ -633,7 +726,10 @@ export async function runCheck(id) {
     const prev = prevInc[key];
     // L'échéance du domaine (sous 7 jours), un CMS en retard ou PHP en fin de support deviennent critiques : on ré-alerte,
     // même si le premier rappel a été marqué comme lu.
-    const escalated = prev && (key === 'rdap_expiring' || key === 'php_eol' || key.startsWith('cms_')) && (SEV[i.severity] || 0) > (SEV[prev.severity] || 0);
+    // Un incident qui grossit (plus de fichiers suspects, de comptes, de mots) ré-alerte aussi : le premier message ne les mentionnait pas.
+    const escalated = prev && (
+      ((key === 'rdap_expiring' || key === 'php_eol' || key.startsWith('cms_')) && (SEV[i.severity] || 0) > (SEV[prev.severity] || 0))
+      || (i.count != null && i.count > (prev.count ?? 0)));
     // Incident apparu pendant une maintenance : son alerte a été retenue, on prévient dès la reprise s'il est toujours là.
     const deferred = prev?.muted && !maint;
     if (!prev || escalated || deferred) add(key.split(':')[0], i.severity, i.title, i.detail);

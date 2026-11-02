@@ -279,8 +279,32 @@ export const defaultConfig = () => ({
     redirect: true, status: true, tls: true, dns: true, rdap: true, server: true,
   },
   // Connecteur WordPress / PrestaShop : VigieWeb interroge le plugin (intervalMin en minutes).
-  cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true },
+  // alerts : mises à jour en retard / PHP en fin de support · security : intégrité des fichiers et comptes administrateurs.
+  cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true },
+  // Pages supplémentaires du même site (panier, contact, connexion…) : [{ url, label }], 10 au plus.
+  pages: [],
+  // Page de statut publique en lecture seule, à l'adresse /status/<jeton>.
+  statusPage: { enabled: false, token: '', title: '' },
 });
+
+/** « /panier | Panier » (une par ligne) ou [{ url, label }] : chemin ou adresse complète, et un nom facultatif. */
+function pageList(v) {
+  const arr = Array.isArray(v) ? v : String(v ?? '').split('\n');
+  const out = [];
+  const seen = new Set();
+  for (const it of arr) {
+    let url = typeof it === 'string' ? it : it?.url;
+    let label = typeof it === 'string' ? '' : it?.label;
+    if (typeof it === 'string' && url.includes('|')) [url, label] = [url.slice(0, url.indexOf('|')), url.slice(url.indexOf('|') + 1)];
+    url = String(url ?? '').trim();
+    label = String(label ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!url || url.length > 500 || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ url, label });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
 
 const strList = (v, max = 100) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, max);
 
@@ -326,6 +350,14 @@ export function normalizeConfig(input = {}) {
     path: String(rawCms.path ?? '').trim().replace(/^\/+|\/+$/g, '').slice(0, 120),
     intervalMin: Math.round(clamp(rawCms.intervalMin, 60, 10080, 720)),
     alerts: rawCms.alerts !== false,
+    security: rawCms.security !== false,
+  };
+  c.pages = c.mode === 'domain' ? [] : pageList(input.pages);
+  const rawStatus = input.statusPage && typeof input.statusPage === 'object' ? input.statusPage : {};
+  c.statusPage = {
+    enabled: c.mode !== 'domain' && !!rawStatus.enabled,
+    token: /^[A-Za-z0-9_-]{16,64}$/.test(String(rawStatus.token ?? '')) ? String(rawStatus.token) : '',
+    title: String(rawStatus.title ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
   };
   return c;
 }
@@ -352,6 +384,17 @@ const rowToWatch = (r) =>
     groupId: r.group_id ?? null,
     position: r.position,
   };
+
+/** Site dont la page de statut publique porte ce jeton, ou null. Le jeton est validé avant d'entrer dans la requête. */
+export function getWatchByStatusToken(token) {
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token ?? ''))) return null;
+  const rows = db.prepare('SELECT * FROM watches WHERE config LIKE ?').all(`%${token}%`);
+  for (const r of rows) {
+    const w = rowToWatch(r);
+    if (w.config.statusPage.enabled && w.config.statusPage.token === token) return w;
+  }
+  return null;
+}
 
 export const listWatches = () => db.prepare('SELECT * FROM watches ORDER BY position, name COLLATE NOCASE').all().map(rowToWatch);
 export const getWatch = (id) => rowToWatch(db.prepare('SELECT * FROM watches WHERE id = ?').get(id));
@@ -431,6 +474,9 @@ export function setCmsReport(id, cms, nextCms) {
   db.prepare('UPDATE watches SET state = ?, next_cms = ? WHERE id = ?').run(JSON.stringify(state), nextCms, id);
   return getWatch(id);
 }
+
+/** Un relevé du plugin vient d'aboutir : le prochain contrôle part sans attendre, pour que ses alertes ne tardent pas. */
+export const wakeWatch = (id) => db.prepare('UPDATE watches SET next_run = 0 WHERE id = ? AND enabled = 1 AND next_run > ?').run(id, Date.now());
 
 export const deleteWatch = (id) => db.prepare('DELETE FROM watches WHERE id = ?').run(id).changes > 0;
 
@@ -629,6 +675,11 @@ export function activeMaintenanceMap(now = Date.now()) {
   return map;
 }
 
+/** Fenêtres de maintenance qui recoupent [from, to[ (pour le rapport mensuel). */
+export function maintenanceBetween(watchId, from, to) {
+  return db.prepare('SELECT * FROM maintenance WHERE watch_id = ? AND start < ? AND end > ? ORDER BY start').all(watchId, to, from).map(maintRow);
+}
+
 /** Termine une fenêtre en cours (elle s'arrête maintenant) ou supprime une fenêtre à venir. */
 export function endMaintenance(id, now = Date.now()) {
   const r = db.prepare('SELECT * FROM maintenance WHERE id = ?').get(id);
@@ -736,6 +787,23 @@ export function responseStats(watchId, days, now = Date.now()) {
   }
   const r = db.prepare('SELECT SUM(sum_ms) s, SUM(ms_n) n, MIN(min_ms) min, MAX(max_ms) max FROM daily_stats WHERE watch_id = ? AND day > ?').get(watchId, Math.floor(now / DAY_MS) - days);
   return { avg: r.n ? Math.round(r.s / r.n) : null, min: r.min, max: r.max, n: r.n || 0 };
+}
+
+/** Temps de réponse moyen / min / max sur [from, to[ d'après les agrégats journaliers (jours UTC entiers). */
+export function responseBetween(watchId, from, to) {
+  const r = db.prepare('SELECT SUM(sum_ms) s, SUM(ms_n) n, MIN(min_ms) min, MAX(max_ms) max, SUM(n) checks FROM daily_stats WHERE watch_id = ? AND day >= ? AND day < ?')
+    .get(watchId, Math.floor(from / DAY_MS), Math.ceil(to / DAY_MS));
+  return { avg: r.n ? Math.round(r.s / r.n) : null, min: r.min ?? null, max: r.max ?? null, checks: r.checks || 0 };
+}
+
+/** Pannes qui recoupent [from, to[, bornées à cette période. */
+export function outagesBetween(watchId, from, to, now = Date.now()) {
+  return db.prepare('SELECT id, start, end, reason, code FROM outages WHERE watch_id = ? AND start < ? AND (end IS NULL OR end > ?) ORDER BY start').all(watchId, to, from)
+    .map((o) => {
+      const start = Math.max(o.start, from);
+      const end = Math.min(o.end ?? now, to);
+      return { ...o, start, end, ongoing: o.end == null && to > now, duration: Math.max(0, end - start), startedBefore: o.start < from };
+    });
 }
 
 /** Série de points {ts, ms, ok} pour le graphique : brut (24 h), horaire (7 j) ou journalier (30/90 j). */

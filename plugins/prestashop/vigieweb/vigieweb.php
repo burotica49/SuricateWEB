@@ -9,13 +9,13 @@ class Vigieweb extends Module
     {
         $this->name = 'vigieweb';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.1.0';
         $this->author = 'VigieWeb';
         $this->need_instance = 0;
         $this->bootstrap = true;
         parent::__construct();
         $this->displayName = $this->l('VigieWeb');
-        $this->description = $this->l('Indique à VigieWeb la version de PHP et les mises à jour disponibles. VigieWeb interroge la boutique ; le module n’envoie rien de lui-même.');
+        $this->description = $this->l('Indique à VigieWeb la version de PHP, les mises à jour disponibles, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers d’images et de téléversements. VigieWeb interroge la boutique ; le module n’envoie rien de lui-même.');
         $this->ps_versions_compliancy = array('min' => '1.7.6.0', 'max' => _PS_VERSION_);
     }
 
@@ -76,7 +76,8 @@ class Vigieweb extends Module
             exit;
         }
         try {
-            $report = $this->buildReport($this->wantsRefresh());
+            $scope = isset($_GET['scope']) ? (string) $_GET['scope'] : '';
+            $report = $scope === 'integrity' ? $this->buildIntegrity() : $this->buildReport($this->wantsRefresh());
         } catch (Exception $e) {
             http_response_code(500);
             echo '{"error":"failed"}';
@@ -132,7 +133,100 @@ class Vigieweb extends Module
             'core' => array('current' => _PS_VERSION_, 'available' => $available, 'known' => $known),
             'extensions' => $this->moduleRows($refresh),
             'themes' => $this->themeRows(),
+            'admins' => $this->adminReport(),
         );
+    }
+
+    /**
+     * Administrateurs actifs (profil SuperAdmin) : un compteur seulement. La table des employés ne date pas
+     * leur création : VigieWeb détecte donc un nouvel administrateur à l'augmentation du compteur.
+     */
+    private function adminReport()
+    {
+        try {
+            $profile = defined('_PS_ADMIN_PROFILE_') ? (int) _PS_ADMIN_PROFILE_ : 1;
+            $count = (int) Db::getInstance()->getValue(
+                'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'employee` WHERE `id_profile` = ' . $profile . ' AND `active` = 1',
+                false
+            );
+        } catch (Exception $e) {
+            return null;
+        }
+        return array('count' => $count, 'windowDays' => 0, 'recent' => array());
+    }
+
+    /**
+     * Intégrité (couverture partielle) : PrestaShop ne publie pas de sommes de contrôle pour les modules ni pour le cœur
+     * de façon exploitable ici. Le module cherche donc seulement des fichiers PHP là où il ne devrait pas y en avoir
+     * (images, fichiers téléversés, téléchargements) : c'est l'endroit habituel d'une porte dérobée.
+     */
+    private function buildIntegrity()
+    {
+        @set_time_limit(60);
+        $deadline = microtime(true) + 40;
+        $dirs = array('img', 'upload', 'download');
+        $root = rtrim(_PS_ROOT_DIR_, '/\\');
+        $php = array();
+        $scanned = 0;
+        $truncated = false;
+        foreach ($dirs as $dir) {
+            $base = $root . '/' . $dir;
+            if (!is_dir($base)) {
+                continue;
+            }
+            try {
+                $it = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::LEAVES_ONLY,
+                    RecursiveIteratorIterator::CATCH_GET_CHILD
+                );
+                foreach ($it as $file) {
+                    if (++$scanned > 200000 || microtime(true) > $deadline) {
+                        $truncated = true;
+                        break 2;
+                    }
+                    if (!$file->isFile() || $file->isLink() || !preg_match('/\\.(php[0-9]?|phtml|pht|phar)$/i', $file->getFilename())) {
+                        continue;
+                    }
+                    if ($this->isIndexStub($file->getPathname())) {
+                        continue;
+                    }
+                    $php[] = ltrim(str_replace('\\', '/', substr($file->getPathname(), strlen($root))), '/');
+                }
+            } catch (Exception $e) {
+                $truncated = true;
+            }
+        }
+        sort($php);
+        return array(
+            'cms' => 'prestashop',
+            'integrity' => array(
+                'core' => array('known' => false, 'checked' => 0, 'modified' => array(), 'added' => array(), 'missing' => array(), 'more' => 0, 'version' => _PS_VERSION_),
+                'plugins' => array(),
+                'uploads' => array('php' => array_slice($php, 0, 40), 'more' => max(0, count($php) - 40), 'scanned' => $scanned, 'truncated' => $truncated),
+                'dirs' => array_map(function ($d) {
+                    return $d . '/';
+                }, $dirs),
+                'partial' => false,
+            ),
+        );
+    }
+
+    /** Le petit index.php que PrestaShop met dans chaque dossier : une simple redirection, sans code. */
+    private function isIndexStub($path)
+    {
+        if (basename($path) !== 'index.php') {
+            return false;
+        }
+        $size = @filesize($path);
+        if ($size === false || $size > 2000) {
+            return false;
+        }
+        $raw = (string) @file_get_contents($path);
+        if (!preg_match('/header\\s*\\(\\s*[\'"](Location|Expires|Last-Modified|Cache-Control|Pragma)/i', $raw)) {
+            return false;
+        }
+        return !preg_match('/\\b(eval|assert|system|exec|passthru|shell_exec|popen|proc_open|base64_decode|gzinflate|str_rot13|file_put_contents|create_function)\\s*\\(|\\$_(GET|POST|REQUEST|COOKIE|FILES|SERVER)\\b/i', $raw);
     }
 
     private function coreAvailable($refresh)

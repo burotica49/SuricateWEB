@@ -12,7 +12,7 @@ Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io)
 
 ## Sommaire
 
-[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop-mises-à-jour) · [Réduire le bruit](#réduire-le-bruit) · [Maintenance](#fenêtres-de-maintenance) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
+[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop-mises-à-jour) · [Sécurité du CMS](#sécurité-du-cms-intégrité-des-fichiers-et-administrateurs) · [Plusieurs pages](#plusieurs-pages-par-site) · [Rapport et page de statut](#rapport-mensuel-et-page-de-statut) · [Réduire le bruit](#réduire-le-bruit) · [Maintenance](#fenêtres-de-maintenance) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
 
 ## Aperçu
 
@@ -51,6 +51,12 @@ Un seul message par contrôle, avec la sévérité, le détail, un extrait des l
 Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **version de PHP** et les **mises à jour disponibles** du noyau, des extensions (modules) et des thèmes, avec la version actuelle en regard de la version disponible, et prévient quand une mise à jour tarde ou que PHP n'est plus maintenu. [Mise en place, alertes et garde-fous](#wordpress-et-prestashop-mises-à-jour).
 
 ![Onglet Mises à jour : PHP, noyau, extensions et thèmes avec versions actuelles et disponibles](docs/screenshots/mises-a-jour.png)
+
+### Sécurité du CMS, pages sensibles, rapport client
+
+- **Intégrité des fichiers WordPress** : le plugin compare le noyau et les extensions du dépôt officiel aux sommes de contrôle de wordpress.org, et repère un fichier modifié, un fichier PHP ajouté (porte dérobée) ou un fichier PHP dans `uploads/`. Alerte aussi quand un **nouvel administrateur** apparaît. [Détails](#sécurité-du-cms-intégrité-des-fichiers-et-administrateurs).
+- **Plusieurs pages par site** : panier, connexion, contact… surveillés pour les scripts, iframes, formulaires détournés et textes suspects. [Détails](#plusieurs-pages-par-site).
+- **Rapport mensuel client** (disponibilité, incidents, mises à jour, à imprimer ou enregistrer en PDF) et **page de statut** publique en lecture seule. [Détails](#rapport-mensuel-et-page-de-statut).
 
 ### Thème sombre et mobile
 
@@ -320,11 +326,13 @@ Le relevé se fait **depuis le site**, là où ces informations existent : un pe
 3. Collez le jeton dans les réglages du plugin (WordPress : *Réglages › VigieWeb* ; PrestaShop : *Modules › Gestionnaire de modules › VigieWeb › Configurer*).
 4. Ouvrez l'onglet **Mises à jour** et cliquez sur **Actualiser**.
 
+**Mise à jour du plugin** : un plugin installé avant la version 1.1 continue de fournir les versions, mais pas l'intégrité des fichiers ni les administrateurs ; l'onglet *Sécurité* indique alors « plugin trop ancien ». Remplacez le plugin par la nouvelle archive (le jeton est conservé).
+
 L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fixe : `/?rest_route=/vigieweb/v1/status` pour WordPress (avec ou sans permaliens), `/modules/vigieweb/status.php` pour PrestaShop. Le téléchargement du plugin n'est possible que connecté à VigieWeb ; l'archive est fabriquée à la demande depuis le dossier `plugins/`.
 
 ### Ce qui circule, et les garde-fous
 
-- **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Ni contenu, ni utilisateur, ni mot de passe, ni donnée client.
+- **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Depuis la version 1.1, il renvoie aussi le **nombre d'administrateurs** (avec, sous WordPress, l'identifiant de connexion et la date de création de ceux créés depuis 30 jours) et, pour le contrôle d'intégrité, des **chemins de fichiers** (jamais leur contenu). Ni e-mail, ni mot de passe, ni contenu, ni donnée client.
 - **Cette liste reste sensible** : elle indique à un attaquant quelles failles tenter. Sans jeton valide (comparé en temps constant), le plugin répond « non autorisé » et ne renvoie aucune donnée. Gardez le jeton secret et surveillez un site **en HTTPS** : en HTTP, le jeton transiterait en clair.
 - Le jeton est envoyé dans l'en-tête `Authorization`, jamais dans l'adresse.
 - VigieWeb ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
@@ -355,6 +363,90 @@ VigieWeb alerte comme pour un certificat qui expire : **une fois à l'apparition
 - Une mise à jour d'un module PrestaShop **absent du catalogue Addons**, ou d'un thème sur mesure : la version actuelle est affichée, la version disponible reste « inconnue ».
 - Si une mise à jour **corrige une faille**, ou si une faille est exploitable sur votre site : VigieWeb indique les versions, pas les vulnérabilités.
 - En **mode démo**, aucun site n'est interrogé : les relevés affichés sont fictifs.
+
+## Sécurité du CMS : intégrité des fichiers et administrateurs
+
+VigieWeb voit le HTML d'un site, pas ses fichiers. Le plugin comble ce manque : il lit les fichiers **depuis le site**, là où ils sont. L'onglet **Sécurité** (sites WordPress et PrestaShop) en présente le résultat.
+
+### Intégrité des fichiers
+
+| Contrôle | Ce que le plugin fait | Alerte |
+|---|---|---|
+| **Noyau WordPress** | compare chaque fichier de `wp-admin/`, `wp-includes/` et de la racine aux sommes de contrôle publiées par wordpress.org pour **votre version** ; cherche aussi les fichiers PHP absents de la distribution | **critique** si un fichier est modifié ou si un fichier PHP est ajouté ; avertissement si des fichiers manquent seulement |
+| **Extensions du dépôt officiel** | même comparaison, extension par extension (sommes de `downloads.wordpress.org/plugin-checksums`) | **critique** si un fichier est modifié ou ajouté |
+| **PHP dans `uploads/`** | tout fichier `.php`, `.phtml`, `.pht` ou `.phar` dans le dossier des téléversements (les `index.php` « Silence is golden » sont ignorés) | **critique** : ce dossier ne devrait contenir que des médias |
+
+- **Les extensions premium ou sur mesure** (hors dépôt officiel) et les versions inconnues du dépôt ne sont pas comparables : elles sont listées « non vérifiables », sans alerte.
+- **Les fichiers de durcissement courants** (`readme.html`, `license.txt`, `wp-config-sample.php`, `install.php`, `upgrade.php`) ne sont pas signalés s'ils manquent, et `wp-config.php` n'est pas un fichier « ajouté ».
+- **Le contrôle est lourd** (il lit tous les fichiers) : le plugin le borne à 60 secondes, garde les sommes de contrôle en cache 6 heures et le résultat 30 minutes ; **Actualiser** le relance au plus une fois toutes les 15 minutes. Il se fait à chaque relevé (toutes les 12 h par défaut).
+- **Une alerte qui grossit est annoncée de nouveau** : un deuxième fichier suspect apparaissant alors que le premier est déjà signalé déclenche un nouveau message. Quand tout est conforme, « ✅ Rétabli ».
+- **PrestaShop : couverture partielle.** PrestaShop ne publie pas de sommes de contrôle exploitables pour son cœur ni pour ses modules : le module cherche seulement des fichiers PHP dans `img/`, `upload/` et `download/` (hors les `index.php` de redirection livrés par PrestaShop).
+
+### Comptes administrateurs
+
+Un nouvel administrateur est un classique après une intrusion. Le plugin ne renvoie **qu'un compteur et les créations récentes**, sans mot de passe ni e-mail :
+
+- **WordPress** : le nombre d'administrateurs, et pour ceux créés ces 30 derniers jours leur identifiant de connexion et la date de création.
+- **PrestaShop** : le nombre d'administrateurs actifs seulement (la table des employés ne date pas leur création).
+
+Le **premier relevé fixe la référence**, sans alerte. Ensuite, VigieWeb alerte (**critique**) quand un compte apparaît ou que le compteur augmente sans création récente (un compte existant promu administrateur). Le message reste actif, sans se répéter, jusqu'à ce que vous cliquiez sur **Je connais ces comptes** (onglet Sécurité) : c'est alors la nouvelle référence, sans message « rétabli ». Un compte supprimé fait disparaître l'alerte.
+
+### Réglages et limites
+
+- Le bloc *WordPress / PrestaShop* du formulaire a un interrupteur propre, **Surveiller l'intégrité des fichiers et les comptes administrateurs** (actif par défaut), distinct de celui des alertes de mises à jour : couper l'un ne coupe pas l'autre, et les alertes éteintes disparaissent sans message « rétabli ».
+- **Le contrôle tourne sur le site lui-même.** Un attaquant qui en a pris le contrôle peut fausser la réponse du plugin, voire le désactiver. Une absence d'anomalie est un bon signe, pas une preuve : elle ne remplace ni une sauvegarde saine ni une analyse externe. Un plugin qui cesse de répondre n'est pas signalé (voir [Limites](#limites-à-connaître)).
+- Un fichier modifié à la main (retouche d'une extension, correctif d'hébergeur) est signalé comme tout autre : c'est voulu, ces retouches sautent à la prochaine mise à jour.
+
+## Plusieurs pages par site
+
+Une défiguration touche souvent la page d'accueil, mais les pirates visent aussi le **panier**, le **paiement**, la **connexion** et le **contact** : c'est là que se volent les cartes bancaires et les mots de passe. Dans *Modifier › Pages supplémentaires*, listez ces pages, une par ligne :
+
+```
+/panier | Panier
+/commande
+/mon-compte | Connexion
+https://boutique.exemple.fr/contact | Contact
+```
+
+Un chemin ou une adresse **du même domaine** (sous-domaines compris), un nom facultatif après « | », **10 pages au plus**. Une adresse d'un autre domaine est refusée.
+
+Chaque page est contrôlée en même temps que le site, avec ses réglages (délai, en-têtes personnalisés, mots-clés interdits) :
+
+| Signal | Alerte |
+|---|---|
+| **Texte suspect** (« hacked by », spam…) | **critique**, tant qu'il est présent ; une alerte de plus s'il y en a davantage |
+| **Nouveau script** chargé par la page, **script suspect** (obfusqué, redirection) | critique pour un script externe, avertissement sinon |
+| **Iframe externe**, **formulaire qui envoie vers un autre domaine**, redirection `<meta refresh>` | **critique** |
+| **Titre** modifié | avertissement |
+| **Page inaccessible** (erreur HTTP, délai) | avertissement, après le nombre d'échecs réglé pour le site (2 par défaut) |
+
+- Les alertes portent le nom de la page : « Nouveau script externe chargé par la page — page « Panier » ».
+- **Le premier passage sur une page pose sa référence** sans alerter, comme pour le site : seuls les changements ensuite sont signalés.
+- **Pas de comparaison du texte** : un panier ou un espace client change à chaque visite. Seuls les signaux ci-dessus comptent.
+- **Une panne d'une page ne compte pas dans la disponibilité du site**, et pas de capture d'écran pour ces pages.
+- Un échec isolé ne « rétablit » pas un texte suspect déjà signalé. Retirer une page de la liste efface ses alertes sans message.
+- L'onglet *Aperçu* du site affiche la carte **Pages surveillées** (état, code, temps de réponse, dernier contrôle).
+
+## Rapport mensuel et page de statut
+
+### Rapport mensuel client
+
+Le bouton **Rapport** d'un site ouvre dans un nouvel onglet un document HTML prêt à envoyer à votre client : **Imprimer / PDF** l'enregistre au format PDF depuis le navigateur. Un bouton du même nom dans l'en-tête d'un **groupe** produit le rapport de **tous ses sites** (un groupe par client) : une synthèse, puis un chapitre par site.
+
+Par défaut, c'est le **dernier mois entier** ; les boutons *Mois précédent* et *Mois suivant* parcourent les autres (`/api/watches/12/report?month=2026-10`). Il contient :
+
+- **Disponibilité** du mois, indisponibilité cumulée, nombre de pannes et la plus longue, temps de réponse moyen, frise jour par jour et tableau des pannes (durées bornées au mois). Les maintenances planifiées sont listées et ne comptent pas comme des pannes.
+- **Incidents détectés** : le nombre et les titres des alertes critiques et d'avertissement du mois, sans leur détail technique.
+- **Mises à jour et sécurité** (sites WordPress / PrestaShop) : mises à jour **effectuées** pendant le mois, mises à jour en attente, version de PHP et son support, état de l'intégrité des fichiers et des comptes administrateurs.
+- **Échéances** : certificat TLS et nom de domaine.
+
+Les mises à jour « effectuées » sont celles que VigieWeb a **vues** d'un relevé à l'autre (version installée qui change) : à l'intervalle du relevé près, et seulement depuis l'activation du relevé CMS. Le rapport est calculé à l'ouverture, depuis les données conservées (pannes et statistiques 13 mois, fenêtres de maintenance 90 jours après leur fin, alertes selon la rétention) : un mois ancien peut donc être incomplet. Il exige d'être connecté.
+
+### Page de statut publique
+
+*Modifier › Page de statut publique* publie une page **en lecture seule**, à l'adresse `/status/<jeton>` (la base est l'adresse de VigieWeb réglée dans *Réglages*, sinon celle du navigateur). Le jeton est aléatoire ; **Nouvelle adresse** en génère un autre et l'ancien cesse aussitôt de fonctionner.
+
+Elle montre l'état actuel (tout fonctionne, panne en cours, maintenance, en pause), la disponibilité sur 24 h, 7, 30 et 90 jours, la frise de 90 jours, les maintenances et les pannes des 90 derniers jours ; elle se rafraîchit toute seule. **Elle ne montre jamais** d'alerte de sécurité, de cause technique, de version ni de réglage. Pas de connexion requise : toute personne qui connaît l'adresse la voit. La page est exclue des moteurs de recherche, ses requêtes sont limitées par adresse (120 par minute) et un jeton inconnu ou une page coupée répondent de la même façon (404).
 
 ## Réduire le bruit
 
@@ -405,7 +497,8 @@ Si des alertes d'avertissement ou critiques ont été retenues, VigieWeb envoie 
 - **Pas de rétroactivité** : la disponibilité n'est calculée qu'à partir de l'installation de cette fonction ; avant, les sites sont considérés disponibles.
 - Les résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9) doivent être joignables en UDP/53 depuis le serveur ; sinon la cohérence entre résolveurs est simplement ignorée.
 - **Le relevé des mises à jour n'est pas un scanner de vulnérabilités** : il compare des numéros de version fournis par le CMS (voir [ce qu'il ne peut pas dire](#ce-que-le-relevé-ne-peut-pas-dire)).
-- **Un plugin devenu injoignable n'est pas signalé** : VigieWeb garde le dernier relevé et affiche l'erreur dans l'onglet *Mises à jour*, sans alerter.
+- **Un plugin devenu injoignable n'est pas signalé** : VigieWeb garde le dernier relevé et affiche l'erreur dans l'onglet *Mises à jour*, sans alerter. C'est aussi ce qui arrive si un pirate désactive le plugin : voir [les limites du contrôle d'intégrité](#réglages-et-limites).
+- **Les pages supplémentaires ne sont pas comparées en texte**, et ne comptent ni dans la disponibilité ni dans les captures d'écran.
 - Les adresses IP derrière un CDN tournent : VigieWeb ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
 
 ## Architecture
@@ -422,11 +515,14 @@ src/auth.js          identifiants lus dans l'environnement, comparaison en temps
 src/env.js           chargement du .env (avant l'ouverture de la base)
 src/scheduler.js     planificateur (5 contrôles en parallèle, relevés CMS à part)
 src/cms.js           relevé PHP / mises à jour : appel du plugin WordPress ou PrestaShop
-src/cms-alerts.js    alertes tirées du relevé : mises à jour en retard, fin de support de PHP (fonctions pures, testées)
+src/cms-alerts.js    alertes tirées du relevé : mises à jour en retard, fin de support de PHP, intégrité, administrateurs (fonctions pures, testées)
+src/pages.js         pages supplémentaires d'un site : adresse résolue (même domaine) et nom affiché
+src/report.js        rapport mensuel (par site ou groupe) et page de statut publique : calculs et mise en page HTML
 src/zip.js           archive ZIP sans compression, pour télécharger les plugins
 src/db.js            SQLite : sites, groupes, contrôles, versions (gzip), alertes, réglages
-plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour)
+plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour, intégrité, administrateurs)
 public/              interface (JS/CSS vanilla, sans build)
+public/report.js     bouton « Imprimer / PDF » du rapport (sans script en ligne)
 public/layout.js     organisation en groupes : calcul pur (déplacements, pas au clavier), sans DOM, testé unitairement
 test/                node --test (unitaires, API réelle, et bout en bout dans un vrai Chrome)
 test-support/        lancement d'un serveur de test et pilotage de Chrome (tests et captures)

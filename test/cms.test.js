@@ -17,13 +17,14 @@ const TOKEN = 'jeton-de-test-assez-long';
 
 test('config CMS : défauts, domaine seul, chemin invalide', () => {
   const d = normalizeConfig({});
-  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720, alerts: true });
+  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true });
   const wp = normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, path: '/blog/', intervalMin: 10 } });
   assert.equal(wp.cms.type, 'wordpress');
   assert.equal(wp.cms.path, 'blog');
   assert.equal(wp.cms.intervalMin, 60);
   assert.equal(wp.cms.alerts, true, 'alertes de mises à jour actives par défaut');
   assert.equal(normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, alerts: false } }).cms.alerts, false, 'et désactivables site par site');
+  assert.equal(normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, security: false } }).cms.security, false, 'contrôle de sécurité désactivable site par site');
   assert.equal(normalizeConfig({ mode: 'domain', cms: { type: 'prestashop', token: TOKEN } }).cms.type, '');
   assert.equal(cmsConfigError({ type: 'wordpress', token: 'court', path: '' }), 'Le jeton doit contenir au moins 16 caractères');
   assert.equal(cmsConfigError({ type: 'wordpress', token: TOKEN, path: '../secret' }), 'Le chemin du CMS est invalide');
@@ -38,6 +39,14 @@ test('adresse du plugin : origine du site, chemin fixe', () => {
   assert.equal(
     cmsEndpoint('https://shop.exemple.fr/fr/', { type: 'prestashop', path: 'boutique' }),
     'https://shop.exemple.fr/boutique/modules/vigieweb/status.php',
+  );
+  assert.equal(
+    cmsEndpoint('https://exemple.fr/', { type: 'wordpress', path: '' }, 'integrity'),
+    'https://exemple.fr/?rest_route=/vigieweb/v1/integrity',
+  );
+  assert.equal(
+    cmsEndpoint('https://shop.exemple.fr/', { type: 'prestashop', path: '' }, 'integrity'),
+    'https://shop.exemple.fr/modules/vigieweb/status.php?scope=integrity',
   );
   assert.equal(cmsEndpoint('https://exemple.fr/', { type: 'wordpress', path: '../x' }), null);
   assert.equal(cmsEndpoint('ftp://exemple.fr/', { type: 'wordpress', path: '' }), null);

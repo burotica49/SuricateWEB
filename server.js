@@ -12,10 +12,12 @@ import {
   uptimeBetween, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, closeOutage, DAY_MS, UPTIME_PERIODS,
   getScreenshot, listScreenshots, latestScreenshots, SHOTS_DIR,
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
-  addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap, markAlertsReadUpTo,
+  addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap, markAlertsReadUpTo, getWatchByStatusToken,
 } from './src/db.js';
 import { enqueue, isRunning, startScheduler } from './src/scheduler.js';
-import { cmsConfigError, pollCms } from './src/cms.js';
+import { cmsConfigError, pollCms, acceptCmsAdmins } from './src/cms.js';
+import { resolvePage } from './src/pages.js';
+import { monthRange, siteReport, renderReport, statusData, renderStatusPage, serverTz } from './src/report.js';
 import { phpSupport } from './src/cms-alerts.js';
 import { zipDirectory } from './src/zip.js';
 import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, NO_CHROME } from './src/screenshot.js';
@@ -131,9 +133,12 @@ function normalizeUrl(input) {
   return url.href;
 }
 
-function validateConfig(cfg) {
+function validateConfig(cfg, siteUrl) {
   const cmsErr = cmsConfigError(cfg.cms);
   if (cmsErr) throw new HttpError(400, cmsErr);
+  for (const p of cfg.pages) {
+    if (!resolvePage(siteUrl, p)) throw new HttpError(400, `Page invalide ou extérieure au site : ${p.url}`);
+  }
   for (const r of cfg.ignoreRegex) {
     try {
       new RegExp(r, 'i');
@@ -261,8 +266,12 @@ function watchInput(body, existing) {
   const s = getSettings();
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
   if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');
-  validateConfig(cfg);
   const url = body.url !== undefined ? normalizeUrl(body.url) : existing.url;
+  validateConfig(cfg, url);
+  // Adresse de la page de statut : un jeton aléatoire, propre à ce site (jamais deux sites avec le même).
+  const st = cfg.statusPage;
+  if (st.enabled && !st.token) st.token = randomBytes(18).toString('base64url');
+  if (st.token && listWatches().some((o) => o.id !== existing?.id && o.config.statusPage.token === st.token)) st.token = randomBytes(18).toString('base64url');
   const tags = Array.isArray(body.tags) ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10) : existing?.tags || [];
   // Groupe : absent = inchangé ; null / '' = « Sans groupe » ; sinon il doit exister.
   let groupId = existing?.groupId ?? null;
@@ -339,6 +348,11 @@ route('GET', '/api/watches/:id', (ctx) => {
       baseline: !!state.baseline,
     },
     cms: state.cms ? { ...state.cms, phpSupport: phpSupport(state.cms.php) } : null,
+    pages: w.config.pages.map((p) => {
+      const href = resolvePage(w.url, p);
+      const st = href ? state.pages?.[href] : null;
+      return { url: p.url, label: p.label, href, state: st ? { code: st.code ?? null, ms: st.ms ?? null, title: st.title ?? '', error: st.error ?? null, checkedAt: st.checkedAt ?? null, fails: st.fails || 0, baseline: !!st.baseline } : null };
+    }),
     maintenance: listMaintenance(w.id),
   };
 });
@@ -457,6 +471,53 @@ route('POST', '/api/watches/:id/cms', async (ctx) => {
   if (!w) throw new HttpError(404, 'Site introuvable');
   if (w.config.mode === 'domain' || !w.config.cms.type) throw new HttpError(400, 'Aucun CMS configuré pour ce site');
   return pollCms(w.id, { refresh: true });
+});
+
+// « Je connais ces comptes » : les administrateurs actuels deviennent la référence.
+route('POST', '/api/watches/:id/cms/admins/accept', (ctx) => {
+  const w = getWatch(Number(ctx.params.id));
+  if (!w) throw new HttpError(404, 'Site introuvable');
+  if (!acceptCmsAdmins(w.id)) throw new HttpError(400, 'Aucun relevé des administrateurs pour ce site');
+  bus.emit('event', { type: 'ack', watchId: w.id });
+  return { ok: true };
+});
+
+// ───────────── Rapport mensuel client ─────────────
+
+const REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+function sendHtml(res, html, extra = {}) {
+  const buf = Buffer.from(html, 'utf8');
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8', 'content-length': buf.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'x-robots-tag': 'noindex, nofollow', 'content-security-policy': REPORT_CSP, ...extra,
+  });
+  res.end(buf);
+  return Symbol.for('handled');
+}
+
+function reportRange(ctx) {
+  const tz = clamp(ctx.query.get('tz'), -840, 840, serverTz());
+  const range = monthRange(ctx.query.get('month'), Math.round(tz));
+  if (!range) throw new HttpError(400, 'Mois invalide (format AAAA-MM, pas dans le futur)');
+  return range;
+}
+
+// Un site : /api/watches/12/report?month=2026-10&tz=60 — ouvert dans un onglet, imprimable ou enregistrable en PDF.
+route('GET', '/api/watches/:id/report', (ctx) => {
+  const w = loadWatch(ctx);
+  const range = reportRange(ctx);
+  return sendHtml(ctx.res, renderReport({ title: `${w.name} · ${new URL(w.url).hostname.replace(/^www\./, '')}`, sites: [siteReport(w, range)], range, nav: { base: `/api/watches/${w.id}/report` } }));
+});
+
+// Un groupe (un client) : tous ses sites dans un seul rapport.
+route('GET', '/api/groups/:id/report', (ctx) => {
+  const g = getGroup(Number(ctx.params.id));
+  if (!g) throw new HttpError(404, 'Groupe introuvable');
+  const members = listWatches().filter((w) => w.groupId === g.id);
+  if (!members.length) throw new HttpError(400, 'Ce groupe ne contient aucun site');
+  const range = reportRange(ctx);
+  return sendHtml(ctx.res, renderReport({ title: g.name, sites: members.map((w) => siteReport(w, range)), range, nav: { base: `/api/groups/${g.id}/report` } }));
 });
 
 // ───────────── Fenêtres de maintenance ─────────────
@@ -775,11 +836,39 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+// ───────────── Page de statut publique (lecture seule, sans connexion) ─────────────
+//
+// Adresse /status/<jeton> : le jeton aléatoire du site est le seul accès. Elle ne montre que la disponibilité, les pannes et
+// les maintenances — jamais une alerte de sécurité, un détail technique ni un réglage.
+
+const statusHits = new Map();
+const NOT_FOUND_PAGE = '<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Page introuvable</title><p style="font:16px system-ui;margin:40px">Page introuvable.</p>';
+
+function serveStatusPage(req, res, token, query) {
+  const ip = clientIp(req);
+  const hit = statusHits.get(ip) || { n: 0, t: Date.now() };
+  if (Date.now() - hit.t > 60e3) Object.assign(hit, { n: 0, t: Date.now() });
+  statusHits.set(ip, hit);
+  if (++hit.n > 120) {
+    res.writeHead(429, { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '60' });
+    return res.end('Trop de requêtes');
+  }
+  const w = getWatchByStatusToken(token);
+  if (!w) {
+    res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'content-security-policy': REPORT_CSP });
+    return res.end(NOT_FOUND_PAGE);
+  }
+  const tz = Math.round(clamp(query.get('tz'), -840, 840, serverTz()));
+  sendHtml(res, renderStatusPage({ title: w.config.statusPage.title || w.name, host: new URL(w.url).hostname.replace(/^www\./, ''), data: statusData(w, tz), tz }));
+}
+
 // ───────────── Serveur ─────────────
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
+    const status = req.method === 'GET' && /^\/status\/([A-Za-z0-9_-]{1,80})\/?$/.exec(url.pathname);
+    if (status) return serveStatusPage(req, res, status[1], url.searchParams);
     if (!url.pathname.startsWith('/api/')) return await serveStatic(req, res, url.pathname);
     const r = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
     if (!r) return send(res, 404, { error: 'Route inconnue' });

@@ -5,10 +5,20 @@
   "type": "module",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/burotica49/vigieweb.git"
+  },
+  "homepage": "https://github.com/burotica49/vigieweb#readme",
+  "bugs": {
+    "url": "https://github.com/burotica49/vigieweb/issues"
+  },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/"
+    "test": "node --disable-warning=ExperimentalWarning --test test/",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/docs/demo.js",
+    "docs:screenshots": "node --disable-warning=ExperimentalWarning scripts/docs/make-screenshots.js"
   },
   "engines": {
     "node": ">=22.13"

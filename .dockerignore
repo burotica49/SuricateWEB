@@ -6,6 +6,9 @@ Dockerfile
 README.md
 data
 test
+test-support
+scripts
+docs
 node_modules
 npm-debug.log
 .DS_Store

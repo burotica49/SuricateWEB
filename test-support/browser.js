@@ -61,6 +61,33 @@ export async function openPage(url, { width = 1280, height = 900 } = {}) {
         if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
         return r.result.value;
       },
+      /** Taille de la fenêtre (et densité de pixels) : sert aux captures de documentation. */
+      async viewport(w, h, { dpr = 1, mobile = false } = {}) {
+        await S('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile });
+        // Un téléphone n'a ni survol ni souris : l'émulation tactile fait correspondre (hover: none) et (pointer: coarse).
+        await S('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
+      },
+      /** Ajuste la hauteur de la fenêtre au contenu (bornée) : la barre latérale suit, et la capture n'est ni tronquée ni vide. */
+      async fit(w, { min = 700, max = 2400, dpr = 1, mobile = false } = {}) {
+        // On repart de la hauteur minimale : scrollHeight ne peut pas être inférieur à la fenêtre courante.
+        await S('Emulation.setDeviceMetricsOverride', { width: w, height: min, deviceScaleFactor: dpr, mobile });
+        for (let i = 0; i < 2; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+          const hgt = await this.run('document.documentElement.scrollHeight');
+          await S('Emulation.setDeviceMetricsOverride', { width: w, height: Math.min(max, Math.max(min, hgt)), deviceScaleFactor: dpr, mobile });
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      },
+      /** Capture PNG de la fenêtre, ou d'un élément (clipSelector). Retourne un Buffer. */
+      async screenshot({ clipSelector, format = 'png' } = {}) {
+        let clip;
+        if (clipSelector) {
+          const r = await this.run(`(() => { const b = document.querySelector(${JSON.stringify(clipSelector)}).getBoundingClientRect(); return { x: b.left + scrollX, y: b.top + scrollY, width: b.width, height: b.height }; })()`);
+          clip = { ...r, scale: 1 };
+        }
+        const shot = await S('Page.captureScreenshot', { format, ...(clip ? { clip, captureBeyondViewport: true } : {}) });
+        return Buffer.from(shot.data, 'base64');
+      },
       close() { try { ws.close(); } catch { /* ignoré */ } kill(); rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); },
     };
   } catch (e) {

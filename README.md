@@ -6,6 +6,58 @@ Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io)
 
 **Node.js pur — zéro dépendance npm, pas de Python.** Serveur HTTP, `fetch`, `dns`, `tls` et SQLite (`node:sqlite`) sont natifs.
 
+![Tableau de bord VigieWeb : sites regroupés par client, état, disponibilité et temps de réponse](docs/screenshots/tableau-de-bord.png)
+
+> **Toutes les images de ce document utilisent des données fictives** (domaines en `.example`, adresses IP de documentation) : elles sont générées par le [mode démo](#essayer-sans-rien-configurer-mode-démo), jamais à partir de vrais sites.
+
+## Sommaire
+
+[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
+
+## Aperçu
+
+### La page d'un site
+
+Un coup d'œil suffit : l'**aperçu** de la page (dernière capture), l'état HTTP, le temps de réponse, la disponibilité sur 30 jours, la frise des 90 derniers jours, puis chaque **signal surveillé** (contenu, certificat TLS, DNS, nom de domaine, serveur et redirections) avec son état.
+
+![Page d'un site : aperçu, disponibilité, temps de réponse et signaux surveillés](docs/screenshots/site-apercu.png)
+
+### Détecter une défiguration
+
+Quand le contenu est remplacé, VigieWeb le dit clairement (**similarité 0 %**), montre les lignes retirées et ajoutées, et garde chaque version : on peut toujours revenir voir ce qui a changé et quand.
+
+![Onglet Modifications : diff d'une page défigurée](docs/screenshots/modifications.png)
+
+Les **captures d'écran** régulières montrent ce que voient réellement les visiteurs, et la visionneuse permet de **comparer avant / après** côte à côte.
+
+![Comparaison avant / après d'une capture d'écran](docs/screenshots/comparaison.png)
+
+### Être alerté sur Telegram
+
+Un seul message par contrôle, avec la sévérité, le détail, un extrait des lignes modifiées et, pour les alertes critiques visibles sur la page, **une photo de la page au moment de l'alerte**. Le texte de cette image est celui que l'application génère ; seul l'habillage de la conversation est une reconstitution.
+
+<img src="docs/screenshots/telegram.png" alt="Message Telegram d'alerte critique avec photo de la page défigurée" width="420">
+
+### Disponibilité, domaine et alertes
+
+| Disponibilité (type UptimeRobot) | Domaine & DNS |
+|---|---|
+| ![Disponibilité : pannes, temps de réponse](docs/screenshots/disponibilite.png) | ![Domaine & DNS : registre, DNSSEC, enregistrements](docs/screenshots/domaine-dns.png) |
+
+![Journal des alertes, classées par jour et par sévérité](docs/screenshots/alertes.png)
+
+### Thème sombre et mobile
+
+L'interface suit le thème du système (bouton lune / soleil dans la barre latérale) et s'adapte aux petits écrans : la barre latérale devient une barre de navigation en bas.
+
+| Thème sombre | Mobile |
+|---|---|
+| ![Tableau de bord, thème sombre](docs/screenshots/tableau-de-bord-sombre.png) | <img src="docs/screenshots/mobile.png" alt="Tableau de bord sur mobile" width="300"> |
+
+### Barre latérale
+
+Sous le nom **VigieWeb**, la **version de l'application** (lue dans `package.json`). En bas, à côté du thème et de la déconnexion : un lien vers le **dépôt GitHub** et un lien vers la **documentation** (ce README). Ces liens s'ouvrent dans un nouvel onglet ; ils proviennent des champs `repository` et `homepage` de `package.json`, et disparaissent s'ils n'y sont pas renseignés.
+
 ## Démarrage
 
 Prérequis : Node.js ≥ 22.13 (et Chrome/Chromium pour les [captures d'écran](#captures-décran), facultatif).
@@ -16,6 +68,10 @@ npm start
 ```
 
 Ouvrez <http://localhost:3000>, connectez-vous, cliquez sur **Ajouter un site**, puis configurez Telegram dans **Réglages**.
+
+![Formulaire d'ajout d'un site : adresse, fréquence, groupe, étiquettes et signaux à surveiller](docs/screenshots/formulaire.png)
+
+Dans le formulaire, le bouton **Tester** vérifie l'adresse avant de l'enregistrer. La configuration recommandée surveille tout ; désactivez ce qui produit trop de bruit sur un site donné.
 
 ### Connexion : identifiant et mot de passe dans `.env`
 
@@ -45,10 +101,26 @@ VIGIE_PASSWORD="un mot de passe solide"     # 8 caractères minimum ; guillemets
 | `CHROME_NO_SANDBOX` | — | `1` dans Docker (déjà défini dans l'image) |
 | `SCREENSHOT_CONCURRENCY` | `2` | Captures simultanées au maximum |
 | `ENV_FILE` | `./.env` | Emplacement alternatif du fichier d'environnement |
+| `TELEGRAM_API` | `https://api.telegram.org` | Adresse de l'API Telegram (utile pour les tests ou un relais) |
+| `VIGIE_DEMO` | — | `1` : [mode démo](#essayer-sans-rien-configurer-mode-démo), contrôles et captures désactivés |
 
 > **Placez VigieWeb derrière HTTPS** (reverse proxy) si vous l'exposez hors de votre machine : le mot de passe transite sinon en clair. Un utilisateur connecté peut faire requêter des adresses arbitraires par le serveur : ne partagez pas l'accès.
 
-Pour le laisser tourner en continu : `pm2 start server.js --name vigie`, ou un service systemd (`ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js`).
+Pour le laisser tourner en continu : `pm2 start server.js --name vigieweb --node-args="--disable-warning=ExperimentalWarning"`, ou un service systemd (`ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js`).
+
+### Essayer sans rien configurer (mode démo)
+
+```bash
+npm run demo
+```
+
+Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : VigieWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. En mode démo, les contrôles et les captures sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
+
+Les images de ce document sont produites par le même jeu de données :
+
+```bash
+npm run docs:screenshots     # régénère docs/screenshots/*.png (nécessite Chrome ou Chromium)
+```
 
 ## Déploiement sur Dokploy (Docker)
 
@@ -73,14 +145,15 @@ Le `Dockerfile` à la racine produit une image d'environ **1,3 Go** (Node 24 Alp
 Notes :
 - Ne lancez qu'**une seule instance** : la base SQLite et le planificateur ne sont pas conçus pour tourner en double.
 - Les contrôles partent du serveur Dokploy : pour surveiller un site, celui-ci doit être joignable depuis ce serveur (un site restreint par IP doit autoriser son adresse).
-- Sauvegarde : le dossier `/data` contient tout ; sinon *Réglages › Données › Exporter* sauvegarde la liste des sites (pas l'historique).
+- Sauvegarde : le dossier `/data` contient tout ; sinon *Réglages › Données › Exporter* sauvegarde la liste des sites, leurs groupes et leur configuration (pas l'historique).
+- L'image ne contient que le code de l'application : les scripts de démo, les tests et les captures de ce README n'y sont pas copiés.
 
 Hors Dokploy, la même image fonctionne partout :
 
 ```bash
-docker build -t vigie .
-docker run -d --name vigie -p 3000:3000 -v vigie-data:/data \
-  -e VIGIE_USER=admin -e VIGIE_PASSWORD='un-mot-de-passe-solide' vigie
+docker build -t vigieweb .
+docker run -d --name vigieweb -p 3000:3000 -v vigie-data:/data \
+  -e VIGIE_USER=admin -e VIGIE_PASSWORD='un-mot-de-passe-solide' vigieweb
 ```
 
 ## Configurer Telegram
@@ -89,9 +162,15 @@ docker run -d --name vigie -p 3000:3000 -v vigie-data:/data \
 2. Collez-le dans *Réglages › Notifications Telegram*, puis envoyez `/start` à votre bot (ou ajoutez-le dans un groupe).
 3. Cliquez sur **Détecter** (retrouve le chat ID tout seul), puis **Tester**, puis **Enregistrer**.
 
+![Réglages : notifications Telegram](docs/screenshots/reglages.png)
+
+Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **adresse de VigieWeb** (ajoute un lien « Ouvrir dans VigieWeb » à chaque message). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
+
 Un seul message est envoyé par contrôle, même si plusieurs anomalies sont détectées. Il contient la sévérité, le site, le détail et un extrait des lignes modifiées.
 
 Sur une alerte **critique visible sur la page** (contenu remplacé, texte de piratage, script ou iframe injectés, redirection vers un autre domaine…), le message est suivi d'une **photo de la page au moment de l'alerte** : on voit depuis le téléphone ce que voient les visiteurs. Désactivable dans *Réglages › Telegram*. Les alertes sans effet visible (DNS, registre, certificat, panne) n'en envoient pas.
+
+Dans l'application, l'onglet **Alertes** liste tout ce qui a été détecté (filtres Critiques / Attention / Infos / Rétablis, « Voir les changements » pour ouvrir le diff, badge « Envoyé sur Telegram »). **Tout marquer comme lu** efface le badge ; sur la page d'un site, **Tout est normal** marque ses alertes comme vérifiées.
 
 ## Captures d'écran
 
@@ -99,11 +178,14 @@ VigieWeb prend une photo de chaque site à intervalle régulier (**toutes les he
 
 - **Aperçu immédiat** : la dernière capture s'affiche dans un cadre de navigateur en haut de la page du site, et en vignette dans la liste.
 - **Onglet Captures** : l'historique en grille, une visionneuse (flèches ← →), et une **comparaison côte à côte avant / après** pour constater une défiguration.
-- Réglable par site : fréquence, format (ordinateur 1280×800, grand écran, mobile 390×844), page entière (5 000 px maximum), attente après chargement, simulation de visiteur, masquage des bandeaux de cookies. Bouton **Capturer maintenant**.
+- Réglable par site : fréquence, format (ordinateur 1280×800, grand écran 1920×1080, mobile 390×844), page entière (5 000 px maximum), attente après chargement, simulation de visiteur, masquage des bandeaux de cookies. Bouton **Capturer maintenant**.
+
+![Onglet Captures : historique des captures d'un site, dont celle prise au moment de l'alerte](docs/screenshots/captures.png)
 
 **Avant de capturer, VigieWeb se comporte comme un visiteur** : il attend que le réseau soit au repos, simule une interaction (souris, molette), descend la page par paliers pour déclencher le chargement différé des images et les animations « à l'apparition », la remonte, attend les polices, puis patiente (3 s par défaut). Cela évite les captures à moitié vides.
 
 > Pourquoi la simulation de visiteur ? Beaucoup de sites WordPress (WP Rocket « retarder l'exécution du JavaScript », NitroPack, Perfmatters…) **n'exécutent leurs scripts qu'à la première interaction réelle** d'un visiteur. Sans elle, jQuery, le slider d'accueil ou les menus ne démarrent jamais, et la capture montre des zones vides — y compris si on attend 6 secondes de plus, ce qui a été constaté sur un site réel. Contrepartie : ces scripts retardés incluent souvent vos **statistiques** (Google Analytics, Matomo, pixels) ; chaque capture peut donc compter une visite. Désactivez « Simuler un visiteur » pour un site dont ce n'est pas souhaitable, ou excluez l'IP du serveur de vos statistiques.
+
 - Conservation : les 168 dernières captures planifiées par site (7 jours à l'heure), plus 100 captures manuelles ou d'alerte, qui ne sont jamais écrasées par les planifiées. Une miniature de ~5 Ko évite d'alourdir le tableau de bord.
 - Les images restent derrière la connexion : aucun lien de capture n'est public.
 
@@ -113,15 +195,15 @@ Chaque capture lance un navigateur neuf avec un profil jetable, puis le détruit
 
 ## Groupes de sites
 
-La liste des sites peut être organisée en **groupes nommés et colorés** (par client, par projet, par environnement…), réorganisables à volonté.
+La liste des sites peut être organisée en **groupes nommés et colorés** (par client, par projet, par environnement…), réorganisables à volonté (voir le [tableau de bord](#vigieweb) en haut de cette page).
 
 - **Glisser-déposer** : attrapez la poignée ⠿ à gauche d'un site pour le déplacer dans son groupe, vers un autre groupe (même vide ou replié) ou vers « Sans groupe » ; attrapez celle d'un groupe pour changer l'ordre des groupes. Une ligne bleue indique où le site va tomber.
 - **Au clavier** : placez le focus sur une poignée, puis **↑ / ↓** pour déplacer d'un cran. Un site franchit la frontière du groupe voisin ; le focus le suit et un lecteur d'écran annonce « position 2 sur 3, groupe Clients ».
-- **Chaque en-tête de groupe** affiche le nombre de sites et l'état le plus grave (« 2 en alerte », « Intact »), se replie d'un clic (état mémorisé), et propose `+` (ajouter un site dans ce groupe), ✎ (renommer, changer la couleur) et 🗑 (supprimer).
+- **Chaque en-tête de groupe** affiche le nombre de sites et l'état le plus grave (« 2 en alerte », « Intact »), se replie d'un clic (état mémorisé), et propose `+` (ajouter un site dans ce groupe), ✎ (renommer, changer la couleur) et 🗑 (supprimer). Ces trois actions apparaissent au survol, et en permanence sur écran tactile.
 - **Supprimer un groupe ne supprime jamais ses sites** : ils passent dans « Sans groupe », à la suite et dans leur ordre.
 - Le champ **Groupe** du formulaire d'un site permet aussi de classer (et de créer un groupe à la volée) : c'est l'alternative sur écran tactile, où le glisser-déposer natif n'existe pas.
 - La vue **Par état** (bouton en haut de la liste) remet la liste à plat, sites en alerte en premier, avec le groupe de chaque site en pastille. Le choix est mémorisé dans le navigateur.
-- Pendant une **recherche ou un filtre**, la réorganisation est désactivée (des sites sont cachés : le résultat serait ambigu) et les groupes repliés se déplient pour ne rien cacher.
+- Pendant une **recherche ou un filtre** (état, étiquette), la réorganisation est désactivée (des sites sont cachés : le résultat serait ambigu) et les groupes repliés se déplient pour ne rien cacher.
 - Chaque déplacement est appliqué tout de suite à l'écran, puis enregistré **en une seule transaction** côté serveur (tout ou rien) ; en cas d'échec, l'état réel est rechargé.
 - L'**export / import** conserve les groupes (par leur nom, couleur comprise) ; un groupe existant du même nom est réutilisé. Un ancien export sans groupes s'importe comme avant.
 
@@ -142,11 +224,13 @@ La liste des sites peut être organisée en **groupes nommés et colorés** (par
 
 **Certificat TLS** — invalide, expiré, expiration proche, changement d'émetteur (critique) ou simple renouvellement (info).
 
+Chaque version du contenu est conservée (les 300 dernières par site) et comparable à la précédente dans l'onglet **Modifications**.
+
 ### Disponibilité (type UptimeRobot)
 
 Un site est **en panne** s'il ne répond pas ou renvoie une vraie erreur HTTP (5xx, 404…). Les accès restreints (401, 403, 429) comptent comme « joignable ». La panne est **confirmée** après N échecs consécutifs (2 par défaut, réglable) pour éviter les fausses alertes, mais elle est **datée du premier échec**.
 
-- **Disponibilité sur 24 h, 7, 30 et 90 jours**, calculée **en temps** à partir de la durée réelle des pannes : elle reste exacte quelle que soit la fréquence de contrôle (de 1 minute à 7 jours).
+- **Disponibilité sur 24 h, 7, 30 et 90 jours**, calculée **en temps** à partir de la durée réelle des pannes : elle reste exacte quelle que soit la fréquence de contrôle (de 1 minute à 24 heures).
 - **Frise de 90 jours** (une barre par jour : vert, ambre, rouge) et **historique des pannes** (début, fin, durée, cause).
 - **Temps de réponse** moyen / min / max sur 24 h, 7, 30 et 90 jours.
 - Alerte « Site inaccessible », puis « ✅ Le site est de nouveau accessible — indisponible pendant 12 min ».
@@ -201,27 +285,31 @@ Le premier contrôle établit la référence et ne déclenche aucune alerte de c
 ## Architecture
 
 ```
-server.js          API REST + fichiers statiques + SSE (temps réel) + authentification
-src/checker.js     un contrôle : HTTP → pannes → contenu → DNS/TLS/RDAP → incidents/évènements → alertes
-src/html.js        parseur HTML tolérant + sélecteurs CSS + extraction des signaux
-src/diff.js        diff ligne à ligne (LCS)
-src/telegram.js    API Bot Telegram (texte et photo) + mise en forme des messages
-src/screenshot.js  captures d'écran : Chrome piloté par DevTools (WebSocket natif), file d'attente, rétention
-src/auth.js        identifiants lus dans l'environnement, comparaison en temps constant, clé de session
-src/env.js         chargement du .env (avant l'ouverture de la base)
-src/scheduler.js   planificateur (5 contrôles en parallèle)
-src/db.js          SQLite : sites, contrôles, versions (gzip), alertes, réglages
-public/            interface (JS/CSS vanilla, sans build)
-public/layout.js   organisation en groupes : calcul pur (déplacements, pas au clavier), sans DOM, testé unitairement
-test/              node --test (unitaires, API réelle, et bout en bout dans un vrai Chrome)
-test-support/      lancement d'un serveur de test et pilotage de Chrome pour les tests
+server.js            API REST + fichiers statiques + SSE (temps réel) + authentification
+src/checker.js       un contrôle : HTTP → pannes → contenu → DNS/TLS/RDAP → incidents/évènements → alertes
+src/html.js          parseur HTML tolérant + sélecteurs CSS + extraction des signaux
+src/diff.js          diff ligne à ligne (LCS)
+src/telegram.js      API Bot Telegram (texte et photo) + mise en forme des messages
+src/screenshot.js    captures d'écran : Chrome piloté par DevTools (WebSocket natif), file d'attente, rétention
+src/auth.js          identifiants lus dans l'environnement, comparaison en temps constant, clé de session
+src/env.js           chargement du .env (avant l'ouverture de la base)
+src/scheduler.js     planificateur (5 contrôles en parallèle)
+src/db.js            SQLite : sites, groupes, contrôles, versions (gzip), alertes, réglages
+public/              interface (JS/CSS vanilla, sans build)
+public/layout.js     organisation en groupes : calcul pur (déplacements, pas au clavier), sans DOM, testé unitairement
+test/                node --test (unitaires, API réelle, et bout en bout dans un vrai Chrome)
+test-support/        lancement d'un serveur de test et pilotage de Chrome (tests et captures)
+scripts/docs/        mode démo : faux sites, données fictives, génération des captures de ce README
+docs/screenshots/    images de ce README (régénérables avec npm run docs:screenshots)
 ```
 
 ```bash
 npm test
 ```
 
-Les tests lancent un faux site qu'ils « piratent » en direct et un faux serveur Telegram pour vérifier les messages réellement envoyés.
+Les tests lancent un faux site qu'ils « piratent » en direct et un faux serveur Telegram pour vérifier les messages réellement envoyés ; les tests d'interface s'exécutent dans un vrai Chrome (ils sont ignorés si aucun navigateur n'est installé).
+
+Scripts disponibles : `npm start`, `npm run dev` (rechargement automatique), `npm test`, `npm run demo`, `npm run docs:screenshots`.
 
 ## Nom du produit et identifiants techniques
 
@@ -229,10 +317,11 @@ Le produit s'appelle **VigieWeb**. Quelques identifiants techniques gardent volo
 
 | Identifiant | Pourquoi il ne change pas |
 |---|---|
-| `VIGIE_USER`, `VIGIE_PASSWORD` | Variables d'environnement déjà définies dans vos déploiements (Dokploy, Docker, `.env`) |
+| `VIGIE_USER`, `VIGIE_PASSWORD`, `VIGIE_DEMO` | Variables d'environnement déjà définies dans vos déploiements (Dokploy, Docker, `.env`) |
 | `vigie.db` | Fichier de la base : le renommer ferait repartir de zéro |
 | cookie `vigie_session`, clé `vigie-theme` | Renommés = tout le monde est déconnecté et perd son thème |
 | `vigie-data`, noms de conteneur / d'image dans les exemples | Noms libres, choisis par vous à l'installation |
 | `vigie-chrome-*` | Préfixe interne des profils temporaires de Chrome |
+| `vigie-sites.json` | Nom du fichier d'export, que d'anciens scripts peuvent attendre |
 
 Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est toujours « VigieWeb ». Le User-Agent par défaut enregistré en base est migré automatiquement ; un User-Agent personnalisé n'est jamais modifié.

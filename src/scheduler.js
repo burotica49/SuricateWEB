@@ -7,8 +7,16 @@ const CONCURRENCY = 5;
 const running = new Set();
 const queue = [];
 
+/**
+ * Mode démo (VIGIE_DEMO=1) : l'instance affiche des données fictives (captures d'écran de la documentation, essai à blanc).
+ * Aucun contrôle ni capture ne part sur le réseau, et rien ne vient modifier les données de démonstration.
+ */
+export const DEMO = process.env.VIGIE_DEMO === '1';
+export const DEMO_MESSAGE = 'Mode démo : les contrôles sont désactivés (données fictives).';
+
 /** Lance un contrôle (immédiat ou en file). Un même site n'est jamais contrôlé deux fois en parallèle. */
 export function enqueue(id, { wait = false } = {}) {
+  if (DEMO) return wait ? Promise.resolve({ error: DEMO_MESSAGE, alerts: [] }) : null;
   if (running.has(id)) return wait ? Promise.resolve(null) : null;
   return new Promise((resolve) => {
     queue.push({ id, resolve });
@@ -40,6 +48,7 @@ function pump() {
 export const isRunning = (id) => running.has(id);
 
 export function startScheduler() {
+  if (DEMO) return null;
   const tick = () => {
     const due = db.prepare('SELECT id FROM watches WHERE enabled = 1 AND next_run <= ? ORDER BY next_run LIMIT 100').all(Date.now());
     for (const { id } of due) {

@@ -348,6 +348,8 @@ export function captureWatch(id, { kind = 'scheduled' } = {}) {
 async function doCapture(id, kind) {
   const w = getWatch(id);
   if (!w) return { error: 'Site introuvable' };
+  // Mode démo (voir scheduler.js) : on ne touche ni au réseau ni aux données de démonstration.
+  if (process.env.VIGIE_DEMO === '1') return { error: 'Mode démo : les captures sont désactivées (données fictives).' };
   const sc = w.config.screenshot;
   const now = Date.now();
   try {

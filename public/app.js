@@ -65,6 +65,8 @@ const ICONS = {
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>',
+  book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
   camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
   columns: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>',
   right: '<path d="M9 18l6-6-6-6"/>',
@@ -203,15 +205,20 @@ const isDark = () => (document.documentElement.dataset.theme ? document.document
 // ───────────── Shell ─────────────
 function mountShell() {
   const tgOk = S.settings?.telegram.tokenSet && S.settings?.telegram.chatId;
+  const app = S.settings?.app ?? {}; // version et liens (absents tant que les réglages ne sont pas chargés)
   const nav = (href, icon, label, id) => h('a', { href, 'data-nav': id }, ic(icon), h('span', {}, label), id === 'alertes' ? h('span', { class: 'badge', id: 'nav-badge', hidden: true }) : null);
   $('#app').replaceChildren(
     h('div', { class: 'shell' },
       h('aside', { class: 'sidebar' },
-        h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('shield')), h('div', {}, 'VigieWeb', h('small', {}, 'Surveillance de sites'))),
+        h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('shield')),
+          h('div', {}, h('div', { class: 'brand-name' }, 'VigieWeb', app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
         h('nav', { class: 'nav' }, nav('#/', 'dashboard', 'Sites', 'sites'), nav('#/alertes', 'bell', 'Alertes', 'alertes'), nav('#/reglages', 'settings', 'Réglages', 'reglages')),
         h('div', { class: 'side-foot' },
           h('a', { class: 'tg-state', href: '#/reglages' }, h('span', { class: `dot ${tgOk ? 'ok' : ''}` }), tgOk ? 'Telegram actif' : 'Telegram non configuré'),
           h('div', { class: 'side-actions' },
+            // Liens externes : nouvel onglet, sans transmettre l'adresse de cette page (noopener, noreferrer)
+            app.repoUrl ? h('a', { class: 'btn ghost icon sm ext', href: app.repoUrl, target: '_blank', rel: 'noopener noreferrer', title: 'Dépôt GitHub', 'aria-label': 'Dépôt GitHub (nouvel onglet)' }, ic('github')) : null,
+            app.docsUrl ? h('a', { class: 'btn ghost icon sm ext', href: app.docsUrl, target: '_blank', rel: 'noopener noreferrer', title: 'Documentation (README)', 'aria-label': 'Documentation (nouvel onglet)' }, ic('book')) : null,
             h('button', { class: 'btn ghost icon sm', title: 'Changer de thème', 'aria-label': 'Changer de thème', onclick: toggleTheme }, ic(isDark() ? 'sun' : 'moon')),
             S.auth?.required ? h('button', { class: 'btn ghost icon sm', title: 'Se déconnecter', 'aria-label': 'Se déconnecter', onclick: guard(async () => { await api('/logout', { method: 'POST' }); S.auth.authenticated = false; boot(); }) }, ic('logout')) : null))),
       h('main', { class: 'main', id: 'view' })));

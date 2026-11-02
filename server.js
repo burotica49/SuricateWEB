@@ -2,6 +2,7 @@
 import './src/env.js'; // doit rester le 1er import : charge le .env avant l'ouverture de la base
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -30,6 +31,17 @@ if (CREDS.error) {
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
+
+// Version et liens affichés dans la barre latérale : package.json est la source unique (rien à mettre à jour ailleurs).
+const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const webUrl = (u) => {
+  const clean = String(u ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  return /^https?:\/\//.test(clean) ? clean : null; // seul http(s) : jamais de « javascript: » dans un lien
+};
+const APP_INFO = (() => {
+  const repoUrl = webUrl(PKG.repository?.url ?? PKG.repository);
+  return { version: String(PKG.version ?? ''), repoUrl, docsUrl: webUrl(PKG.homepage) ?? (repoUrl ? `${repoUrl}#readme` : null) };
+})();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 
@@ -195,6 +207,7 @@ function publicSettings() {
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, authUser: CREDS.user, defaultKeywords: DEFAULT_KEYWORDS,
     screenshots: { available: engine.available(), browser: chromePath() },
+    app: APP_INFO,
   };
 }
 
@@ -690,7 +703,9 @@ server.listen(PORT, HOST, () => {
   console.log(`  Connexion : identifiant « ${CREDS.user} » (VIGIE_USER)`);
   console.log(`  Captures d'écran : ${engine.available() ? `navigateur ${chromePath()}` : 'inactives (aucun Chrome / Chromium détecté — voir CHROME_PATH)'}`);
   if (CREDS.defaultedUser) console.log("  ⚠  VIGIE_USER n'est pas défini : l'identifiant par défaut « admin » est utilisé. Définissez VIGIE_USER pour le personnaliser.");
-  console.log(`  Telegram : ${s.telegram.token && s.telegram.chatId ? 'configuré' : 'non configuré (Réglages › Telegram)'}\n`);
+  console.log(`  Telegram : ${s.telegram.token && s.telegram.chatId ? 'configuré' : 'non configuré (Réglages › Telegram)'}`);
+  if (process.env.VIGIE_DEMO === '1') console.log('  ⚠  MODE DÉMO : données fictives, contrôles et captures désactivés (VIGIE_DEMO=1).');
+  console.log('');
   startScheduler();
 });
 

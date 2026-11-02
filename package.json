@@ -4,7 +4,7 @@
   "description": "VigieWeb — surveillance de sites web (défiguration, piratage, remplacement, transfert) avec alertes Telegram. Node.js pur, zéro dépendance.",
   "type": "module",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/burotica49/VigieWeb.git"

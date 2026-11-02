@@ -12,6 +12,11 @@ test('package.json : champs utilisés par la barre latérale', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+/, 'version semver');
   assert.match(pkg.repository?.url ?? '', /^git\+https:\/\/github\.com\/[\w.-]+\/[\w.-]+\.git$/);
   assert.match(pkg.homepage ?? '', /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+#readme$/);
+  assert.equal(pkg.license, 'Apache-2.0');
+  const licence = readFileSync(new URL('../LICENSE', import.meta.url), 'utf8');
+  assert.match(licence, /Apache License\s+Version 2\.0, January 2004/, 'LICENSE contient le texte Apache 2.0');
+  assert.equal(licence.includes('MIT License'), false, "plus de trace de l'ancienne licence");
+  assert.match(readFileSync(new URL('../NOTICE', import.meta.url), 'utf8'), /^VigieWeb\nCopyright 2026 /);
 });
 
 test('API : version et liens dérivés de package.json, réservés aux utilisateurs connectés', async () => {

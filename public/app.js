@@ -329,7 +329,14 @@ async function viewDashboard() {
   const root = h('div', {});
   root.append(h('div', { class: 'page-head' },
     h('div', {}, h('h1', {}, 'Mes sites'), h('p', {}, 'Contrôle permanent de l\'intégrité de vos sites, sans avoir à les ouvrir.')),
-    h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => openSiteForm() }, ic('plus'), 'Ajouter un site'))));
+    h('div', { class: 'actions' },
+      h('button', { class: 'btn', onclick: guard(async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        b.firstChild.classList.add('spin');
+        await route();
+      }) }, ic('refresh'), 'Rafraîchir'),
+      h('button', { class: 'btn primary', onclick: () => openSiteForm() }, ic('plus'), 'Ajouter un site'))));
 
   if (!list.length) {
     const input = h('input', { class: 'input', placeholder: 'https://www.monsite.fr', 'aria-label': 'Adresse du site', onkeydown: (e) => e.key === 'Enter' && go.click() });

@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.title="VigieWeb" \
 
 # Chromium : captures d'écran des sites. Polices : accents, emojis et caractères non latins s'affichent correctement.
 # tini : Node tourne en PID 1 et ne récupère pas les processus orphelins ; sans lui, chaque capture laisserait des zombies.
-RUN apk add --no-cache chromium font-noto font-noto-emoji tini
+RUN apk add --no-cache chromium font-noto font-noto-emoji tini su-exec
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
@@ -24,13 +24,16 @@ COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
 
 # Base SQLite et captures d'écran : à monter sur un volume persistant.
+# Pas de USER ici : l'entrypoint démarre en root le temps de corriger le volume (souvent root:root),
+# puis relance le processus en utilisateur node.
 RUN mkdir -p /data && chown node:node /data
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
-USER node
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/auth').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "server.js"]

@@ -716,6 +716,8 @@ async function viewDetail(id, tab, tok, openSnap) {
   S.cur = w;
   const root = h('div', {});
   const unread = w.unread.critical + w.unread.warning + w.unread.info;
+  // L'échéance déjà lue ne compte plus dans « non lues », mais elle laisse le site « À vérifier » tant qu'elle n'est pas acquittée.
+  const domainOpen = w.incidents.some((i) => i.key === 'rdap_expiring' && !i.acked);
 
   const doCheck = guard(async (e) => {
     const b = e.currentTarget;
@@ -732,7 +734,7 @@ async function viewDetail(id, tab, tok, openSnap) {
         h('h1', {}, w.name, statusPill(w)),
         h('div', { class: 'url' }, h('a', { href: w.url, target: '_blank', rel: 'noopener noreferrer' }, w.url, ' ', ic('external')), w.tags.length ? '  ·  ' + w.tags.join(', ') : ''))),
       h('div', { class: 'actions', style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
-        unread ? h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/ack`, { method: 'POST' }); toast('Marqué comme vérifié'); route(); }) }, ic('check'), 'Tout est normal') : null,
+        unread || domainOpen ? h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/ack`, { method: 'POST' }); toast('Marqué comme vérifié'); route(); }) }, ic('check'), 'Tout est normal') : null,
         h('button', { class: 'btn', onclick: doCheck }, ic('refresh'), 'Vérifier maintenant'),
         h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/toggle`, { method: 'POST' }); toast(w.enabled ? 'Surveillance mise en pause' : 'Surveillance reprise'); route(); }) }, ic(w.enabled ? 'pause' : 'play'), w.enabled ? 'Pause' : 'Reprendre'),
         h('button', { class: 'btn', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier'),
@@ -1193,7 +1195,7 @@ async function viewAlerts() {
   const root = h('div', {});
   const unread = alerts.filter((a) => !a.read).length;
   root.append(h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Alertes'), h('p', {}, 'Tout ce que VigieWeb a détecté, du plus récent au plus ancien.')),
-    h('div', { class: 'actions' }, h('button', { class: 'btn', disabled: !list.some((w) => w.unread.critical + w.unread.warning + w.unread.info), onclick: guard(async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); toast('Toutes les alertes sont marquées comme lues'); route(); }) }, ic('check'), 'Tout marquer comme lu'))));
+    h('div', { class: 'actions' }, h('button', { class: 'btn', disabled: !list.some((w) => w.unread.critical + w.unread.warning + w.unread.info || w.incidents.some((i) => i.key === 'rdap_expiring' && !i.acked)), onclick: guard(async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); toast('Toutes les alertes sont marquées comme lues'); route(); }) }, ic('check'), 'Tout marquer comme lu'))));
   root.append(h('div', { class: 'toolbar' }, h('div', { class: 'seg' }, ...[['', 'Toutes'], ['critical', 'Critiques'], ['warning', 'Attention'], ['info', 'Infos'], ['recovery', 'Rétablis']].map(([k, l]) =>
     h('button', { class: S.alertSev === k ? 'on' : '', onclick: () => { S.alertSev = k; route(); } }, l)))));
   void unread;

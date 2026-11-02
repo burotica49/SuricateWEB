@@ -150,16 +150,33 @@ const SELECTOR_CHECK = async (cfg) => {
 
 const RESET_KEYS = ['selector', 'excludeSelector', 'ignoreRegex', 'images'];
 
+/** Même échéance, à deux jours près : un renouvellement (souvent +1 an) ne correspond pas. */
+const sameExpiry = (a, b) => (a == null || b == null ? a == null && b == null : Math.abs(a - b) < 2 * 864e5);
+
 /**
- * Le rappel « le domaine expire bientôt » est acquitté dès que son alerte est lue,
- * tant qu'il n'est pas devenu plus grave (30 jours → moins de 7). L'accueil redevient calme ;
- * la date reste dans le détail du site.
+ * Le rappel « le domaine expire bientôt » quitte l'accueil une fois acquitté,
+ * tant que l'échéance est la même et qu'elle n'est pas devenue plus grave (30 j → moins de 7).
+ * La date reste dans le détail du site.
  */
 function domainExpiryAcked(w, ctx) {
-  const seen = ctx.domainExpiry?.get(w.id);
   const cur = w.state.incidents?.rdap_expiring;
-  if (!seen || !cur) return false;
-  return !seen.unread && (SEV[cur.severity] || 0) <= seen.max;
+  if (!cur) return false;
+  const rank = SEV[cur.severity] || 0;
+  const expires = w.state.rdap?.expires ?? null;
+  const stored = w.state.domainAck?.rdap_expiring;
+  if (stored && rank <= (SEV[stored.severity] || 0) && sameExpiry(stored.expires ?? null, expires)) return true;
+  const seen = ctx.domainExpiry?.get(w.id);
+  return !!(seen && !seen.unread && rank <= seen.max);
+}
+
+/** Mémorise l'acquittement sur le site : il survit aux contrôles suivants, même sans alerte non lue. */
+function rememberDomainAck(id) {
+  const w = getWatch(id);
+  const inc = w?.state.incidents?.rdap_expiring;
+  if (!inc) return;
+  updateWatch(id, {
+    state: { ...w.state, domainAck: { ...(w.state.domainAck || {}), rdap_expiring: { severity: inc.severity, expires: w.state.rdap?.expires ?? null } } },
+  });
 }
 
 function summarize(w, ctx) {
@@ -476,6 +493,7 @@ route('GET', '/api/watches/:id/domain', (ctx) => {
 route('POST', '/api/watches/:id/ack', (ctx) => {
   const id = Number(ctx.params.id);
   db.prepare('UPDATE alerts SET read = 1 WHERE watch_id = ?').run(id);
+  rememberDomainAck(id);
   bus.emit('event', { type: 'ack', watchId: id });
   return { ok: true };
 });
@@ -537,10 +555,17 @@ route('GET', '/api/alerts', (ctx) => {
 
 route('POST', '/api/alerts/read', (ctx) => {
   const { ids, all } = ctx.body;
-  if (all) db.prepare('UPDATE alerts SET read = 1').run();
-  else if (Array.isArray(ids)) {
-    const st = db.prepare('UPDATE alerts SET read = 1 WHERE id = ?');
-    ids.forEach((i) => st.run(Number(i)));
+  if (all) {
+    db.prepare('UPDATE alerts SET read = 1').run();
+    for (const w of listWatches()) rememberDomainAck(w.id);
+  } else if (Array.isArray(ids) && ids.length) {
+    const nums = ids.map(Number).filter((n) => Number.isFinite(n));
+    if (nums.length) {
+      const st = db.prepare('UPDATE alerts SET read = 1 WHERE id = ?');
+      nums.forEach((i) => st.run(i));
+      const q = nums.map(() => '?').join(',');
+      for (const r of db.prepare(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${q})`).all(...nums)) rememberDomainAck(r.watch_id);
+    }
   }
   bus.emit('event', { type: 'ack' });
   return { ok: true };

@@ -124,7 +124,7 @@ npm run docs:screenshots     # régénère docs/screenshots/*.png (nécessite Ch
 
 ## Déploiement sur Dokploy (Docker)
 
-Le `Dockerfile` à la racine produit une image d'environ **1,3 Go** (Node 24 Alpine + Chromium et ses polices pour les captures), exécutée sans droits root, avec `tini` et un healthcheck.
+Le `Dockerfile` à la racine produit une image d'environ **1,3 Go** (Node 24 Alpine + Chromium et ses polices pour les captures), avec `tini` et un healthcheck. Le processus Node tourne sans droits root ; au démarrage, l'image rend d'abord le volume de données accessible à l'utilisateur `node`.
 
 1. **Créer l'application** : *Create Application* → source Git (ou dépôt public) → *Build Type* : **Dockerfile**.
 2. **Variables d'environnement** (onglet *Environment*) :
@@ -138,7 +138,7 @@ Le `Dockerfile` à la racine produit une image d'environ **1,3 Go** (Node 24 Alp
    Chromium (`CHROME_PATH`, `CHROME_NO_SANDBOX`) est déjà configuré dans l'image.
 
 3. **Volume persistant** (onglet *Advanced › Volumes*) : type **Volume**, nom `vigie-data` (nom libre : gardez celui que vous avez déjà créé), chemin de montage `/data`. Sans lui, la base (sites, historique, jeton Telegram) **et les captures d'écran** sont perdues à chaque redéploiement.
-   Utilisez un *Volume* Docker, pas un *Bind mount* : l'application tourne en utilisateur `node` (uid 1000) et un dossier hôte appartenant à root serait refusé en écriture.
+   Un volume créé par Dokploy appartient souvent à root : l'image corrige ça au démarrage (`unable to open database file` venait de là). Le chemin de montage doit rester `/data`, ou correspondre à `DATA_DIR` si vous le changez.
 4. **Domaine** (onglet *Domains*) : votre domaine, **port `3000`**, HTTPS activé (Let's Encrypt).
 5. **Déployer.**
 

@@ -9,7 +9,22 @@ import { clamp } from './util.js';
 export const DATA_DIR = process.env.DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 
-export const db = new DatabaseSync(join(DATA_DIR, 'vigie.db'));
+const DB_PATH = join(DATA_DIR, 'vigie.db');
+function openDb() {
+  try {
+    return new DatabaseSync(DB_PATH);
+  } catch (e) {
+    // SQLITE_CANTOPEN (14) : le dossier existe mais n'est pas inscriptible (volume Docker root:root, typiquement).
+    if (e?.errcode === 14) {
+      const uid = typeof process.getuid === 'function' ? process.getuid() : '?';
+      console.error(`Impossible d'ouvrir ${DB_PATH} : accès refusé en écriture (uid ${uid}).`);
+      console.error(`Le dossier ${DATA_DIR} doit être accessible en écriture à cet utilisateur. Avec Docker, montez un volume sur ce chemin et redéployez : l'image en corrige les droits au démarrage.`);
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+export const db = openDb();
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;

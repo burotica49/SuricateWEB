@@ -89,9 +89,29 @@ describe('rappel d\'échéance acquitté', { concurrency: 1 }, () => {
     assert.ok(both.incidents.some((i) => i.key === 'forbidden' && !i.acked));
   });
 
+  test('sans alerte non lue, le site reste « à vérifier » et Tout est normal le retire quand même', async () => {
+    const w = await watch('Déjà consulté');
+    plant(w.id, { title: 'Le nom de domaine expire dans 21 jour(s)', alerts: [] });
+    let row = await byName('Déjà consulté');
+    assert.equal(row.status, 'warning');
+    assert.equal(row.unread.warning, 0, 'rien à marquer comme lu, donc pas de pastille');
+    assert.equal(domainIncident(row).acked, undefined);
+
+    assert.equal((await srv.post(`/api/watches/${w.id}/ack`)).status, 200);
+    row = await byName('Déjà consulté');
+    assert.equal(row.status, 'ok');
+    assert.equal(domainIncident(row).acked, true);
+    assert.ok(row.domainExpires > Date.now());
+    const detail = await srv.get(`/api/watches/${w.id}/domain`);
+    assert.equal(detail.json.rdap.registrar, 'Gandi SAS');
+    assert.ok(detail.json.incidents.some((i) => i.key === 'rdap_expiring'));
+  });
+
   test('interface : les deux boutons calment l\'accueil et laissent l\'échéance dans le détail', { skip: !findChrome() && 'Chrome/Chromium introuvable', timeout: 60000 }, async () => {
+    const deja = await watch('Déjà lu');
     const domaine = await watch('Renouvellement');
     const pirate = await watch('Piratage');
+    plant(deja.id, { title: 'Le nom de domaine expire dans 21 jour(s)', alerts: [] });
     plant(domaine.id, {
       title: 'Le nom de domaine expire dans 21 jour(s)',
       alerts: [{ severity: 'warning', type: 'rdap_expiring', title: 'Le nom de domaine expire dans 21 jour(s)' }],
@@ -114,6 +134,17 @@ describe('rappel d\'échéance acquitté', { concurrency: 1 }, () => {
       assert.equal(status, 200);
       await page.navigate(`${srv.base}/`);
       const rowState = (name) => `(() => { const row = [...document.querySelectorAll('.site')].find((r) => r.querySelector('.n')?.textContent === ${JSON.stringify(name)}); if (!row) return null; const chip = row.querySelector('.chip[title^="Nom de domaine"]'); return { issue: row.querySelector('.issue')?.textContent || '', pill: row.querySelector('.pill')?.textContent || '', chip: chip ? [...chip.classList] : [] }; })()`;
+
+      const quiet = await waitFor(rowState('Déjà lu'));
+      assert.match(quiet.pill, /vérifier/, 'échéance sans alerte non lue : le site reste à vérifier');
+      await go(`#/sites/${deja.id}`);
+      await waitFor(`document.body.innerText.includes('Tout est normal')`);
+      await page.run(`[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Tout est normal')).click()`);
+      await waitFor(`! [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Tout est normal'))`);
+      await go('#/');
+      const cleared = await waitFor(rowState('Déjà lu'));
+      assert.equal(cleared.issue, '');
+      assert.match(cleared.pill, /Intact/);
 
       const before = await waitFor(rowState('Renouvellement'));
       assert.match(before.issue, /expire/);

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>vigieweb</name>
+    <displayName><![CDATA[VigieWeb]]></displayName>
+    <version><![CDATA[1.0.0]]></version>
+    <description><![CDATA[Indique à VigieWeb la version de PHP et les mises à jour du noyau, des modules et des thèmes.]]></description>
+    <author><![CDATA[VigieWeb]]></author>
+    <tab><![CDATA[administration]]></tab>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+    <limited_countries></limited_countries>
+</module>

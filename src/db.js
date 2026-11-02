@@ -143,6 +143,8 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     db.exec('ALTER TABLE watches ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
     db.exec('UPDATE watches SET position = id');
   }
+  // 0 = pas de relevé CMS planifié. Une valeur > 0 est l'échéance du prochain appel au plugin.
+  if (!cols.has('next_cms')) db.exec('ALTER TABLE watches ADD COLUMN next_cms INTEGER NOT NULL DEFAULT 0');
 }
 
 const json = (s, fallback) => {
@@ -260,6 +262,8 @@ export const defaultConfig = () => ({
     content: true, keywords: true, title: true, sizeDrop: true, scripts: true, links: true,
     redirect: true, status: true, tls: true, dns: true, rdap: true, server: true,
   },
+  // Connecteur WordPress / PrestaShop : VigieWeb interroge le plugin (intervalMin en minutes).
+  cms: { type: '', token: '', path: '', intervalMin: 720 },
 });
 
 const strList = (v, max = 100) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, max);
@@ -298,6 +302,14 @@ export function normalizeConfig(input = {}) {
     if (/^[\w-]+$/.test(k) && String(v).length < 2000) headers[k.toLowerCase()] = String(v);
   }
   c.headers = headers;
+  const rawCms = input.cms && typeof input.cms === 'object' ? input.cms : {};
+  const type = rawCms.type === 'wordpress' || rawCms.type === 'prestashop' ? rawCms.type : '';
+  c.cms = {
+    type: c.mode === 'domain' ? '' : type,
+    token: String(rawCms.token ?? '').trim().slice(0, 200),
+    path: String(rawCms.path ?? '').trim().replace(/^\/+|\/+$/g, '').slice(0, 120),
+    intervalMin: Math.round(clamp(rawCms.intervalMin, 60, 10080, 720)),
+  };
   return c;
 }
 
@@ -318,6 +330,7 @@ const rowToWatch = (r) =>
     lastMs: r.last_ms,
     lastError: r.last_error,
     nextShot: r.next_shot,
+    nextCms: r.next_cms ?? 0,
     shotError: r.shot_error,
     groupId: r.group_id ?? null,
     position: r.position,
@@ -345,6 +358,7 @@ export function updateWatch(id, p) {
   );
   // next_shot a son propre UPDATE : une capture en cours l'écrit en parallèle, on ne l'écrase que sur demande explicite.
   if (p.nextShot !== undefined) db.prepare('UPDATE watches SET next_shot = ? WHERE id = ?').run(p.nextShot, id);
+  if (p.nextCms !== undefined) db.prepare('UPDATE watches SET next_cms = ? WHERE id = ?').run(p.nextCms, id);
   // Changer un site de groupe le place à la fin du nouveau groupe ; ne pas changer de groupe ne touche pas à son rang.
   if (p.groupId !== undefined && (p.groupId ?? null) !== w.groupId) {
     db.prepare('UPDATE watches SET group_id = ?, position = ? WHERE id = ?').run(p.groupId ?? null, nextPosition(p.groupId), id);
@@ -385,6 +399,21 @@ export function deleteScreenshotRows(ids) {
 
 export const setShotState = (watchId, { nextShot, error = null }) =>
   db.prepare('UPDATE watches SET next_shot = ?, shot_error = ? WHERE id = ?').run(nextShot, error, watchId);
+
+/** Écrit uniquement state.cms et l'échéance, sans écraser le reste de l'état (un contrôle peut écrire en parallèle). */
+export function setCmsReport(id, cms, nextCms) {
+  const row = db.prepare('SELECT state FROM watches WHERE id = ?').get(id);
+  if (!row) return null;
+  let state = {};
+  try {
+    state = JSON.parse(row.state || '{}') || {};
+  } catch {
+    state = {};
+  }
+  state.cms = cms;
+  db.prepare('UPDATE watches SET state = ?, next_cms = ? WHERE id = ?').run(JSON.stringify(state), nextCms, id);
+  return getWatch(id);
+}
 
 export const deleteWatch = (id) => db.prepare('DELETE FROM watches WHERE id = ?').run(id).changes > 0;
 
@@ -504,8 +533,17 @@ export function applyLayout({ groups = [], items = [] }) {
 }
 
 export function saveRun(id, { state, nextRun, code, ms, error }) {
+  // Un relevé CMS peut avoir abouti pendant le contrôle : on garde le plus récent.
+  const cur = db.prepare('SELECT state FROM watches WHERE id = ?').get(id);
+  let next = state;
+  try {
+    const prev = JSON.parse(cur?.state || '{}');
+    if (prev?.cms && (prev.cms.checkedAt || 0) > (state?.cms?.checkedAt || 0)) next = { ...state, cms: prev.cms };
+  } catch {
+    /* l'état en cours d'écriture reste la référence */
+  }
   db.prepare('UPDATE watches SET state=?, next_run=?, last_check=?, last_code=?, last_ms=?, last_error=? WHERE id=?').run(
-    JSON.stringify(state), nextRun, Date.now(), code ?? null, ms ?? null, error ?? null, id,
+    JSON.stringify(next), nextRun, Date.now(), code ?? null, ms ?? null, error ?? null, id,
   );
 }
 

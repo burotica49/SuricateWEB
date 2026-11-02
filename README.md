@@ -12,7 +12,7 @@ Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io)
 
 ## Sommaire
 
-[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
+[Aperçu](#aperçu) · [Démarrage](#démarrage) · [Déploiement sur Dokploy](#déploiement-sur-dokploy-docker) · [Telegram](#configurer-telegram) · [Captures d'écran](#captures-décran) · [Groupes](#groupes-de-sites) · [Ce qui est surveillé](#ce-qui-est-surveillé) · [WordPress et PrestaShop](#wordpress-et-prestashop) · [Réduire le bruit](#réduire-le-bruit) · [Limites](#limites-à-connaître) · [Architecture](#architecture) · [Mode démo](#essayer-sans-rien-configurer-mode-démo)
 
 ## Aperçu
 
@@ -282,6 +282,28 @@ Le premier contrôle établit la référence et ne déclenche aucune alerte de c
 - Les résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9) doivent être joignables en UDP/53 depuis le serveur ; sinon la cohérence entre résolveurs est simplement ignorée.
 - Les adresses IP derrière un CDN tournent : VigieWeb ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
 
+## WordPress et PrestaShop
+
+Pour un site WordPress ou PrestaShop, VigieWeb peut afficher la **version de PHP**, et pour le noyau, les extensions (ou modules) et les thèmes : la **version actuelle** et la **version disponible**.
+
+Le relevé se fait **depuis le site**, là où ces informations existent. Un plugin, installé sur le site, répond uniquement à VigieWeb. Il n'envoie rien de lui-même : VigieWeb l'interroge (toutes les 12 heures par défaut, ou tout de suite avec **Actualiser**).
+
+1. Dans la fiche du site, ouvrez **WordPress / PrestaShop**, choisissez le CMS et copiez le jeton.
+2. Téléchargez le plugin (lien dans le même bloc), installez-le et activez-le.
+3. Collez le jeton dans les réglages du plugin (WordPress : Réglages › VigieWeb ; PrestaShop : Modules › VigieWeb).
+4. L'onglet **Mises à jour** du site affiche le relevé.
+
+Si le CMS est dans un sous-dossier (`exemple.fr/blog`), indiquez ce dossier. L'adresse appelée est toujours celle du site surveillé.
+
+Ce que le relevé ne peut pas inventer :
+
+- une mise à jour de **PHP** (seule la version installée est lue) ;
+- une extension WordPress **premium**, sauf si son propre système de mise à jour la déclare à WordPress ;
+- un module PrestaShop **absent du catalogue Addons**, ou un thème sur mesure : la version actuelle est affichée, la version disponible reste « inconnue » ;
+- le mode démo n'interroge aucun site.
+
+Le point d'accès du plugin ne répond qu'avec le jeton et ne renvoie que des numéros de version.
+
 ## Architecture
 
 ```
@@ -293,8 +315,11 @@ src/telegram.js      API Bot Telegram (texte et photo) + mise en forme des messa
 src/screenshot.js    captures d'écran : Chrome piloté par DevTools (WebSocket natif), file d'attente, rétention
 src/auth.js          identifiants lus dans l'environnement, comparaison en temps constant, clé de session
 src/env.js           chargement du .env (avant l'ouverture de la base)
-src/scheduler.js     planificateur (5 contrôles en parallèle)
+src/scheduler.js     planificateur (5 contrôles en parallèle, relevés CMS à part)
+src/cms.js           relevé PHP / mises à jour : appel du plugin WordPress ou PrestaShop
+src/zip.js           archive ZIP sans compression, pour télécharger les plugins
 src/db.js            SQLite : sites, groupes, contrôles, versions (gzip), alertes, réglages
+plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour)
 public/              interface (JS/CSS vanilla, sans build)
 public/layout.js     organisation en groupes : calcul pur (déplacements, pas au clavier), sans DOM, testé unitairement
 test/                node --test (unitaires, API réelle, et bout en bout dans un vrai Chrome)

@@ -5,7 +5,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   db, getSettings, saveSettings, listWatches, getWatch, createWatch, updateWatch, deleteWatch,
   getSnapshot, previousSnapshot, snapshotLines, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS,
@@ -14,6 +14,8 @@ import {
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
 } from './src/db.js';
 import { enqueue, isRunning, startScheduler } from './src/scheduler.js';
+import { cmsConfigError, pollCms } from './src/cms.js';
+import { zipDirectory } from './src/zip.js';
 import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, NO_CHROME } from './src/screenshot.js';
 import { fetchPage, analyze, describeError } from './src/checker.js';
 import { diffLines, collapse } from './src/diff.js';
@@ -127,6 +129,8 @@ function normalizeUrl(input) {
 }
 
 function validateConfig(cfg) {
+  const cmsErr = cmsConfigError(cfg.cms);
+  if (cmsErr) throw new HttpError(400, cmsErr);
   for (const r of cfg.ignoreRegex) {
     try {
       new RegExp(r, 'i');
@@ -252,6 +256,7 @@ function publicSettings() {
 function watchInput(body, existing) {
   const s = getSettings();
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
+  if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');
   validateConfig(cfg);
   const url = body.url !== undefined ? normalizeUrl(body.url) : existing.url;
   const tags = Array.isArray(body.tags) ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10) : existing?.tags || [];
@@ -308,7 +313,8 @@ route('GET', '/api/watches', () => {
 route('POST', '/api/watches', async (ctx) => {
   const { data, cfg } = watchInput(ctx.body);
   await SELECTOR_CHECK(cfg);
-  const w = createWatch(data);
+  let w = createWatch(data);
+  if (w.config.cms.type) w = updateWatch(w.id, { nextCms: Date.now() });
   enqueue(w.id);
   return summarize(w, buildCtx());
 });
@@ -328,6 +334,7 @@ route('GET', '/api/watches/:id', (ctx) => {
       server: state.server || '', scripts: state.scripts?.length ?? null, linkHosts: state.linkHosts?.length ?? null,
       baseline: !!state.baseline,
     },
+    cms: state.cms || null,
   };
 });
 
@@ -340,7 +347,10 @@ route('PUT', '/api/watches/:id', async (ctx) => {
   if (data.url !== w.url || RESET_KEYS.some((k) => JSON.stringify(cfg[k]) !== JSON.stringify(w.config[k]))) state.baseline = false;
   // Nouvelle adresse ou réglages de capture modifiés : on recapture sans attendre l'échéance.
   const reshoot = data.url !== w.url || JSON.stringify(cfg.screenshot) !== JSON.stringify(w.config.screenshot);
-  const u = updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}) });
+  const cmsOn = cfg.mode !== 'domain' && !!cfg.cms.type;
+  const cmsChanged = JSON.stringify(cfg.cms) !== JSON.stringify(w.config.cms) || data.url !== w.url;
+  const nextCms = cmsOn ? (cmsChanged || !(w.nextCms > 0) ? Date.now() : w.nextCms) : 0;
+  const u = updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}), nextCms });
   return summarize(u, buildCtx());
 });
 
@@ -420,6 +430,28 @@ route('GET', '/api/screenshots/:id/image', async (ctx) => {
   });
   ctx.res.end(buf);
   return Symbol.for('handled');
+});
+
+route('GET', '/api/plugins/:file', (ctx) => {
+  const dir = { 'wordpress.zip': 'wordpress', 'prestashop.zip': 'prestashop' }[ctx.params.file];
+  if (!dir) throw new HttpError(404, 'Plugin introuvable');
+  const buf = zipDirectory(join(ROOT, 'plugins', dir, 'vigieweb'), 'vigieweb');
+  ctx.res.writeHead(200, {
+    'content-type': 'application/zip',
+    'content-disposition': `attachment; filename="vigieweb-${dir}.zip"`,
+    'content-length': String(buf.length),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  ctx.res.end(buf);
+  return Symbol.for('handled');
+});
+
+route('POST', '/api/watches/:id/cms', async (ctx) => {
+  const w = getWatch(Number(ctx.params.id));
+  if (!w) throw new HttpError(404, 'Site introuvable');
+  if (w.config.mode === 'domain' || !w.config.cms.type) throw new HttpError(400, 'Aucun CMS configuré pour ce site');
+  return pollCms(w.id, { refresh: true });
 });
 
 route('POST', '/api/watches/:id/check', async (ctx) => {

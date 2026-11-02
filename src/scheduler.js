@@ -1,6 +1,7 @@
 import { db, normalizeConfig } from './db.js';
 import { runCheck } from './checker.js';
 import { captureWatch, isCapturing, engine } from './screenshot.js';
+import { pollCms } from './cms.js';
 import { bus } from './events.js';
 
 const CONCURRENCY = 5;
@@ -53,6 +54,20 @@ export function startScheduler() {
     const due = db.prepare('SELECT id FROM watches WHERE enabled = 1 AND next_run <= ? ORDER BY next_run LIMIT 100').all(Date.now());
     for (const { id } of due) {
       if (!running.has(id)) enqueue(id);
+    }
+    // Relevés CMS : fréquence propre (souvent 12 h), deux à la fois pour ne pas ouvrir toutes les boutiques d'un coup.
+    let cmsSlots = 2;
+    for (const { id, config } of db.prepare('SELECT id, config FROM watches WHERE enabled = 1 AND next_cms > 0 AND next_cms <= ?').all(Date.now())) {
+      if (cmsSlots <= 0) break;
+      let cfg;
+      try {
+        cfg = normalizeConfig(JSON.parse(config));
+      } catch {
+        continue;
+      }
+      if (cfg.mode === 'domain' || (cfg.cms.type !== 'wordpress' && cfg.cms.type !== 'prestashop')) continue;
+      cmsSlots--;
+      pollCms(id).catch((e) => console.error(`[cms ${id}]`, e));
     }
     // Captures d'écran : planifiées à part, selon leur propre fréquence (la file interne limite la charge de Chrome).
     if (!engine.available()) return;

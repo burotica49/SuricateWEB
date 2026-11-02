@@ -72,6 +72,7 @@ const ICONS = {
   right: '<path d="M9 18l6-6-6-6"/>',
   grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  layers: '<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/>',
 };
 const ic = (name) => {
   const t = document.createElement('template');
@@ -126,6 +127,37 @@ const fmtDur = (ms) => {
 };
 const hue = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+
+/** Même construction que src/cms.js : origine du site + chemin fixe du plugin. */
+function cmsUrl(siteUrl, type, path) {
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`);
+    const prefix = String(path || '').trim().replace(/^\/+|\/+$/g, '');
+    const base = prefix ? `/${prefix}` : '';
+    if (type === 'prestashop') {
+      u.pathname = `${base}/modules/vigieweb/status.php`.replace(/\/{2,}/g, '/');
+      u.search = '';
+    } else {
+      u.pathname = `${base}/`.replace(/\/{2,}/g, '/');
+      u.search = 'rest_route=/vigieweb/v1/status';
+    }
+    u.hash = '';
+    return u.href;
+  } catch {
+    return '';
+  }
+}
+
+const randomToken = () => {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+const cmsPending = (report) => {
+  if (!report) return 0;
+  return [report.core, ...(report.extensions || []), ...(report.themes || [])].filter((i) => i?.available).length;
+};
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 
 const STATUS = {
@@ -758,16 +790,20 @@ async function viewDetail(id, tab, tok, openSnap) {
   }
 
   const domainOnly = w.mode === 'domain';
+  const cmsOn = !domainOnly && (w.config?.cms?.type === 'wordpress' || w.config?.cms?.type === 'prestashop');
+  const cmsN = cmsPending(w.cms);
   const tabs = domainOnly
     ? [['apercu', 'Aperçu', 'activity'], ['domaine', 'Domaine & DNS', 'globe'], ['alertes', 'Alertes', 'bell']]
-    : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ['alertes', 'Alertes', 'bell']];
+    : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers']] : []), ['alertes', 'Alertes', 'bell']];
   root.append(h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map(([k, l, icn]) => h('a', { href: `#/sites/${id}/${k}`, class: tab === k ? 'on' : '', role: 'tab' }, ic(icn), l,
-    k === 'alertes' && unread ? h('span', { class: 'badge' }, unread) : null))));
+    k === 'alertes' && unread ? h('span', { class: 'badge' }, unread) : null,
+    k === 'mises-a-jour' && cmsN ? h('span', { class: 'badge warn' }, cmsN) : null))));
 
   if (tab === 'modifications' && !domainOnly) root.append(await changesTab(w, openSnap));
   else if (tab === 'captures' && !domainOnly) root.append(await capturesTab(w));
   else if (tab === 'disponibilite' && !domainOnly) root.append(await uptimeTab(w));
   else if (tab === 'domaine') root.append(await domainTab(w));
+  else if (tab === 'mises-a-jour' && cmsOn) root.append(updatesTab(w));
   else if (tab === 'alertes') {
     const alerts = await api(`/alerts?watch=${id}&limit=100`);
     root.append(alerts.length ? alertList(alerts, false) : empty('bell', 'Aucune alerte', 'Ce site n\'a déclenché aucune alerte pour le moment.'));
@@ -1080,6 +1116,64 @@ async function uptimeTab(w) {
   return root;
 }
 
+// ───────────── Mises à jour (WordPress / PrestaShop) ─────────────
+
+function cmsRowState(item) {
+  if (item?.available) return h('span', { class: 'pill warn' }, 'Mise à jour');
+  if (item?.known === false) return h('span', { class: 'pill mute' }, 'Inconnue');
+  return h('span', { class: 'pill ok' }, 'À jour');
+}
+
+function cmsTable(title, items) {
+  const rows = [...(items || [])].sort((a, b) => (b.available ? 1 : 0) - (a.available ? 1 : 0) || String(a.name).localeCompare(String(b.name), 'fr'));
+  return h('div', { class: 'card', style: { marginBottom: '16px' } },
+    h('div', { class: 'card-head' }, h('h2', {}, title), h('span', { class: 'muted' }, rows.length ? plural(rows.filter((r) => r.available).length, 'mise à jour', 'mises à jour') : 'aucun élément')),
+    rows.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Nom'), h('th', {}, 'Version actuelle'), h('th', {}, 'Version disponible'), h('th', {}, 'État'))),
+      h('tbody', {}, ...rows.map((r) => h('tr', {},
+        h('td', {}, r.name, r.active === false ? h('span', { class: 'muted' }, ' · inactif') : null),
+        h('td', { class: 'mono' }, r.current || '—'),
+        h('td', { class: 'mono' }, r.available || '—'),
+        h('td', {}, cmsRowState(r)),
+      )))))
+      : h('div', { class: 'empty', style: { padding: '22px' } }, h('p', { style: { margin: 0 } }, 'Rien à afficher pour le moment.')));
+}
+
+function updatesTab(w) {
+  const report = w.cms;
+  const kind = w.config.cms.type === 'prestashop' ? 'PrestaShop' : 'WordPress';
+  const extLabel = w.config.cms.type === 'prestashop' ? 'Modules' : 'Extensions';
+  const refresh = h('button', { class: 'btn', onclick: guard(async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    const r = await api(`/watches/${w.id}/cms`, { method: 'POST' });
+    toast(r.ok ? 'Versions mises à jour' : (r.error || 'Relevé impossible'), r.ok ? 'ok' : 'err');
+    route();
+  }) }, ic('refresh'), 'Actualiser');
+  const root = h('div', {});
+  if (!report?.checkedAt || (!report.ok && !report.core)) {
+    root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+      h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, kind), h('span', { class: 'muted' }, 'en attente du premier relevé')), refresh),
+      h('div', { class: 'card-pad' },
+        report?.error ? h('div', { class: 'callout', style: { marginBottom: '14px' } }, ic('alert'), h('div', {}, report.error)) : null,
+        h('p', {}, 'Installez le plugin sur le site, collez le jeton ci-dessous dans ses réglages, puis actualisez.'),
+        h('p', { class: 'mono', style: { wordBreak: 'break-all' } }, w.config.cms.token || '—'),
+        h('p', {}, h('a', { class: 'btn', href: `/api/plugins/${w.config.cms.type}.zip` }, ic('download'), ` Télécharger le plugin ${kind}`)),
+      )));
+    return root;
+  }
+  root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
+    h('div', { class: 'card-head' },
+      h('div', {}, h('h2', {}, `${kind} ${report.cmsVersion || report.core?.current || ''}`.trim()), h('span', { class: 'muted' }, `PHP ${report.php || '—'} · relevé ${rel(report.checkedAt)}`)),
+      refresh),
+    report.error ? h('div', { class: 'card-pad', style: { paddingBottom: 0 } }, h('div', { class: 'callout' }, ic('alert'), h('div', {}, report.error, h('span', { class: 'muted' }, ' Le tableau reste celui du dernier relevé réussi.')))) : null,
+  ));
+  root.append(cmsTable('Noyau', report.core ? [{ name: kind, current: report.core.current, available: report.core.available, known: report.core.known, active: true }] : []));
+  root.append(cmsTable(extLabel, report.extensions));
+  root.append(cmsTable('Thèmes', report.themes));
+  return root;
+}
+
 // ───────────── Domaine & DNS ─────────────
 const CHK_ICON = { ok: 'checkCircle', warn: 'alert', bad: 'alert', na: 'info' };
 
@@ -1285,6 +1379,10 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     headers: h('textarea', { class: 'input mono', placeholder: 'Authorization: Basic …\nCookie: preview=1', value: Object.entries(c.headers).map(([k, v]) => `${k}: ${v}`).join('\n') }),
     notify: h('input', { type: 'checkbox', checked: c.notify }),
     minSev: h('select', { class: 'input', value: c.minSeverity }, h('option', { value: '' }, 'Réglage général'), h('option', { value: 'info' }, 'Tout (infos incluses)'), h('option', { value: 'warning' }, 'Attention et critique'), h('option', { value: 'critical' }, 'Critique uniquement')),
+    cmsType: h('select', { class: 'input', value: (c.cms?.type === 'wordpress' || c.cms?.type === 'prestashop') ? c.cms.type : '' }, h('option', { value: '' }, 'Aucun'), h('option', { value: 'wordpress' }, 'WordPress'), h('option', { value: 'prestashop' }, 'PrestaShop')),
+    cmsToken: h('input', { class: 'input mono', value: c.cms?.token || '', autocomplete: 'off', spellcheck: false }),
+    cmsPath: h('input', { class: 'input mono', placeholder: 'vide si le site est à la racine', value: c.cms?.path || '', autocomplete: 'off', spellcheck: false }),
+    cmsEvery: h('select', { class: 'input', value: String(c.cms?.intervalMin || 720) }, ...[[60, 'Toutes les heures'], [360, 'Toutes les 6 heures'], [720, 'Toutes les 12 heures'], [1440, 'Toutes les 24 heures'], [10080, 'Tous les 7 jours']].map(([v, l]) => h('option', { value: String(v) }, l))),
   };
   const checks = {};
   const toggle = (input, title, desc) => h('label', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, title), desc ? h('span', {}, desc) : null), h('span', { class: 'switch' }, input, h('i')));
@@ -1322,12 +1420,44 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     if (r.ok && !f.name.value && r.title) f.name.placeholder = r.title.slice(0, 40);
   }) }, 'Tester');
 
+  const cmsEndpointEl = h('span', { class: 'mono', style: { wordBreak: 'break-all' } }, '');
+  const cmsBox = h('div', {});
+  const syncCms = () => {
+    const on = f.cmsType.value === 'wordpress' || f.cmsType.value === 'prestashop';
+    cmsBox.hidden = !on;
+    if (on && !f.cmsToken.value) f.cmsToken.value = randomToken();
+    const kind = f.cmsType.value === 'prestashop' ? 'PrestaShop' : 'WordPress';
+    cmsEndpointEl.textContent = on ? cmsUrl(f.url.value, f.cmsType.value, f.cmsPath.value) : '';
+    cmsBox.querySelector('[data-cms-kind]')?.replaceChildren(document.createTextNode(kind));
+  };
+  cmsBox.append(
+    h('div', { class: 'field' }, h('label', {}, 'Jeton'), h('div', { class: 'input-group' }, f.cmsToken,
+      h('button', { class: 'btn', type: 'button', onclick: () => { f.cmsToken.value = randomToken(); toast('Nouveau jeton — enregistrez, puis collez-le dans le plugin'); } }, 'Générer'),
+      h('button', { class: 'btn', type: 'button', onclick: guard(async () => { await navigator.clipboard.writeText(f.cmsToken.value); toast('Jeton copié'); }) }, 'Copier')),
+      h('span', { class: 'hint' }, 'À coller dans le plugin. Sans ce jeton, le plugin ne répond pas.')),
+    h('div', { class: 'row' },
+      h('div', { class: 'field' }, h('label', {}, 'Dossier'), f.cmsPath, h('span', { class: 'hint' }, 'Seulement si le CMS n’est pas à la racine du domaine (ex. blog).')),
+      h('div', { class: 'field' }, h('label', {}, 'Fréquence du relevé'), f.cmsEvery)),
+    h('div', { class: 'field' }, h('label', {}, 'Adresse interrogée'), cmsEndpointEl),
+    h('p', {}, 'Téléchargez le plugin ', h('span', { 'data-cms-kind': '' }, ''), ', installez-le, activez-le, puis collez le jeton.',
+      h('span', {}, ' '),
+      h('a', { href: '/api/plugins/wordpress.zip' }, 'WordPress'), ' · ', h('a', { href: '/api/plugins/prestashop.zip' }, 'PrestaShop')),
+  );
+  f.cmsType.addEventListener('change', syncCms);
+  f.cmsPath.addEventListener('input', syncCms);
+  f.url.addEventListener('input', syncCms);
+  syncCms();
+
   const body = h('form', { class: mode === 'domain' ? 'domain-mode' : '', onsubmit: (e) => e.preventDefault() },
     h('div', { class: 'field' }, h('label', {}, 'Type de surveillance'), modeSeg, modeHint),
     h('div', { class: 'field' }, h('label', {}, 'Adresse du site ou domaine'), h('div', { class: 'input-group' }, f.url, siteOnly(testBtn)), siteOnly(testOut)),
     h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Nom'), f.name), h('div', { class: 'field' }, h('label', {}, 'Fréquence de contrôle'), f.interval)),
     h('div', { class: 'field' }, h('label', {}, 'Groupe'), f.group, h('span', { class: 'hint' }, 'Pour classer vos sites dans la liste (par client, par projet…). Vous pouvez aussi les glisser-déposer.')),
     h('div', { class: 'field' }, h('label', {}, 'Étiquettes'), f.tags, h('span', { class: 'hint' }, 'Séparées par des virgules — pratique pour regrouper par client.')),
+    siteOnly(details('WordPress / PrestaShop', [
+      h('div', { class: 'field' }, h('label', {}, 'CMS'), f.cmsType, h('span', { class: 'hint' }, 'VigieWeb interroge un plugin installé sur le site pour lire la version de PHP et les mises à jour. Le plugin n’envoie rien de lui-même.')),
+      cmsBox,
+    ], !!(c.cms?.type))),
     h('h3', { style: { margin: '22px 0 4px' } }, 'Que surveiller ?'), h('p', { class: 'muted', style: { marginBottom: '8px' } }, 'La configuration recommandée surveille tout. Désactivez ce qui produit trop de bruit sur ce site.'),
     ...groups,
     siteOnly(details('Capture d\'écran', [
@@ -1379,6 +1509,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
           selector: f.selector.value, excludeSelector: f.exclude.value, ignoreRegex: list(f.ignore), images: f.images.checked,
           forbidden: list(f.forbidden), required: list(f.required), userAgent: f.ua.value, timeoutS: Number(f.timeout.value), failThreshold: Number(f.fails.value),
           minChangePct: Number(f.minPct.value), allowedHosts: list(f.allowed, /[,\n]/), headers, notify: f.notify.checked, minSeverity: f.minSev.value,
+          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value) },
         },
       };
       btn.disabled = true;

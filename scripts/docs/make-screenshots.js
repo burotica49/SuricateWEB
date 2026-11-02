@@ -11,7 +11,7 @@ import { startFakeSites, linesOf, DEFACED_LINES, SITES } from './fake-sites.js';
 import { seedDemo, DEMO_USER, DEMO_PASSWORD } from './demo-data.js';
 import { startServer } from '../../test-support/server.js';
 import { openPage, findChrome } from '../../test-support/browser.js';
-import { buildMessage } from '../../src/telegram.js';
+import { buildMessage, buildKeyboard } from '../../src/telegram.js';
 import { diffLines, preview } from '../../src/diff.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -37,11 +37,15 @@ try {
 
   // Message Telegram : le VRAI texte produit par l'application (buildMessage), pas une maquette rédigée à la main.
   const defacedAlerts = [
-    { severity: 'critical', title: 'Le contenu de la page a été entièrement remplacé', detail: '3 ligne(s) ajoutée(s), 13 supprimée(s) · similarité 0 %', diffPreview: preview(diffLines(linesOf(SITES.dupont, { promo: true }), DEFACED_LINES).ops, 8, 70) },
-    { severity: 'critical', title: '3 textes suspects détectés : « hacked by », « cyber team », « greetz to »', detail: '…hacked by anonymous cyber team your security is a joke. greetz to all.…' },
-    { severity: 'critical', title: 'Iframe externe injectée dans la page', detail: 'malware-cdn.example' },
+    { id: 41, severity: 'critical', title: 'Le contenu de la page a été entièrement remplacé', detail: '3 ligne(s) ajoutée(s), 13 supprimée(s) · similarité 0 %', diffPreview: preview(diffLines(linesOf(SITES.dupont, { promo: true }), DEFACED_LINES).ops, 8, 70) },
+    { id: 42, severity: 'critical', title: '3 textes suspects détectés : « hacked by », « cyber team », « greetz to »', detail: '…hacked by anonymous cyber team your security is a joke. greetz to all.…' },
+    { id: 43, severity: 'critical', title: 'Iframe externe injectée dans la page', detail: 'malware-cdn.example' },
   ];
-  const text = buildMessage({ id: 1, name: SITES.dupont.name, url: `https://${SITES.dupont.domain}/` }, defacedAlerts, { telegram: { includeDiff: true }, baseUrl: 'https://vigieweb.exemple-societe.example' });
+  // Le texte ET les boutons sont ceux que produit l'application ; seul l'habillage de la conversation est reconstitué.
+  const dupont = { id: 1, name: SITES.dupont.name, url: `https://${SITES.dupont.domain}/` };
+  const demoSettings = { telegram: { includeDiff: true, buttons: true }, baseUrl: 'https://vigieweb.exemple-societe.example' };
+  const keyboard = buildKeyboard(dupont, defacedAlerts, demoSettings);
+  const text = buildMessage(dupont, defacedAlerts, demoSettings, { link: !keyboard.link });
   const photoB64 = images.dupontDefaced.image.toString('base64');
   fake.setPage('/telegram', `<!doctype html><meta charset="utf-8"><style>
     *{box-sizing:border-box;margin:0}body{background:#0e1621;font:15px/1.45 -apple-system,"Segoe UI",Helvetica,sans-serif;color:#e8ecf0;padding:26px}
@@ -50,11 +54,13 @@ try {
     .bot b{display:block;font-size:16px}.bot span{font-size:13px;color:#7f91a4}
     .m{background:#182533;border-radius:14px 14px 14px 4px;padding:9px 13px 7px;white-space:pre-wrap;word-break:break-word;max-width:100%}
     .m b{color:#fff}.m a{color:#6ab3f3}.m pre{background:#0e1621;border-left:3px solid #6ab3f3;border-radius:6px;padding:8px 10px;margin:6px 0 2px;font:12.5px/1.45 ui-monospace,Menlo,monospace;color:#c9d6e3;white-space:pre-wrap}
+    .kb{display:flex;gap:4px;margin-top:3px}.kb span{flex:1;text-align:center;background:rgba(106,179,243,.16);color:#6ab3f3;border-radius:9px;padding:9px 6px;font-size:14.5px;font-weight:600}
     .t{display:block;text-align:right;font-size:12px;color:#7f91a4;margin-top:2px}
     .p{background:#182533;border-radius:14px 14px 14px 4px;padding:4px 4px 7px;max-width:100%}.p img{display:block;width:100%;border-radius:11px}.p div{padding:7px 9px 0;white-space:pre-wrap}
   </style><div id="chat">
     <div class="bot"><div class="av">V</div><div><b>VigieWeb Bot</b><span>bot</span></div></div>
     <div class="m">${text}<span class="t">14:32</span></div>
+    <div class="kb">${keyboard.row.map((b) => `<span>${b.text}</span>`).join('')}</div>
     <div class="p"><img src="data:image/jpeg;base64,${photoB64}"><div>📸 ${SITES.dupont.name} — la page au moment de l'alerte<span class="t">14:32</span></div></div>
   </div>`);
 

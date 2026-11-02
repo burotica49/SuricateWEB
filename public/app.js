@@ -1617,6 +1617,7 @@ async function viewSettings() {
     recovery: h('input', { type: 'checkbox', checked: t.sendRecovery }),
     diff: h('input', { type: 'checkbox', checked: t.includeDiff }),
     photo: h('input', { type: 'checkbox', checked: t.sendScreenshot, disabled: !s.screenshots.available }),
+    buttons: h('input', { type: 'checkbox', checked: t.buttons !== false }),
     minSev: h('select', { class: 'input', value: t.minSeverity }, h('option', { value: 'info' }, 'Tout, y compris les infos'), h('option', { value: 'warning' }, 'Attention et critique (recommandé)'), h('option', { value: 'critical' }, 'Critique uniquement')),
     base: h('input', { class: 'input', placeholder: 'http://monserveur:3000 (pour les liens dans les messages)', value: s.baseUrl }),
     interval: h('select', { class: 'input', value: String(s.defaultInterval) }, ...INTERVALS.map(([v, l]) => h('option', { value: String(v) }, l))),
@@ -1643,7 +1644,7 @@ async function viewSettings() {
   });
   const save = guard(async () => {
     S.settings = await api('/settings', { method: 'PUT', body: {
-      telegram: { token: f.token.value.trim(), chatId: f.chat.value.trim(), enabled: f.enabled.checked, sendRecovery: f.recovery.checked, includeDiff: f.diff.checked, sendScreenshot: f.photo.checked, minSeverity: f.minSev.value },
+      telegram: { token: f.token.value.trim(), chatId: f.chat.value.trim(), enabled: f.enabled.checked, sendRecovery: f.recovery.checked, includeDiff: f.diff.checked, sendScreenshot: f.photo.checked, buttons: f.buttons.checked, minSeverity: f.minSev.value },
       baseUrl: f.base.value, defaultInterval: Number(f.interval.value), cmsAfterDays: Number(f.cmsDays.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
     } });
     toast('Réglages enregistrés');
@@ -1672,8 +1673,9 @@ async function viewSettings() {
         toggle(f.recovery, 'Prévenir du rétablissement', 'Message « ✅ Rétabli » quand un incident disparaît.'),
         toggle(f.diff, 'Joindre un extrait des changements', 'Les premières lignes ajoutées / supprimées dans le message.'),
         toggle(f.photo, 'Joindre une capture d\'écran aux alertes critiques', s.screenshots.available ? 'Une photo de la page au moment d\'une défiguration, d\'un script injecté ou d\'une redirection : on voit tout de suite ce que voient les visiteurs.' : 'Indisponible : aucun navigateur (Chrome / Chromium) détecté sur le serveur.'),
+        toggle(f.buttons, 'Boutons « Marquer comme lu » et « Ouvrir dans VigieWeb »', 'Sous chaque alerte Telegram. « Marquer comme lu » est reçu par VigieWeb en interrogeant Telegram : aucune adresse publique n’est nécessaire. « Ouvrir dans VigieWeb » apparaît si l’adresse publique de VigieWeb, plus bas, est utilisable.'),
         h('div', { class: 'field', style: { marginTop: '14px' } }, h('label', {}, 'Niveau minimal des notifications'), f.minSev),
-        h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Adresse de VigieWeb (optionnel)'), f.base, h('span', { class: 'hint' }, 'Ajoute un lien « Ouvrir dans VigieWeb » à chaque message.'))),
+        h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Adresse de VigieWeb (optionnel)'), f.base, h('span', { class: 'hint' }, 'Donne son adresse au bouton « Ouvrir dans VigieWeb » sous chaque message. Elle doit être joignable depuis un téléphone : pas de localhost ni de réseau local.'))),
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '14px' } }, 'Détection'),
         h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Fréquence par défaut'), f.interval), h('div', { class: 'field' }, h('label', {}, 'User-Agent par défaut'), f.ua)),

@@ -17,7 +17,7 @@ import {
 import { cmsIncidents } from './cms-alerts.js';
 import { parseHtml, selectAll, textLines, extractFeatures } from './html.js';
 import { diffLines, preview } from './diff.js';
-import { sendMessage, sendPhoto, buildMessage } from './telegram.js';
+import { sendAlert, sendPhoto } from './telegram.js';
 import { captureWatch, engine } from './screenshot.js';
 import { bus } from './events.js';
 import { sha1, registrable, isIp, SEV, fmtDuration } from './util.js';
@@ -700,7 +700,7 @@ async function notify(w, alerts, settings) {
   if (!eligible.length) return {};
   const ids = eligible.map((a) => a.id);
   try {
-    await sendMessage(t.token, t.chatId, buildMessage(w, eligible, settings));
+    await sendAlert(t.token, t.chatId, w, eligible, settings);
     markNotified(ids);
   } catch (e) {
     console.error(`[telegram] ${w.name}: ${e.message}`);

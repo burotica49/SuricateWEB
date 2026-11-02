@@ -12,7 +12,7 @@ import {
   uptimeBetween, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, closeOutage, DAY_MS, UPTIME_PERIODS,
   getScreenshot, listScreenshots, latestScreenshots, SHOTS_DIR,
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
-  addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap,
+  addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap, markAlertsReadUpTo,
 } from './src/db.js';
 import { enqueue, isRunning, startScheduler } from './src/scheduler.js';
 import { cmsConfigError, pollCms } from './src/cms.js';
@@ -22,6 +22,7 @@ import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, NO_CHR
 import { fetchPage, analyze, describeError } from './src/checker.js';
 import { diffLines, collapse } from './src/diff.js';
 import * as tg from './src/telegram.js';
+import { startTelegramPoller } from './src/telegram-poll.js';
 import { bus } from './src/events.js';
 import { clamp, registrable, SEV } from './src/util.js';
 import { readCredentials, checkLogin, sessionKey } from './src/auth.js';
@@ -648,6 +649,7 @@ route('PUT', '/api/settings', (ctx) => {
       sendRecovery: t.sendRecovery !== undefined ? !!t.sendRecovery : cur.telegram.sendRecovery,
       includeDiff: t.includeDiff !== undefined ? !!t.includeDiff : cur.telegram.includeDiff,
       sendScreenshot: t.sendScreenshot !== undefined ? !!t.sendScreenshot : cur.telegram.sendScreenshot,
+      buttons: t.buttons !== undefined ? !!t.buttons : cur.telegram.buttons,
     };
     if (t.clearToken) patch.telegram.token = '';
   }
@@ -803,6 +805,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+let poller = null;
 server.listen(PORT, HOST, () => {
   const s = getSettings();
   console.log(`\n  VigieWeb →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
@@ -813,10 +816,23 @@ server.listen(PORT, HOST, () => {
   if (process.env.VIGIE_DEMO === '1') console.log('  ⚠  MODE DÉMO : données fictives, contrôles et captures désactivés (VIGIE_DEMO=1).');
   console.log('');
   startScheduler();
+  // Clics sur les boutons Telegram (« Marquer comme lu »). TELEGRAM_POLL=0 les désactive ; inutile en mode démo.
+  if (process.env.VIGIE_DEMO !== '1' && process.env.TELEGRAM_POLL !== '0') {
+    poller = startTelegramPoller({
+      settings: () => getSettings().telegram,
+      onRead: (watchId, upTo) => {
+        const rows = markAlertsReadUpTo(watchId, upTo);
+        if (rows.some((r) => r.type === 'rdap_expiring')) rememberDomainAck(watchId); // comme « Tout est normal »
+        if (rows.length) bus.emit('event', { type: 'ack', watchId });
+        return rows.length;
+      },
+    });
+  }
 });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
+    poller?.stop();
     server.close();
     db.close();
     process.exit(0);

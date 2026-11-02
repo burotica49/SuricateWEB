@@ -185,7 +185,8 @@ export const DEFAULT_KEYWORDS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  telegram: { token: '', chatId: '', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true },
+  // buttons : boutons « Marquer comme lu » / « Ouvrir dans VigieWeb » sous chaque message.
+  telegram: { token: '', chatId: '', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true, buttons: true },
   baseUrl: '',
   defaultInterval: 15,
   userAgent: 'Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)',
@@ -643,6 +644,13 @@ export const pendingMaintenanceAlerts = (watchId) =>
 
 export function markMaintenanceSummarized(watchId) {
   db.prepare('UPDATE alerts SET maintenance = 2 WHERE watch_id = ? AND maintenance = 1').run(watchId);
+}
+
+/** Marque comme lues les alertes non lues d'un site jusqu'à l'alerte `upTo` (bouton Telegram). Retourne les lignes concernées. */
+export function markAlertsReadUpTo(watchId, upTo) {
+  const rows = db.prepare('SELECT id, type FROM alerts WHERE watch_id = ? AND id <= ? AND read = 0 ORDER BY id').all(watchId, upTo);
+  if (rows.length) db.prepare('UPDATE alerts SET read = 1 WHERE watch_id = ? AND id <= ? AND read = 0').run(watchId, upTo);
+  return rows;
 }
 
 export function markNotified(ids, error = null) {

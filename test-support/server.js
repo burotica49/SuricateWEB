@@ -23,7 +23,7 @@ export async function startServer({ user = 'boss', password = 'motdepasse-test-1
   const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(VIGIE_|DATA_DIR|PORT|HOST|ENV_FILE|TRUST_PROXY|CHROME_PATH)/.test(k)));
   const proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(ROOT, 'server.js')], {
     // CHROME_PATH vers un chemin inexistant : aucune capture (Chrome) ne démarre pendant ces tests.
-    env: { ...clean, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ENV_FILE: envFile, CHROME_PATH: '/nonexistent/chrome', ...env },
+    env: { ...clean, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ENV_FILE: envFile, CHROME_PATH: '/nonexistent/chrome', TELEGRAM_POLL: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';

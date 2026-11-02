@@ -34,7 +34,7 @@ Les **captures d'écran** régulières montrent ce que voient réellement les vi
 
 ### Être alerté sur Telegram
 
-Un seul message par contrôle, avec la sévérité, le détail, un extrait des lignes modifiées et, pour les alertes critiques visibles sur la page, **une photo de la page au moment de l'alerte**. Le texte de cette image est celui que l'application génère ; seul l'habillage de la conversation est une reconstitution.
+Un seul message par contrôle, avec la sévérité, le détail, un extrait des lignes modifiées, deux **boutons** (« Marquer comme lu » et « Ouvrir dans VigieWeb ») et, pour les alertes critiques visibles sur la page, **une photo de la page au moment de l'alerte**. Le texte de cette image est celui que l'application génère ; seul l'habillage de la conversation est une reconstitution.
 
 <img src="docs/screenshots/telegram.png" alt="Message Telegram d'alerte critique avec photo de la page défigurée" width="420">
 
@@ -108,6 +108,7 @@ VIGIE_PASSWORD="un mot de passe solide"     # 8 caractères minimum ; guillemets
 | `SCREENSHOT_CONCURRENCY` | `2` | Captures simultanées au maximum |
 | `ENV_FILE` | `./.env` | Emplacement alternatif du fichier d'environnement |
 | `TELEGRAM_API` | `https://api.telegram.org` | Adresse de l'API Telegram (utile pour les tests ou un relais) |
+| `TELEGRAM_POLL` | — | `0` : n'écoute pas les clics sur les boutons Telegram (voir [Boutons sous les alertes](#boutons-sous-les-alertes)) |
 | `VIGIE_DEMO` | — | `1` : [mode démo](#essayer-sans-rien-configurer-mode-démo), contrôles et captures désactivés |
 
 > **Placez VigieWeb derrière HTTPS** (reverse proxy) si vous l'exposez hors de votre machine : le mot de passe transite sinon en clair. Un utilisateur connecté peut faire requêter des adresses arbitraires par le serveur : ne partagez pas l'accès.
@@ -170,11 +171,29 @@ docker run -d --name vigieweb -p 3000:3000 -v vigie-data:/data \
 
 ![Réglages : notifications Telegram](docs/screenshots/reglages.png)
 
-Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **adresse de VigieWeb** (ajoute un lien « Ouvrir dans VigieWeb » à chaque message). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
+Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **boutons** sous les messages et **adresse de VigieWeb** (celle du bouton « Ouvrir dans VigieWeb »). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
 
 Un seul message est envoyé par contrôle, même si plusieurs anomalies sont détectées. Il contient la sévérité, le site, le détail et un extrait des lignes modifiées.
 
 Sur une alerte **critique visible sur la page** (contenu remplacé, texte de piratage, script ou iframe injectés, redirection vers un autre domaine…), le message est suivi d'une **photo de la page au moment de l'alerte** : on voit depuis le téléphone ce que voient les visiteurs. Désactivable dans *Réglages › Telegram*. Les alertes sans effet visible (DNS, registre, certificat, panne) n'en envoient pas.
+
+### Boutons sous les alertes
+
+Chaque message d'alerte porte deux boutons :
+
+| Bouton | Effet |
+|---|---|
+| **✓ Marquer comme lu** | VigieWeb marque comme lues les alertes **de ce site, jusqu'à la dernière de ce message** (comme « Tout est normal » dans l'application) : le badge et l'état du site se mettent à jour, sans ouvrir l'application. Le bouton devient « ✓ Lu ». |
+| **Ouvrir dans VigieWeb** | Ouvre la page du site dans VigieWeb (après connexion). |
+
+- Un message « ✅ Rétabli » n'a que « Ouvrir » : ses alertes sont déjà lues.
+- **« Ouvrir » exige l'adresse publique de VigieWeb** (*Réglages › Adresse de VigieWeb*), joignable depuis un téléphone. Telegram refuse `localhost` et les réseaux privés : dans ce cas le bouton est omis et le lien reste dans le texte du message. Si Telegram refuse malgré tout un bouton, VigieWeb réessaie sans lui, puis sans aucun bouton : une alerte ne se perd jamais à cause d'un bouton.
+- **Comment VigieWeb reçoit le clic** : en interrogeant Telegram régulièrement (`getUpdates`, attente de 25 secondes). Il n'y a **aucune adresse publique à ouvrir ni route sans connexion** : l'application se comporte comme avant côté réseau, et cela marche aussi en local. Les réglages sont relus à chaque tour : activer ou couper les boutons n'exige aucun redémarrage (comptez quelques secondes).
+- **Seule la conversation configurée a le droit d'agir** : un clic venu d'une autre conversation est refusé (« Action non autorisée »). Si le bot est dans un **groupe**, tous les membres du groupe peuvent cliquer : c'est une limite de Telegram.
+- Un clic n'est jamais rejoué, et un bouton sur un très ancien message reste valable (il ne marque que ce qui est encore non lu).
+- Les boutons se coupent dans *Réglages › Telegram*, ou pour toute l'installation avec `TELEGRAM_POLL=0` (les messages gardent alors leur bouton « Ouvrir »). Sans boutons, le message est identique à avant.
+
+**Limites** : Telegram n'admet qu'**un seul lecteur** par bot. Si vous avez configuré un **webhook** pour ce bot (autre outil), VigieWeb ne peut pas recevoir les clics et le signale une fois dans ses journaux : supprimez le webhook ou coupez les boutons. Le bouton **Détecter** des Réglages interroge le même flux : il prend la main un instant, puis la réception reprend d'elle-même ; si un clic arrive juste avant, il peut avoir effacé le `/start` attendu : renvoyez-le au bot.
 
 Dans l'application, l'onglet **Alertes** liste tout ce qui a été détecté (filtres Critiques / Attention / Infos / Rétablis, « Voir les changements » pour ouvrir le diff, badge « Envoyé sur Telegram »). **Tout marquer comme lu** efface le badge ; sur la page d'un site, **Tout est normal** marque ses alertes comme vérifiées.
 
@@ -396,7 +415,8 @@ server.js            API REST + fichiers statiques + SSE (temps réel) + authent
 src/checker.js       un contrôle : HTTP → pannes → contenu → DNS/TLS/RDAP → incidents/évènements → alertes
 src/html.js          parseur HTML tolérant + sélecteurs CSS + extraction des signaux
 src/diff.js          diff ligne à ligne (LCS)
-src/telegram.js      API Bot Telegram (texte et photo) + mise en forme des messages
+src/telegram.js      API Bot Telegram (texte, photo, boutons) + mise en forme des messages
+src/telegram-poll.js réception des clics sur les boutons (interrogation régulière de Telegram)
 src/screenshot.js    captures d'écran : Chrome piloté par DevTools (WebSocket natif), file d'attente, rétention
 src/auth.js          identifiants lus dans l'environnement, comparaison en temps constant, clé de session
 src/env.js           chargement du .env (avant l'ouverture de la base)

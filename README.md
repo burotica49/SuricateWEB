@@ -437,6 +437,10 @@ Le produit s'appelle **VigieWeb**. Quelques identifiants techniques gardent volo
 
 Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est toujours « VigieWeb ». Le User-Agent par défaut enregistré en base est migré automatiquement ; un User-Agent personnalisé n'est jamais modifié.
 
+## Sécurité
+
+Une faille dans VigieWeb touche potentiellement tous les sites qu'il surveille. Pour en signaler une, utilisez le signalement privé de GitHub (voir [SECURITY.md](SECURITY.md)) et non une issue publique.
+
 ## Licence
 
 VigieWeb est distribué sous licence **[Apache 2.0](LICENSE)** : usage, modification et redistribution libres, y compris commerciaux, à condition de conserver la licence et l'avis de copyright ([NOTICE](NOTICE)) ; la licence comprend aussi une concession de brevets et exclut toute garantie. Le projet n'a aucune dépendance npm : aucun code tiers n'est embarqué.

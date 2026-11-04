@@ -270,6 +270,8 @@ function applyTheme() {
   let t = null;
   try { t = localStorage.getItem('vigie-theme'); } catch { /* stockage indisponible */ }
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const color = isDark() ? '#0a0d13' : '#4f46e5';
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.setAttribute('content', color);
 }
 function toggleTheme() {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1912,4 +1914,6 @@ async function boot() {
   if (!eventsOn) { eventsOn = true; connectEvents(); }
   route();
 }
+// Application installable : le manifeste est lié dans index.html. Échoue sans bruit hors HTTPS (ou localhost).
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 boot();

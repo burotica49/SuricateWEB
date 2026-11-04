@@ -1053,6 +1053,11 @@ const SHOT_KIND = { scheduled: ['Planifiée', ''], manual: ['Manuelle', 'info'],
 const shotUrl = (s, thumb) => `/api/screenshots/${s.id}/image?v=${s.ts}${thumb ? '&thumb=1' : ''}`;
 /** Adresse capturée : un nom de domaine différent de celui du site (redirection, page d'hébergeur) est signalé. */
 const shotOffSite = (it, w) => { try { return !!it.finalUrl && host(it.finalUrl) !== host(w.url) && !host(it.finalUrl).endsWith(`.${host(w.url)}`) && !host(w.url).endsWith(`.${host(it.finalUrl)}`); } catch { return false; } };
+/** Limites proposées pour le nombre de captures conservées ; une valeur personnalisée déjà enregistrée est ajoutée à la liste. */
+const KEEP_CHOICES = [12, 24, 72, 168, 336, 720, 1000];
+const keepOptions = (current) => [...new Set([...KEEP_CHOICES, current].filter(Boolean))].sort((a, b) => a - b);
+/** « 7 jours » pour 10 080 minutes : la durée d'historique que couvrent N captures à une fréquence donnée. */
+const spanLabel = (min) => (min < 120 ? `${Math.round(min)} min` : min < 2880 ? `${Math.round(min / 60)} heures` : `${Math.round(min / 1440)} jours`);
 const everyLabel = (min) => (min < 60 ? `${min} min` : min < 1440 ? `${min / 60} h` : `${min / 1440} j`);
 
 function captureNowButton(w) {
@@ -1101,7 +1106,9 @@ async function capturesTab(w) {
     root.append(h('div', { class: 'card', style: { padding: '14px 18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' } },
       h('div', { style: { flex: 1, minWidth: '220px' } },
         h('b', {}, d.enabled ? `Une capture toutes les ${everyLabel(d.interval)}` : 'Captures désactivées pour ce site'),
-        h('div', { class: 'muted', style: { fontSize: '13px' } }, d.enabled ? (d.capturing ? 'Capture en cours…' : `Prochaine ${rel(d.nextShot)} · ${w.config.screenshot.width}×${w.config.screenshot.height}${w.config.screenshot.fullPage ? ', page entière' : ''}`) : 'Activez-les dans « Modifier › Capture d\'écran ».')),
+        h('div', { class: 'muted', style: { fontSize: '13px' } }, d.enabled ? (d.capturing ? 'Capture en cours…' : `Prochaine ${rel(d.nextShot)} · ${w.config.screenshot.width}×${w.config.screenshot.height}${w.config.screenshot.fullPage ? ', page entière' : ''}`) : 'Activez-les dans « Modifier › Capture d\'écran ».',
+        h('div', { class: 'muted', style: { fontSize: '13px' }, title: 'Les captures manuelles et d\'alerte ont leur propre quota : elles ne sont jamais écrasées par les planifiées.' },
+          `Conservation : ${d.keep} captures planifiées par site (et jusqu'à ${d.keepOther} manuelles ou d'alerte) · en stock : ${d.count} · ${fmtBytes(d.bytes)}`))),
       d.enabled ? captureNowButton(w) : h('button', { class: 'btn sm', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier')));
   }
   if (d.error) root.append(h('div', { class: 'incident warn' }, ic('alert'), h('div', {}, h('b', {}, 'Dernière capture en échec'), h('p', {}, d.error))));
@@ -1574,6 +1581,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     required: h('textarea', { class: 'input', placeholder: 'ex. le nom de votre société ou un numéro de téléphone', value: c.required.join('\n') }),
     ua: h('input', { class: 'input', placeholder: S.settings?.userAgent || '', value: c.userAgent }),
     shotOn: h('input', { type: 'checkbox', checked: sc.enabled }),
+    shotKeep: h('select', { class: 'input', value: String(sc.keep || 0) }, h('option', { value: '0' }, `Réglage général (${S.settings?.retention?.screenshots ?? 168})`), ...keepOptions(sc.keep).map((v) => h('option', { value: String(v) }, `${v} captures`))),
     shotEvery: h('select', { class: 'input', value: String(sc.interval) }, ...(SHOT_EVERY.some(([v]) => v === sc.interval) ? SHOT_EVERY : [...SHOT_EVERY, [sc.interval, `${sc.interval} minutes`]]).map(([v, l]) => h('option', { value: String(v) }, `Toutes les ${l}`.replace('Toutes les 1 heure', 'Toutes les heures')))),
     shotSize: h('select', { class: 'input', value: curSize }, ...(SHOT_SIZES.some(([v]) => v === curSize) ? SHOT_SIZES : [...SHOT_SIZES, [curSize, `${sc.width} × ${sc.height}`]]).map(([v, l]) => h('option', { value: v }, l))),
     shotFull: h('input', { type: 'checkbox', checked: sc.fullPage }),
@@ -1598,6 +1606,15 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     statusTitle: h('input', { class: 'input', placeholder: 'Nom affiché sur la page (par défaut : le nom du site)', maxlength: 80, value: c.statusPage?.title || '' }),
   };
   let statusToken = c.statusPage?.token || '';
+  // Durée d'historique couverte par la limite choisie, à la fréquence choisie.
+  const keepHint = h('span', { class: 'hint' }, '');
+  const syncKeep = () => {
+    const keep = Number(f.shotKeep.value) || (S.settings?.retention?.screenshots ?? 168);
+    keepHint.textContent = `Environ ${spanLabel(keep * Number(f.shotEvery.value))} d'historique à cette fréquence. Les plus anciennes sont supprimées au fil des captures. Les captures manuelles et d'alerte ont leur propre quota (jusqu'à 100).`;
+  };
+  f.shotKeep.addEventListener('change', syncKeep);
+  f.shotEvery.addEventListener('change', syncKeep);
+  syncKeep();
   const checks = {};
   const toggle = (input, title, desc) => h('label', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, title), desc ? h('span', {}, desc) : null), h('span', { class: 'switch' }, input, h('i')));
   // Les groupes « contenu » et « disponibilité » n'ont pas de sens pour un domaine seul : masqués dans ce mode.
@@ -1702,6 +1719,8 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
       h('div', { class: 'row', style: { marginTop: '12px' } },
         h('div', { class: 'field' }, h('label', {}, 'Fréquence'), f.shotEvery),
         h('div', { class: 'field' }, h('label', {}, 'Format de la fenêtre'), f.shotSize)),
+      h('div', { class: 'field', style: { marginTop: '12px' } }, h('label', {}, 'Captures à conserver'), f.shotKeep, keepHint,
+      ),
       toggle(f.shotFull, 'Capturer la page entière', 'Toute la hauteur de la page (5 000 px maximum), plutôt que la seule partie visible à l\'ouverture.'),
       h('div', { class: 'field', style: { marginTop: '12px' } }, h('label', {}, 'Attente après le chargement'), f.shotDelay,
         h('span', { class: 'hint' }, 'Laisse finir les animations et les sliders. Le réseau et le défilement de la page sont de toute façon attendus avant la capture.')),
@@ -1739,7 +1758,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
         groupId: f.group.value === '' ? null : Number(f.group.value),
         config: {
           mode,
-          screenshot: { enabled: f.shotOn.checked, interval: Number(f.shotEvery.value), fullPage: f.shotFull.checked, width: Number(f.shotSize.value.split('x')[0]), height: Number(f.shotSize.value.split('x')[1]), delay: Number(f.shotDelay.value), interact: f.shotInteract.checked, hideBanners: f.shotBanners.checked },
+          screenshot: { enabled: f.shotOn.checked, interval: Number(f.shotEvery.value), fullPage: f.shotFull.checked, width: Number(f.shotSize.value.split('x')[0]), height: Number(f.shotSize.value.split('x')[1]), delay: Number(f.shotDelay.value), interact: f.shotInteract.checked, hideBanners: f.shotBanners.checked, keep: Number(f.shotKeep.value) },
           checks: Object.fromEntries(Object.entries(checks).map(([k, el]) => [k, el.checked])),
           selector: f.selector.value, excludeSelector: f.exclude.value, ignoreRegex: list(f.ignore), images: f.images.checked,
           forbidden: list(f.forbidden), required: list(f.required), userAgent: f.ua.value, timeoutS: Number(f.timeout.value), failThreshold: Number(f.fails.value),
@@ -1791,6 +1810,7 @@ async function viewSettings() {
     base: h('input', { class: 'input', placeholder: 'http://monserveur:3000 (pour les liens dans les messages)', value: s.baseUrl }),
     interval: h('select', { class: 'input', value: String(s.defaultInterval) }, ...INTERVALS.map(([v, l]) => h('option', { value: String(v) }, l))),
     ua: h('input', { class: 'input', value: s.userAgent }),
+    keepAll: h('select', { class: 'input', value: String(s.retention.screenshots) }, ...keepOptions(s.retention.screenshots).map((v) => h('option', { value: String(v) }, `${v} captures`))),
     cmsDays: h('select', { class: 'input', value: String(s.cmsAfterDays) }, ...[...new Set([1, 3, 7, 14, 30, s.cmsAfterDays])].sort((a, b) => a - b).map((v) => h('option', { value: String(v) }, `${v} ${v > 1 ? 'jours' : 'jour'}${v === 7 ? ' (par défaut)' : ''}`))),
     kw: h('textarea', { class: 'input mono', style: { minHeight: '190px' }, value: s.builtinKeywords.join('\n') }),
   };
@@ -1814,7 +1834,7 @@ async function viewSettings() {
   const save = guard(async () => {
     S.settings = await api('/settings', { method: 'PUT', body: {
       telegram: { token: f.token.value.trim(), chatId: f.chat.value.trim(), enabled: f.enabled.checked, sendRecovery: f.recovery.checked, includeDiff: f.diff.checked, sendScreenshot: f.photo.checked, buttons: f.buttons.checked, minSeverity: f.minSev.value },
-      baseUrl: f.base.value, defaultInterval: Number(f.interval.value), cmsAfterDays: Number(f.cmsDays.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
+      baseUrl: f.base.value, defaultInterval: Number(f.interval.value), retention: { screenshots: Number(f.keepAll.value) }, cmsAfterDays: Number(f.cmsDays.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
     } });
     toast('Réglages enregistrés');
     mountShell(); route();
@@ -1850,6 +1870,8 @@ async function viewSettings() {
         h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Fréquence par défaut'), f.interval), h('div', { class: 'field' }, h('label', {}, 'User-Agent par défaut'), f.ua)),
         h('div', { class: 'field' }, h('label', {}, 'Mises à jour WordPress / PrestaShop : alerter après'), f.cmsDays,
           h('span', { class: 'hint' }, 'Une mise à jour du CMS, d’une extension ou d’un thème qui reste en attente plus longtemps que ce délai déclenche une alerte (le noyau devient critique au bout de 30 jours). Peut se couper site par site.')),
+        h('div', { class: 'field' }, h('label', {}, 'Captures d\'écran conservées par site (par défaut)'), f.keepAll,
+          h('span', { class: 'hint' }, `Au-delà, les plus anciennes sont supprimées. Chaque site peut avoir sa propre limite (Modifier › Capture d'écran) ; les captures manuelles et d'alerte ont leur quota, jusqu'à 100. Espace utilisé aujourd'hui : ${s.screenshots.usage.count} captures, ${fmtBytes(s.screenshots.usage.bytes)}.`)),
         h('div', { class: 'toggle-row', style: { borderTop: 0, paddingTop: 0, marginBottom: '14px' } }, h('div', { class: 'tt' }, h('b', {}, 'Navigateur pour les captures d\'écran'),
           h('span', {}, s.screenshots.available ? s.screenshots.browser : 'Aucun Chrome / Chromium détecté : installez-en un ou définissez CHROME_PATH.')),
           h('span', { class: `chip ${s.screenshots.available ? 'ok' : 'warn'}` }, ic(s.screenshots.available ? 'check' : 'alert'), s.screenshots.available ? 'Détecté' : 'Introuvable')),

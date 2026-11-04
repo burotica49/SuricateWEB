@@ -177,7 +177,7 @@ docker run -d --name vigieweb -p 3000:3000 -v vigie-data:/data \
 
 ![Réglages : notifications Telegram](docs/screenshots/reglages.png)
 
-Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **boutons** sous les messages et **adresse de VigieWeb** (celle du bouton « Ouvrir dans VigieWeb »). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
+Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **boutons** sous les messages et **adresse de VigieWeb** (celle du bouton « Ouvrir dans VigieWeb »). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le nombre de captures d'écran conservées par site, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
 
 Un seul message est envoyé par contrôle, même si plusieurs anomalies sont détectées. Il contient la sévérité, le site, le détail et un extrait des lignes modifiées.
 
@@ -209,7 +209,7 @@ VigieWeb prend une photo de chaque site à intervalle régulier (**toutes les he
 
 - **Aperçu immédiat** : la dernière capture s'affiche dans un cadre de navigateur en haut de la page du site, et en vignette dans la liste.
 - **Onglet Captures** : l'historique en grille, une visionneuse (flèches ← →), et une **comparaison côte à côte avant / après** pour constater une défiguration.
-- Réglable par site : fréquence, format (ordinateur 1280×800, grand écran 1920×1080, mobile 390×844), page entière (5 000 px maximum), attente après chargement, simulation de visiteur, masquage des bandeaux de cookies. Bouton **Capturer maintenant**.
+- Réglable par site : fréquence, **nombre de captures à conserver**, format (ordinateur 1280×800, grand écran 1920×1080, mobile 390×844), page entière (5 000 px maximum), attente après chargement, simulation de visiteur, masquage des bandeaux de cookies. Bouton **Capturer maintenant**.
 
 ![Onglet Captures : historique des captures d'un site, dont celle prise au moment de l'alerte](docs/screenshots/captures.png)
 
@@ -217,7 +217,13 @@ VigieWeb prend une photo de chaque site à intervalle régulier (**toutes les he
 
 > Pourquoi la simulation de visiteur ? Beaucoup de sites WordPress (WP Rocket « retarder l'exécution du JavaScript », NitroPack, Perfmatters…) **n'exécutent leurs scripts qu'à la première interaction réelle** d'un visiteur. Sans elle, jQuery, le slider d'accueil ou les menus ne démarrent jamais, et la capture montre des zones vides — y compris si on attend 6 secondes de plus, ce qui a été constaté sur un site réel. Contrepartie : ces scripts retardés incluent souvent vos **statistiques** (Google Analytics, Matomo, pixels) ; chaque capture peut donc compter une visite. Désactivez « Simuler un visiteur » pour un site dont ce n'est pas souhaitable, ou excluez l'IP du serveur de vos statistiques.
 
-- Conservation : les 168 dernières captures planifiées par site (7 jours à l'heure), plus 100 captures manuelles ou d'alerte, qui ne sont jamais écrasées par les planifiées. Une miniature de ~5 Ko évite d'alourdir le tableau de bord.
+- **Conservation : la limite est réglable.** Par défaut, les **168 dernières captures planifiées** de chaque site sont gardées (7 jours à raison d'une par heure) ; les plus anciennes sont supprimées, lignes et fichiers, après chaque capture.
+  - **Réglage général** : *Réglages › Détection › Captures d'écran conservées par site* (de 12 à 2 000). Ce réglage affiche aussi le nombre de captures et l'espace occupé par l'ensemble des sites.
+  - **Réglage par site** : *Modifier › Capture d'écran › Captures à conserver*. « Réglage général » suit la valeur ci-dessus ; le formulaire indique la durée d'historique que couvre la limite à la fréquence choisie (24 captures à 1 h = 24 heures, 24 captures à 24 h = 24 jours).
+  - **Les captures manuelles et d'alerte ont leur quota**, de même taille que la limite mais **100 au plus** : elles ne sont jamais écrasées par les planifiées, et une rafale de captures planifiées ne fait pas disparaître celle prise au moment d'une défiguration.
+  - **Une limite abaissée s'applique tout de suite** : les captures en trop sont supprimées à l'enregistrement, sans attendre la prochaine capture. Changer seulement la limite ne déclenche pas de nouvelle capture.
+  - L'onglet **Captures** rappelle la limite, le nombre de captures en stock et leur poids. Le poids d'une capture dépend entièrement du site (une page entière en pèse bien plus qu'une fenêtre visible) : consultez ce chiffre avant de relever la limite.
+  - Une miniature de ~5 Ko évite d'alourdir le tableau de bord.
 - Les images restent derrière la connexion : aucun lien de capture n'est public.
 
 Le navigateur est piloté directement par le protocole DevTools de Chrome : **aucune dépendance npm**. Il faut Chrome, Chromium, Edge ou Brave sur le serveur (détecté automatiquement, ou `CHROME_PATH`) ; l'image Docker embarque Chromium. Sans navigateur, tout le reste fonctionne et l'interface l'indique.

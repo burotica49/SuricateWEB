@@ -277,7 +277,8 @@ export const defaultConfig = () => ({
   // Capture d'écran périodique (nécessite Chrome/Chromium sur le serveur). interval en minutes.
   // delay : attente (s) après chargement et défilement · interact : simule un visiteur (souris, molette) ·
   // hideBanners : masque les bandeaux de cookies.
-  screenshot: { enabled: true, interval: 60, fullPage: false, width: 1280, height: 800, delay: 3, interact: true, hideBanners: true },
+  // keep : captures planifiées à conserver pour ce site (0 = réglage général, Réglages › Détection).
+  screenshot: { enabled: true, interval: 60, fullPage: false, width: 1280, height: 800, delay: 3, interact: true, hideBanners: true, keep: 0 },
   checks: {
     content: true, keywords: true, title: true, sizeDrop: true, scripts: true, links: true,
     redirect: true, status: true, tls: true, dns: true, rdap: true, server: true,
@@ -312,6 +313,9 @@ function pageList(v) {
 
 const strList = (v, max = 100) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, max);
 
+/** Plafond de la limite de captures conservées par site. */
+export const MAX_KEEP = 2000;
+
 export function normalizeConfig(input = {}) {
   const d = defaultConfig();
   const c = { ...d, ...input, checks: { ...d.checks, ...(input.checks || {}) } };
@@ -327,6 +331,7 @@ export function normalizeConfig(input = {}) {
     delay: Math.round(clamp(sc.delay, 0, 30, 3)),
     interact: sc.interact !== false,
     hideBanners: sc.hideBanners !== false,
+    keep: sc.keep ? Math.round(clamp(sc.keep, 1, MAX_KEEP, 0)) : 0,
   };
   c.selector = String(c.selector || '').trim();
   c.excludeSelector = String(c.excludeSelector || '').trim();
@@ -441,6 +446,11 @@ export function insertScreenshot(s) {
 }
 
 export const getScreenshot = (id) => db.prepare('SELECT * FROM screenshots WHERE id = ?').get(id);
+
+/** Nombre et poids (octets, images seules) des captures d'un site. */
+export const screenshotStats = (watchId) => db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM screenshots WHERE watch_id = ?').get(watchId);
+/** Idem pour tous les sites. */
+export const screenshotUsage = () => db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM screenshots').get();
 
 export const listScreenshots = (watchId, limit = 120) =>
   db.prepare('SELECT id, ts, kind, size, width, height, final_url AS finalUrl, page_title AS title FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?').all(watchId, limit);

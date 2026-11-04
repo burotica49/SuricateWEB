@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getWatch, getSettings, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
+import { getWatch, listWatches, getSettings, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
 import { bus } from './events.js';
 
 const CANDIDATES = [
@@ -371,7 +371,7 @@ async function doCapture(id, kind) {
     if (thumb) await writeFile(join(SHOTS_DIR, thumb), r.thumb);
     const shotId = insertScreenshot({ watchId: id, ts: now, kind, file, thumb, size: r.image.length, width: r.width, height: r.height, finalUrl: r.finalUrl, title: r.title });
     setShotState(id, { nextShot: now + sc.interval * 60e3, error: null });
-    await pruneShots(id);
+    await pruneWatchShots(id);
     bus.emit('event', { type: 'shot', watchId: id });
     return { id: shotId, ts: now, image: r.image };
   } catch (e) {
@@ -383,11 +383,30 @@ async function doCapture(id, kind) {
   }
 }
 
-async function pruneShots(id) {
-  const rows = screenshotsToPrune(id, getSettings().retention.screenshots);
-  if (!rows.length) return;
+/**
+ * Limites de conservation d'un site : `keep` captures planifiées (réglage du site, sinon réglage général), et le même nombre,
+ * plafonné à 100, de captures manuelles ou d'alerte, qui ont leur quota et ne sont jamais écrasées par les planifiées.
+ */
+export function shotLimits(watch) {
+  const keep = watch?.config?.screenshot?.keep || getSettings().retention.screenshots;
+  return { keep, keepOther: Math.max(1, Math.min(100, keep)) };
+}
+
+/** Supprime les captures (lignes et fichiers) au-delà des limites du site. Retourne le nombre de captures supprimées. */
+export async function pruneWatchShots(id) {
+  const { keep, keepOther } = shotLimits(getWatch(id));
+  const rows = screenshotsToPrune(id, keep, keepOther);
+  if (!rows.length) return 0;
   deleteScreenshotRows(rows.map((r) => r.id));
   for (const r of rows) for (const f of [r.file, r.thumb]) if (f) await unlink(join(SHOTS_DIR, f)).catch(() => {});
+  return rows.length;
+}
+
+/** Applique les limites à tous les sites (après un changement du réglage général). */
+export async function pruneAllShots() {
+  let n = 0;
+  for (const w of listWatches()) n += await pruneWatchShots(w.id);
+  return n;
 }
 
 /** Supprime les fichiers d'un site retiré. */

@@ -10,7 +10,7 @@ import {
   db, getSettings, saveSettings, listWatches, getWatch, createWatch, updateWatch, deleteWatch,
   getSnapshot, previousSnapshot, snapshotLines, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS,
   uptimeBetween, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, closeOutage, DAY_MS, UPTIME_PERIODS,
-  getScreenshot, listScreenshots, latestScreenshots, SHOTS_DIR,
+  getScreenshot, listScreenshots, latestScreenshots, screenshotStats, screenshotUsage, SHOTS_DIR, MAX_KEEP,
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
   addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap, markAlertsReadUpTo, getWatchByStatusToken,
 } from './src/db.js';
@@ -20,7 +20,7 @@ import { resolvePage } from './src/pages.js';
 import { monthRange, siteReport, renderReport, statusData, renderStatusPage, serverTz } from './src/report.js';
 import { phpSupport } from './src/cms-alerts.js';
 import { zipDirectory } from './src/zip.js';
-import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, NO_CHROME } from './src/screenshot.js';
+import { captureWatch, isCapturing, engine, chromePath, removeWatchShots, pruneWatchShots, pruneAllShots, shotLimits, NO_CHROME } from './src/screenshot.js';
 import { fetchPage, analyze, describeError } from './src/checker.js';
 import { diffLines, collapse } from './src/diff.js';
 import * as tg from './src/telegram.js';
@@ -268,7 +268,7 @@ function publicSettings() {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: CREDS.user, defaultKeywords: DEFAULT_KEYWORDS,
-    screenshots: { available: engine.available(), browser: chromePath() },
+    screenshots: { available: engine.available(), browser: chromePath(), usage: screenshotUsage() },
     app: APP_INFO,
   };
 }
@@ -376,11 +376,14 @@ route('PUT', '/api/watches/:id', async (ctx) => {
   const state = { ...w.state };
   if (data.url !== w.url || RESET_KEYS.some((k) => JSON.stringify(cfg[k]) !== JSON.stringify(w.config[k]))) state.baseline = false;
   // Nouvelle adresse ou réglages de capture modifiés : on recapture sans attendre l'échéance.
-  const reshoot = data.url !== w.url || JSON.stringify(cfg.screenshot) !== JSON.stringify(w.config.screenshot);
+  // (la limite de conservation n'a aucun effet sur l'image : la modifier ne déclenche pas de capture)
+  const sameLook = ({ keep, ...look }) => JSON.stringify(look);
+  const reshoot = data.url !== w.url || sameLook(cfg.screenshot) !== sameLook(w.config.screenshot);
   const cmsOn = cfg.mode !== 'domain' && !!cfg.cms.type;
   const cmsChanged = JSON.stringify(cfg.cms) !== JSON.stringify(w.config.cms) || data.url !== w.url;
   const nextCms = cmsOn ? (cmsChanged || !(w.nextCms > 0) ? Date.now() : w.nextCms) : 0;
   const u = updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}), nextCms });
+  await pruneWatchShots(u.id); // une limite abaissée s'applique tout de suite
   return summarize(u, buildCtx());
 });
 
@@ -432,6 +435,8 @@ route('GET', '/api/watches/:id/screenshots', (ctx) => {
     available: engine.available(),
     enabled: w.config.screenshot.enabled && w.config.mode !== 'domain',
     interval: w.config.screenshot.interval,
+    ...shotLimits(w),
+    ...screenshotStats(w.id),
     nextShot: w.nextShot,
     error: w.shotError,
     capturing: isCapturing(w.id),
@@ -707,7 +712,7 @@ route('POST', '/api/alerts/read', (ctx) => {
 
 route('GET', '/api/settings', () => publicSettings());
 
-route('PUT', '/api/settings', (ctx) => {
+route('PUT', '/api/settings', async (ctx) => {
   const b = ctx.body;
   const cur = getSettings();
   const patch = {};
@@ -727,10 +732,13 @@ route('PUT', '/api/settings', (ctx) => {
   }
   if (b.baseUrl !== undefined) patch.baseUrl = String(b.baseUrl).trim().replace(/\/+$/, '');
   if (b.defaultInterval !== undefined) patch.defaultInterval = clamp(b.defaultInterval, 1, 10080, 15);
+  const keepAll = b.retention?.screenshots !== undefined ? Math.round(clamp(b.retention.screenshots, 1, MAX_KEEP, 168)) : null;
+  if (keepAll !== null) patch.retention = { screenshots: keepAll };
   if (b.cmsAfterDays !== undefined) patch.cmsAfterDays = Math.round(clamp(b.cmsAfterDays, 1, 90, 7));
   if (b.userAgent !== undefined) patch.userAgent = String(b.userAgent).trim() || cur.userAgent;
   if (Array.isArray(b.builtinKeywords)) patch.builtinKeywords = b.builtinKeywords.map((s) => String(s).trim()).filter(Boolean).slice(0, 300);
   saveSettings(patch);
+  if (keepAll !== null && keepAll !== cur.retention.screenshots) await pruneAllShots(); // limite abaissée : appliquée à tous les sites
   return publicSettings();
 });
 

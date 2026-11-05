@@ -60,7 +60,7 @@ Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **versio
 
 ### Thème sombre et mobile
 
-L'interface suit le thème du système (bouton lune / soleil dans la barre latérale) et s'adapte aux petits écrans : la barre latérale devient une barre de navigation en bas.
+L'interface suit le thème du système (bouton lune / soleil dans la barre latérale) et s'adapte aux petits écrans : la barre latérale devient une barre de navigation en bas. Sur téléphone, les onglets d'un site défilent : un dégradé et une flèche indiquent qu'il en reste, et l'onglet ouvert est toujours amené à l'écran.
 
 | Thème sombre | Mobile |
 |---|---|

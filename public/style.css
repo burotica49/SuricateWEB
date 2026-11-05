@@ -211,7 +211,8 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .incident b { display: block; }
 .incident p { color: var(--text-2); font-size: 13px; white-space: pre-line; word-break: break-word; }
 .incident small { color: var(--muted); }
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 22px 0 18px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tabs-wrap { position: relative; margin: 22px 0 18px; }
 .tabs a { padding: 10px 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; display: inline-flex; gap: 8px; align-items: center; }
 .tabs a:hover { color: var(--text); }
 .tabs a.on { color: var(--accent); border-color: var(--accent); }
@@ -279,8 +280,8 @@ dl.kv dd { margin: 0; word-break: break-word; text-align: right; }
 .ub-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .ub-total b { font-size: 20px; letter-spacing: -.01em; }
 .ub-total span { color: var(--muted); }
-.ub { display: flex; gap: 2px; height: 34px; }
-.ub i { flex: 1; min-width: 2px; border-radius: 2px; background: var(--ok); opacity: .9; transition: transform .08s; }
+.ub { display: flex; gap: 2px; height: 34px; min-width: 0; }
+.ub i { flex: 1; min-width: 1px; border-radius: 2px; background: var(--ok); opacity: .9; transition: transform .08s; }
 .ub i:hover { opacity: 1; transform: scaleY(1.12); }
 .ub i.warn { background: var(--warn); }
 .ub i.bad { background: var(--crit); }
@@ -315,7 +316,15 @@ dl.kv dd { margin: 0; word-break: break-word; text-align: right; }
 .domain-mode [data-site-only] { display: none !important; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
+/* Indices de défilement : dégradé + flèche du côté où il reste des onglets (ajoutés en JS par tabStrip). */
 .tabs a { white-space: nowrap; }
+.tabs-nav { position: absolute; top: 0; bottom: 1px; width: 52px; display: none; align-items: center; border: 0; padding: 0; margin: 0; color: var(--text-2); cursor: pointer; z-index: 2; }
+.tabs-nav.l { left: 0; justify-content: flex-start; background: linear-gradient(90deg, var(--bg) 45%, transparent); }
+.tabs-nav.r { right: 0; justify-content: flex-end; background: linear-gradient(270deg, var(--bg) 45%, transparent); }
+.tabs-nav .ic { font-size: 20px; padding: 5px; border-radius: 50%; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow); }
+.tabs-wrap.more-l .tabs-nav.l, .tabs-wrap.more-r .tabs-nav.r { display: flex; }
+.tabs-wrap.more-r .tabs-nav.r .ic { animation: tabs-nudge 1.4s ease-in-out 3; }
+@keyframes tabs-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-5px); } }
 
 /* ───── Groupes de sites ───── */
 .toolbar.sub { margin-top: -4px; margin-bottom: 16px; }
@@ -486,5 +495,17 @@ details.acc > .in { padding: 4px 14px 14px; }
   .row { flex-direction: column; gap: 0; }
   .tl-head { flex-wrap: wrap; }
   h1 { font-size: 21px; }
+  .nav { min-width: 0; }
+  .ub { gap: 1px; } /* 90 jours : 2 px de minimum par barre dépasseraient de l'écran d'un téléphone */
+}
+/* Téléphone : la barre du bas doit tenir en largeur (3 pages + 4 icônes). */
+@media (max-width: 480px) {
+  .nav a { padding: 6px 8px; }
+  .side-actions { gap: 2px; }
+  .seg { max-width: 100%; flex-wrap: wrap; }
+  .seg button { padding: 5px 9px; }
+}
+@media (max-width: 360px) {
+  .side-actions a.ext { display: none; } /* dépôt et documentation : accessibles depuis un écran plus large */
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

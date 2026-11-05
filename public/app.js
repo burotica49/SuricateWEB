@@ -796,6 +796,33 @@ function siteRow(w, opts = {}) {
     checkBtn);
 }
 
+/**
+ * Barre d'onglets défilable. Sur un écran étroit, tous les onglets ne tiennent pas : le défilement existe mais n'est pas
+ * visible. On l'annonce par un dégradé et une flèche cliquable du côté où il reste des onglets, et on amène l'onglet actif
+ * à l'écran (il pouvait se trouver hors de la zone visible).
+ */
+function tabStrip(...tabs) {
+  const strip = h('div', { class: 'tabs', role: 'tablist' }, ...tabs);
+  const go = (dir) => strip.scrollBy({ left: dir * Math.max(120, strip.clientWidth * 0.6), behavior: 'smooth' });
+  const arrow = (side, label) => h('button', { class: `tabs-nav ${side}`, type: 'button', tabindex: -1, 'aria-label': label, onclick: () => go(side === 'l' ? -1 : 1) }, ic(side === 'l' ? 'back' : 'right'));
+  const wrap = h('div', { class: 'tabs-wrap' }, strip, arrow('l', 'Onglets précédents'), arrow('r', 'Onglets suivants'));
+  const update = () => {
+    const max = strip.scrollWidth - strip.clientWidth;
+    wrap.classList.toggle('more-l', strip.scrollLeft > 4);
+    wrap.classList.toggle('more-r', strip.scrollLeft < max - 4);
+  };
+  strip.addEventListener('scroll', update, { passive: true });
+  // Après insertion dans la page seulement : les largeurs ne sont connues qu'à ce moment.
+  requestAnimationFrame(() => {
+    const on = strip.querySelector('a.on');
+    if (on) strip.scrollLeft = Math.max(0, on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2);
+    update();
+  });
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null;
+  ro?.observe(strip);
+  return wrap;
+}
+
 // ───────────── Détail d'un site ─────────────
 async function viewDetail(id, tab, tok, openSnap) {
   // Les groupes alimentent le champ « Groupe » du formulaire de modification, même si on arrive directement sur cette page.
@@ -862,7 +889,7 @@ async function viewDetail(id, tab, tok, openSnap) {
   const tabs = domainOnly
     ? [['apercu', 'Aperçu', 'activity'], ['domaine', 'Domaine & DNS', 'globe'], ['alertes', 'Alertes', 'bell']]
     : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers'], ['securite', 'Sécurité', 'shield']] : []), ['alertes', 'Alertes', 'bell']];
-  root.append(h('div', { class: 'tabs', role: 'tablist' }, ...tabs.map(([k, l, icn]) => h('a', { href: `#/sites/${id}/${k}`, class: tab === k ? 'on' : '', role: 'tab' }, ic(icn), l,
+  root.append(tabStrip(...tabs.map(([k, l, icn]) => h('a', { href: `#/sites/${id}/${k}`, class: tab === k ? 'on' : '', role: 'tab' }, ic(icn), l,
     k === 'alertes' && unread ? h('span', { class: 'badge' }, unread) : null,
     k === 'mises-a-jour' && cmsN ? h('span', { class: 'badge warn' }, cmsN) : null,
     k === 'securite' && cmsSecN ? h('span', { class: 'badge' }, cmsSecN) : null))));

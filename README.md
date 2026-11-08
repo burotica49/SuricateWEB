@@ -525,7 +525,9 @@ src/cms-alerts.js    alertes tirées du relevé : mises à jour en retard, fin d
 src/pages.js         pages supplémentaires d'un site : adresse résolue (même domaine) et nom affiché
 src/report.js        rapport mensuel (par site ou groupe) et page de statut publique : calculs et mise en page HTML
 src/zip.js           archive ZIP sans compression, pour télécharger les plugins
-src/db.js            SQLite : sites, groupes, contrôles, versions (gzip), alertes, réglages
+src/db.js            sites, groupes, contrôles, versions (gzip), alertes, réglages : tout le SQL de l'application, en SQL portable
+src/store/sqlite.js  adaptateur de base (SQLite) : la seule porte d'accès à la base, même contrat pour tout moteur
+src/store/migrate.js migrations de schéma numérotées (src/store/migrations/), une version par moteur (SQLite, PostgreSQL)
 plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour, intégrité, administrateurs)
 public/              interface (JS/CSS vanilla, sans build)
 public/report.js     bouton « Imprimer / PDF » du rapport (sans script en ligne)

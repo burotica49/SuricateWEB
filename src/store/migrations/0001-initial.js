@@ -1,0 +1,276 @@
+// Migration 1 : le schéma de VigieWeb 1.3.x, tel qu'il existait avant les migrations numérotées.
+//
+// SQLite : les installations existantes ont déjà (presque) toutes ces tables. On rejoue donc l'ancien chemin à
+// l'identique — CREATE TABLE IF NOT EXISTS puis ajout conditionnel des colonnes apparues au fil des versions — et la
+// migration est enregistrée comme passée. Une installation neuve et une installation ancienne finissent au même schéma.
+//
+// PostgreSQL : le schéma final, d'un seul bloc. Mêmes noms, mêmes colonnes ; entiers 64 bits pour les horodatages en
+// millisecondes, BYTEA pour les versions de page compressées, « "end" » entre guillemets (mot réservé de PostgreSQL).
+// Les indicateurs (enabled, ok, read…) restent des entiers 0/1 : le SQL de src/db.js est le même pour les deux moteurs.
+
+const SQLITE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS watches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  interval_min INTEGER NOT NULL DEFAULT 15,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  tags TEXT NOT NULL DEFAULT '[]',
+  config TEXT NOT NULL DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  next_run INTEGER NOT NULL DEFAULT 0,
+  last_check INTEGER,
+  last_code INTEGER,
+  last_ms INTEGER,
+  last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  ok INTEGER NOT NULL,
+  code INTEGER,
+  ms INTEGER,
+  size INTEGER,
+  hash TEXT,
+  snapshot_id INTEGER,
+  error TEXT,
+  alerts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_checks_watch ON checks(watch_id, id DESC);
+CREATE TABLE IF NOT EXISTS snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  text BLOB,
+  title TEXT,
+  size INTEGER,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_snap_watch ON snapshots(watch_id, id DESC);
+CREATE TABLE IF NOT EXISTS alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  severity TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT,
+  snapshot_id INTEGER,
+  prev_snapshot_id INTEGER,
+  read INTEGER NOT NULL DEFAULT 0,
+  notified INTEGER NOT NULL DEFAULT 0,
+  notify_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_watch ON alerts(watch_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(id DESC);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+-- Groupes de sites (« site_groups » : GROUPS est un mot réservé de SQLite). L'ordre est stocké dans position.
+CREATE TABLE IF NOT EXISTS site_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '#6366f1',
+  position INTEGER NOT NULL DEFAULT 0,
+  collapsed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+-- Pannes confirmées : source de vérité du calcul de disponibilité (indépendant de la fréquence des contrôles).
+CREATE TABLE IF NOT EXISTS outages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  start INTEGER NOT NULL,
+  "end" INTEGER,
+  reason TEXT,
+  code INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_outages_watch ON outages(watch_id, start DESC);
+-- Captures d'écran : les images sont des fichiers dans DATA_DIR/screenshots, ici seulement leurs métadonnées.
+CREATE TABLE IF NOT EXISTS screenshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'scheduled', -- scheduled | manual | alert
+  file TEXT NOT NULL,
+  thumb TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  width INTEGER,
+  height INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_shots_watch ON screenshots(watch_id, id DESC);
+-- Agrégats par jour (UTC) : conservés ~13 mois, alors que le détail des contrôles est purgé.
+CREATE TABLE IF NOT EXISTS daily_stats (
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  day INTEGER NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  ok INTEGER NOT NULL DEFAULT 0,
+  sum_ms INTEGER NOT NULL DEFAULT 0,
+  ms_n INTEGER NOT NULL DEFAULT 0,
+  min_ms INTEGER,
+  max_ms INTEGER,
+  PRIMARY KEY (watch_id, day)
+);
+
+-- Fenêtres de maintenance : pendant [start, end[, les alertes du site sont retenues et aucune panne n'est comptée.
+CREATE TABLE IF NOT EXISTS maintenance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  start INTEGER NOT NULL,
+  "end" INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_maintenance_watch ON maintenance(watch_id, "end");
+`;
+
+const POSTGRES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS watches (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  interval_min INTEGER NOT NULL DEFAULT 15,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  tags TEXT NOT NULL DEFAULT '[]',
+  config TEXT NOT NULL DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT '{}',
+  created_at BIGINT NOT NULL,
+  next_run BIGINT NOT NULL DEFAULT 0,
+  last_check BIGINT,
+  last_code INTEGER,
+  last_ms INTEGER,
+  last_error TEXT,
+  next_shot BIGINT NOT NULL DEFAULT 0,
+  shot_error TEXT,
+  group_id BIGINT,
+  position INTEGER NOT NULL DEFAULT 0,
+  next_cms BIGINT NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS checks (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts BIGINT NOT NULL,
+  ok INTEGER NOT NULL,
+  code INTEGER,
+  ms INTEGER,
+  size BIGINT,
+  hash TEXT,
+  snapshot_id BIGINT,
+  error TEXT,
+  alerts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_checks_watch ON checks(watch_id, id DESC);
+CREATE TABLE IF NOT EXISTS snapshots (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts BIGINT NOT NULL,
+  hash TEXT NOT NULL,
+  text BYTEA,
+  title TEXT,
+  size BIGINT,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_snap_watch ON snapshots(watch_id, id DESC);
+CREATE TABLE IF NOT EXISTS alerts (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts BIGINT NOT NULL,
+  severity TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT,
+  snapshot_id BIGINT,
+  prev_snapshot_id BIGINT,
+  read INTEGER NOT NULL DEFAULT 0,
+  notified INTEGER NOT NULL DEFAULT 0,
+  notify_error TEXT,
+  maintenance INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_watch ON alerts(watch_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(id DESC);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS site_groups (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '#6366f1',
+  position INTEGER NOT NULL DEFAULT 0,
+  collapsed INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS outages (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  start BIGINT NOT NULL,
+  "end" BIGINT,
+  reason TEXT,
+  code INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_outages_watch ON outages(watch_id, start DESC);
+CREATE TABLE IF NOT EXISTS screenshots (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  ts BIGINT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'scheduled',
+  file TEXT NOT NULL,
+  thumb TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  width INTEGER,
+  height INTEGER,
+  final_url TEXT,
+  page_title TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shots_watch ON screenshots(watch_id, id DESC);
+CREATE TABLE IF NOT EXISTS daily_stats (
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  day INTEGER NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  ok INTEGER NOT NULL DEFAULT 0,
+  sum_ms BIGINT NOT NULL DEFAULT 0,
+  ms_n INTEGER NOT NULL DEFAULT 0,
+  min_ms INTEGER,
+  max_ms INTEGER,
+  PRIMARY KEY (watch_id, day)
+);
+CREATE TABLE IF NOT EXISTS maintenance (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  watch_id BIGINT NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+  start BIGINT NOT NULL,
+  "end" BIGINT NOT NULL,
+  note TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_maintenance_watch ON maintenance(watch_id, "end");
+`;
+
+/** SQLite n'a pas de « ADD COLUMN IF NOT EXISTS » : on ajoute la colonne seulement si elle manque. */
+async function addColumn(db, table, column, ddl, columns) {
+  if (!columns.has(column)) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
+
+const columnsOf = async (db, table) => new Set((await db.all(`PRAGMA table_info(${table})`)).map((c) => c.name));
+
+async function sqlite(db) {
+  await db.exec(SQLITE_SCHEMA);
+
+  // Colonnes ajoutées après la 1re version publiée.
+  const watches = await columnsOf(db, 'watches');
+  await addColumn(db, 'watches', 'next_shot', 'INTEGER NOT NULL DEFAULT 0', watches);
+  await addColumn(db, 'watches', 'shot_error', 'TEXT', watches);
+  // Groupe (NULL = « Sans groupe ») et rang du site dans son groupe. Les sites existants gardent l'ordre de création.
+  await addColumn(db, 'watches', 'group_id', 'INTEGER', watches);
+  if (!watches.has('position')) {
+    await db.exec('ALTER TABLE watches ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
+    await db.exec('UPDATE watches SET position = id');
+  }
+  // Échéance du prochain relevé du plugin CMS : 0 = pas de relevé planifié.
+  await addColumn(db, 'watches', 'next_cms', 'INTEGER NOT NULL DEFAULT 0', watches);
+  // Page réellement capturée (adresse finale après redirections, titre) : sert à comprendre une capture inattendue.
+  const shots = await columnsOf(db, 'screenshots');
+  await addColumn(db, 'screenshots', 'final_url', 'TEXT', shots);
+  await addColumn(db, 'screenshots', 'page_title', 'TEXT', shots);
+  // Alertes survenues pendant une maintenance : 1 = retenue (non envoyée), 2 = déjà reprise dans le récapitulatif de fin.
+  const alerts = await columnsOf(db, 'alerts');
+  await addColumn(db, 'alerts', 'maintenance', 'INTEGER NOT NULL DEFAULT 0', alerts);
+}
+
+const postgres = (db) => db.exec(POSTGRES_SCHEMA);
+
+export default { version: 1, name: 'initial', sqlite, postgres };

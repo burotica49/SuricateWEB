@@ -1,6 +1,7 @@
 // Relevé des versions PHP / CMS. VigieWeb appelle le plugin du site (le plugin n'appelle jamais VigieWeb).
 import { getWatch, settingsFor, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
+import { getExtensions } from './extensions.js';
 import { carrySince, carryAdmins, carryHistory, acceptAdmins } from './cms-alerts.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -185,7 +186,7 @@ async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFo
       'user-agent': userAgent,
     };
     if (refresh) headers['x-vigie-refresh'] = '1';
-    const res = await fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(timeoutS * 1000) });
+    const res = await getExtensions().netGuard.fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(timeoutS * 1000) });
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
       await res.body?.cancel().catch(() => {});

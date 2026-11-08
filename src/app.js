@@ -14,6 +14,8 @@
 //     hooks,          { onWatchCreated(ctx, site), onWatchUpdated(ctx, site), onWatchDeleted(ctx, id), onStart(app), onStop(app) }
 //                     — informatifs : une erreur y est journalisée, jamais renvoyée au client
 //     notifier,       { resolveChannels(site, alertes, réglages) } : canaux de notification (src/notify.js)
+//     netGuard,       garde réseau (src/net-guard.js) : createNetGuard({ enabled, allowedPorts, allowHosts }) ou ses options.
+//                     Défaut : celle de l'environnement (VIGIE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
 //     scheduler,      { concurrency, pickDue(now, limite) } : planificateur (src/extensions.js)
 //     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true })
 //     root,           racine du cœur (public/, plugins/, package.json) ; défaut : celle de ce dépôt
@@ -30,6 +32,7 @@ import { getSettings, getInstanceSettings, markAlertsReadUpTo, GroupError } from
 import { startScheduler } from './scheduler.js';
 import { startTelegramPoller } from './telegram-poll.js';
 import { configureExtensions } from './extensions.js';
+import { createNetGuard, netGuardFromEnv } from './net-guard.js';
 import { bus } from './events.js';
 import { HttpError, HANDLED, send, sendHtml, readJson, clientIpOf } from './http.js';
 import { readCredentials } from './auth.js';
@@ -71,6 +74,7 @@ export function createApp({
   hooks = {},
   notifier,
   scheduler,
+  netGuard,
   capabilities = {},
   root = CORE_ROOT,
 } = {}) {
@@ -92,7 +96,9 @@ export function createApp({
     if (creds.error) throw new Error(creds.error);
     auth = createEnvAuth({ creds, getSettings: getInstanceSettings, trustProxy });
   }
-  configureExtensions({ notifier, scheduler });
+  // Garde réseau : un objet createNetGuard(), des options pour en créer une, ou l'environnement ; sinon on ne touche à rien.
+  const guard = netGuard?.fetch ? netGuard : netGuard ? createNetGuard(netGuard) : netGuardFromEnv(env);
+  configureExtensions({ notifier, scheduler, ...(guard ? { netGuard: guard } : {}) });
 
   // Contexte commun à tous les gestionnaires (ctx.app) : ce que les routes ont besoin de savoir de l'application.
   const app = {

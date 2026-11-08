@@ -53,6 +53,7 @@ export function describeError(e) {
     ERR_SSL_WRONG_VERSION_NUMBER: ['Erreur de protocole TLS'],
     UND_ERR_SOCKET: ['Connexion coupée par le serveur sans réponse'],
     REDIRECT_LOOP: ['Boucle ou excès de redirections'],
+    ESSRF: ['Adresse non autorisée : réseau privé ou interne'], // garde réseau (src/net-guard.js)
     BODY_TOO_LARGE: ['Page trop volumineuse'],
   };
   const m = map[code];
@@ -90,6 +91,7 @@ async function readBody(res) {
 }
 
 export async function fetchPage(startUrl, cfg, settings) {
+  const guard = getExtensions().netGuard; // inerte par défaut : fetch() d'origine
   const jar = new Map();
   const chain = [];
   let cur = startUrl;
@@ -103,7 +105,8 @@ export async function fetchPage(startUrl, cfg, settings) {
       ...cfg.headers,
     };
     if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
-    const res = await fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(cfg.timeoutS * 1000) });
+    // Chaque étape d'une redirection est vérifiée comme la première : une adresse publique peut renvoyer vers une adresse interne.
+    const res = await guard.fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(cfg.timeoutS * 1000) });
     if (!ttfb) ttfb = Math.round(performance.now() - t0);
     for (const sc of res.headers.getSetCookie?.() ?? []) {
       const kv = sc.split(';')[0];
@@ -260,7 +263,13 @@ const ipPrefix = (ip) => (ip.includes(':') ? ip.split(':').slice(0, 3).join(':')
 
 export function tlsInfo(host, port = 443, timeout = 8000) {
   return new Promise((resolve, reject) => {
-    const sock = tls.connect({ host, port, servername: host, rejectUnauthorized: false }, () => {
+    const guard = getExtensions().netGuard;
+    try {
+      guard.checkUrl(`https://${host.includes(':') ? `[${host}]` : host}:${port}`); // port et adresse écrite telle quelle
+    } catch (e) {
+      return reject(e);
+    }
+    const sock = tls.connect({ host, port, servername: host, rejectUnauthorized: false, lookup: guard.lookup }, () => {
       const c = sock.getPeerCertificate();
       resolve({
         fp: c.fingerprint256 || '',

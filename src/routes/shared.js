@@ -1,6 +1,7 @@
 // Fonctions communes aux modules de routes : validation d'un site, résumé pour le tableau de bord, réglages publics.
 // Elles reçoivent `ctx` (utilisateur, application) quand elles en ont besoin : rien n'est lu dans l'environnement ici.
 import { HttpError } from '../http.js';
+import { getExtensions } from '../extensions.js';
 import { randomBytes } from 'node:crypto';
 import { settingsFor, statusTokenInUse, getWatch, updateWatch, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS, uptimeBetween, DAY_MS } from '../db.js';
 import { isRunning } from '../scheduler.js';
@@ -22,6 +23,15 @@ export function normalizeUrl(input) {
   }
   if (!/^https?:$/.test(url.protocol)) throw new HttpError(400, 'Seules les adresses http:// et https:// sont acceptées');
   return url.href;
+}
+
+/** Garde réseau : une adresse interdite (réseau privé, port non autorisé…) est refusée dès la saisie, avec la raison. */
+export function assertUrlAllowed(url) {
+  try {
+    getExtensions().netGuard.checkUrl(url);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
 }
 
 export function validateConfig(cfg, siteUrl) {
@@ -166,6 +176,7 @@ export async function watchInput(ctx, body, existing) {
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
   if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');
   const url = body.url !== undefined ? normalizeUrl(body.url) : existing.url;
+  assertUrlAllowed(url);
   validateConfig(cfg, url);
   // Adresse de la page de statut : un jeton aléatoire, propre à ce site (jamais deux sites avec le même).
   const st = cfg.statusPage;

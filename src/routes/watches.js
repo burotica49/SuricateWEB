@@ -7,7 +7,7 @@ import { removeWatchShots, pruneWatchShots } from '../screenshot.js';
 import { fetchPage, analyze, describeError } from '../checker.js';
 import { bus } from '../events.js';
 import { registrable } from '../util.js';
-import { normalizeUrl, SELECTOR_CHECK, RESET_KEYS, rememberDomainAck, summarize, buildCtx, watchInput, loadWatch } from './shared.js';
+import { normalizeUrl, assertUrlAllowed, SELECTOR_CHECK, RESET_KEYS, rememberDomainAck, summarize, buildCtx, watchInput, loadWatch } from './shared.js';
 
 export default function register({ route }) {
   route('GET', '/api/watches', async (ctx) => {
@@ -109,6 +109,7 @@ export default function register({ route }) {
 
   route('POST', '/api/test-url', async (ctx) => {
     const url = normalizeUrl(ctx.body.url);
+    assertUrlAllowed(url);
     const s = await settingsFor(ctx.account.id);
     const cfg = normalizeConfig({ timeoutS: 12 });
     try {

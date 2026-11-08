@@ -515,7 +515,8 @@ src/app.js           createApp(options) : routeur, pipeline des requêtes (authe
 src/routes/          les routes de l'API, un module par thème (sites, suivi, captures, rapports, groupes, alertes, réglages…)
 src/http.js          erreurs HTTP, réponses JSON / HTML, lecture du corps
 src/auth-env.js      fournisseur d'authentification par défaut : un compte, identifiants du .env, cookie signé
-src/notify.js        canaux de notification (Telegram par défaut) ; src/extensions.js : notifications et planificateur remplaçables
+src/notify.js        canaux de notification (Telegram par défaut) ; src/extensions.js : notifications, planificateur et garde réseau remplaçables
+src/net-guard.js     garde réseau (SSRF) : adresses privées refusées, adresse vérifiée à la connexion, client HTTP qui l'applique
 src/checker.js       un contrôle : HTTP → pannes → contenu → DNS/TLS/RDAP → incidents/évènements → alertes
 src/html.js          parseur HTML tolérant + sélecteurs CSS + extraction des signaux
 src/diff.js          diff ligne à ligne (LCS)
@@ -572,6 +573,8 @@ Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'e
 **Comptes.** Chaque site et chaque groupe appartient à un compte (colonne `account_id`) ; le cœur n'en a qu'un, le compte 1. Les routes n'accèdent aux données que par `ctx.data` (`src/scoped.js`) : un compte ne voit, ne modifie ni ne supprime que les siens, et une ressource d'un autre compte répond « introuvable » (404), jamais « interdit ». Le fournisseur `auth` doit donner un `account.id` entier ≥ 1. `test/account-isolation.test.js` essaie chaque route à paramètre avec les identifiants d'un autre compte, et échoue si une nouvelle route n'y est pas ajoutée.
 
 **Réglages à deux niveaux.** Ceux de l'**installation** (secret de session, adresse publique, rétention des contrôles et des versions) et ceux du **compte** (Telegram, mots-clés, User-Agent, intervalle par défaut, seuil des mises à jour CMS, conservation des captures). Chaque contrôle, message et relevé CMS utilise les réglages du compte propriétaire du site (`settingsFor(compte)`). Modifier l'adresse publique demande le droit `instance:write`, accordé par défaut. Le flux temps réel (`/api/events`) ne transmet à chaque utilisateur que les événements de son compte. Tests : `test/account-settings.test.js` et `test/account-isolation.test.js`.
+
+**Garde réseau (SSRF).** VigieWeb va chercher des adresses saisies par ses utilisateurs ; sans garde, l'une d'elles peut viser le réseau interne du serveur (service de métadonnées d'un hébergeur, base de données, panneau d'administration) et en révéler le contenu. `createApp({ netGuard })` ou `VIGIE_NET_GUARD=1` l'active : seules les adresses http(s) sur les ports autorisés (80, 443, 8080, 8443 par défaut), vers des adresses IP publiques, sont permises — pour les contrôles, chaque étape d'une redirection, le relevé CMS, le certificat TLS et les captures. L'adresse IP est vérifiée au moment même de la connexion (pas de « DNS rebinding »). Des exceptions explicites existent (`VIGIE_NET_ALLOW_HOSTS`). Elle est **inactive par défaut** : sur une installation personnelle, surveiller son propre réseau est légitime. Limite : Chrome résout les adresses lui-même ; ses requêtes sont interceptées une à une, mais pour une garantie complète il faut l'isoler dans un conteneur ou un réseau sans accès à l'interne. Voir `src/net-guard.js` et `test/net-guard.test.js`.
 
 Le moteur de base se remplace avant le premier import de `src/db.js` (`configureStore` dans `src/store/registry.js`) : un adaptateur qui respecte le contrat de `src/store/sqlite.js`, vérifiable avec `test-support/adapter-contract.js`, et ses propres migrations. Les tests `test/app-extensions.test.js` illustrent chaque point d'extension.
 

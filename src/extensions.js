@@ -3,6 +3,7 @@
 //
 // Un seul jeu d'extensions par processus : le planificateur et les contrôles sont eux-mêmes uniques dans le processus.
 import { defaultNotifier } from './notify.js';
+import { createNetGuard } from './net-guard.js';
 import { dueWatchIds } from './db.js';
 
 const defaults = () => ({
@@ -13,17 +14,21 @@ const defaults = () => ({
    * dans l'ordre voulu (la version hébergée y met l'équité entre comptes et les intervalles minimaux par forfait).
    */
   scheduler: { concurrency: 5, pickDue: (now, limit) => dueWatchIds(now, limit) },
+  /** Garde réseau (src/net-guard.js) : inerte par défaut ; la version hébergée l'active (refus des adresses privées, DNS rebinding). */
+  netGuard: createNetGuard({ enabled: false }),
 });
 
 let current = defaults();
 
 export const getExtensions = () => current;
 
-export function configureExtensions({ notifier, scheduler } = {}) {
+export function configureExtensions({ notifier, scheduler, netGuard } = {}) {
   if (notifier && typeof notifier.resolveChannels !== 'function') throw new Error('notifier.resolveChannels doit être une fonction');
+  if (netGuard && typeof netGuard.fetch !== 'function') throw new Error('netGuard doit venir de createNetGuard()');
   current = {
     notifier: notifier ?? current.notifier,
     scheduler: { ...current.scheduler, ...(scheduler ?? {}) },
+    netGuard: netGuard ?? current.netGuard,
   };
 }
 

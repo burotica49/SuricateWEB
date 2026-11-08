@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getExtensions } from './extensions.js';
 import { getWatch, listWatches, settingsFor, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
 import { bus } from './events.js';
 
@@ -109,6 +110,7 @@ const FRIENDLY = [
   [/ERR_CERT_/, 'Certificat TLS invalide'],
   [/ERR_TOO_MANY_REDIRECTS/, 'Boucle de redirections'],
   [/ERR_UNSAFE_PORT/, 'Port bloqué par le navigateur (liste de ports réservés de Chrome)'],
+  [/ERR_ACCESS_DENIED/, 'Adresse non autorisée : réseau privé ou interne'],
   [/ERR_INVALID_URL|ERR_ABORTED/, 'Adresse refusée par le navigateur'],
   [/ERR_SSL_/, 'Erreur de protocole TLS'],
 ];
@@ -160,10 +162,19 @@ const scrollThroughScript = (limit) => `(async () => {
  * `settleMs` : pause finale après chargement et défilement (animations, sliders).
  * `interact` : simule un visiteur (souris, molette) pour réveiller les scripts « retardés jusqu'à l'interaction ».
  * `hideBanners` : masque les bandeaux de consentement aux cookies les plus courants.
+ * `guard` : garde réseau (src/net-guard.js). Active, elle vérifie l'adresse AVANT de lancer Chrome, puis chaque requête de la page
+ * (redirections, images, scripts, iframes…) : Chrome ne doit atteindre aucun réseau interne, même par un élément de la page.
  */
-export async function capture(url, { width = 1280, height = 800, fullPage = false, timeoutMs = 30000, settleMs = 3000, interact = true, hideBanners = true, quality = 72, headers, userAgent } = {}) {
+export async function capture(url, { width = 1280, height = 800, fullPage = false, timeoutMs = 30000, settleMs = 3000, interact = true, hideBanners = true, quality = 72, headers, userAgent, guard } = {}) {
   const bin = chromePath();
   if (!bin) throw new Error(NO_CHROME);
+  if (guard?.enabled) {
+    try {
+      guard.checkUrl(url);
+    } catch (e) {
+      throw new Error(e.message);
+    }
+  }
   const profile = await mkdtemp(join(tmpdir(), 'vigie-chrome-'));
   const args = [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
@@ -210,6 +221,20 @@ export async function capture(url, { width = 1280, height = 800, fullPage = fals
     const S = (method, params) => cdp.send(method, params, sessionId);
     await S('Page.enable');
     await S('Network.enable');
+    if (guard?.enabled) {
+      // Chaque requête est suspendue le temps d'être jugée : autorisée, ou refusée (ERR_ACCESS_DENIED). Schémas locaux (data:, blob:,
+      // about:) toujours permis : ils n'atteignent aucun réseau.
+      await S('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+      const LOCAL = /^(data|blob|about):/i;
+      cdp.on((m) => {
+        if (m.method !== 'Fetch.requestPaused' || m.sessionId !== sessionId) return;
+        const { requestId, request } = m.params;
+        const verdict = LOCAL.test(request.url) ? Promise.resolve(true) : guard.allows(request.url);
+        verdict
+          .then((ok) => (ok ? S('Fetch.continueRequest', { requestId }) : S('Fetch.failRequest', { requestId, errorReason: 'AccessDenied' })))
+          .catch(() => S('Fetch.failRequest', { requestId, errorReason: 'AccessDenied' }).catch(() => {}));
+      });
+    }
 
     // « HeadlessChrome » est refusé par de nombreux pare-feux applicatifs : on se présente comme un Chrome ordinaire.
     const ua = userAgent || (await cdp.send('Browser.getVersion')).userAgent.replace('HeadlessChrome', 'Chrome');
@@ -362,6 +387,7 @@ async function doCapture(id, kind) {
       width: sc.width, height: sc.height, fullPage: sc.fullPage,
       settleMs: sc.delay * 1000, interact: sc.interact, hideBanners: sc.hideBanners,
       timeoutMs: Math.max(20, w.config.timeoutS) * 1000, headers: w.config.headers, userAgent: w.config.userAgent || undefined,
+      guard: getExtensions().netGuard,
     }));
     const dir = join(SHOTS_DIR, String(id));
     await mkdir(dir, { recursive: true });

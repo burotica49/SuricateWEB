@@ -1,0 +1,354 @@
+# Construire une couche hébergée sur VigieWeb
+
+Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, forfaits, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
+
+État du cœur décrit ici : **version 1.7.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
+
+## 1. Ce que le cœur garantit
+
+| Domaine | Garantie | Où |
+|---|---|---|
+| Base de données | Tout le SQL est dans `src/db.js`, portable SQLite / PostgreSQL, derrière un adaptateur asynchrone. Les 100 requêtes émises par la suite de tests ont été validées contre PostgreSQL 17 (`PREPARE`) à la version 1.7.0. | `src/store/` |
+| Migrations | Numérotées, une version par moteur, suivies dans `schema_migrations`. | `src/store/migrations/` |
+| Assemblage | `createApp(options)` : plus aucun démarrage à l'import. | `src/app.js` |
+| Comptes | Chaque site et chaque groupe appartient à un compte (`account_id`) ; le cœur n'a que le compte 1. Les routes n'accèdent aux données que par `ctx.data`, qui cloisonne. Une ressource d'un autre compte répond **404**. | `src/scoped.js` |
+| Réglages | Deux niveaux : installation et compte. Chaque contrôle, message et relevé utilise ceux du compte propriétaire du site. | `src/db.js` |
+| Temps réel | `/api/events` ne transmet à chaque utilisateur que les événements de son compte. | `src/routes/events.js` |
+| Droits | Chaque route privée déclare une permission ; `authorize` en décide. | `src/app.js` |
+| Réseau | Garde SSRF optionnelle : adresses privées refusées, adresse vérifiée à la connexion (pas de DNS rebinding). | `src/net-guard.js` |
+| Notifications | Canaux remplaçables ; Telegram par défaut. | `src/notify.js` |
+
+Ces garanties sont verrouillées par des tests qui **échouent** si on les contourne (voir §8).
+
+## 2. Assembler une application hébergée
+
+Le cœur a son propre point d'entrée (`server.js`) : il lit des identifiants dans le `.env` et ne convient pas à un service multi-comptes. La couche hébergée écrit le sien. **L'ordre compte** : le moteur de base se branche *avant* le premier import de `src/db.js`, que `src/app.js` importe.
+
+```js
+// serveur-cloud.js (dépôt privé)
+import { configureStore } from '<cœur>/src/store/registry.js';
+import { openPostgres } from './postgres.js';              // adaptateur : voir §6
+import { migrationsCloud } from './migrations/index.js';  // numéros ≥ 1000
+
+configureStore({
+  open: async () => openPostgres(process.env.DATABASE_URL),
+  migrations: migrationsCloud,
+});
+
+// db.js s'ouvre ici, sur l'adaptateur fourni, et applique les migrations du cœur puis les vôtres.
+const { createApp } = await import('<cœur>/src/app.js');
+const { createNetGuard } = await import('<cœur>/src/net-guard.js');
+
+const app = createApp({
+  env: process.env,
+  auth: createCloudAuth(),                 // §3.1
+  authorize, entitlements,                 // §3.2, §3.3
+  routes: [registerBilling, registerTeam, registerAdmin],
+  hooks: { onWatchCreated, onWatchDeleted },
+  notifier: cloudNotifier,                 // §3.6
+  scheduler: { concurrency: 20, pickDue }, // §3.7
+  netGuard: createNetGuard({ allowedPorts: [80, 443, 8080, 8443] }), // §3.8
+  capabilities: { mode: 'cloud', billing: true },
+});
+await app.listen(Number(process.env.PORT) || 3000, process.env.HOST || '0.0.0.0');
+app.startBackground();   // voir l'avertissement ci-dessous
+```
+
+Points d'attention :
+
+- `startBackground()` lance le planificateur **et** le lecteur des boutons Telegram du cœur. Définir `TELEGRAM_POLL=0` : ce lecteur est lié au compte implicite 1 et n'a pas de sens en multi-comptes (§3.6).
+- **Un seul processus** doit appeler `startBackground()`. Le planificateur choisit les sites « dus » sans les réserver : deux planificateurs contrôleraient les mêmes sites deux fois (§9).
+- Le cœur ne ferme pas la base : `app.stop()` arrête le serveur et les tâches de fond ; c'est au point d'entrée d'appeler `closeDb()` (exporté par `src/db.js`) puis de quitter.
+- Un seul `createApp` par processus : le planificateur, les notifications et la garde réseau sont des réglages de processus.
+
+## 3. Les points d'extension
+
+Toutes les options de `createApp` sont facultatives ; sans elles, le comportement est celui d'une installation personnelle.
+
+### 3.1 `auth` — qui est l'utilisateur
+
+```js
+{
+  kind: 'cloud',
+  authenticate(req) → { user: { id, name }, account: { id } } | null,   // valeur ou promesse
+  register({ route }) { /* routes publiques : connexion, déconnexion, état */ },
+}
+```
+
+- `null` → la requête reçoit **401**. Les routes déclarées `{ public: true }` n'appellent pas `authenticate`.
+- `account.id` est **obligatoire : un entier ≥ 1**. Sans lui, la requête est refusée (500) : jamais de repli silencieux sur le compte 1. `user` est libre (le cœur n'y lit que `name`, pour l'affichage).
+- `register` doit déclarer au moins **`GET /api/auth`** public (état de connexion pour l'interface, et sonde de santé Docker). Une route déjà déclarée par le cœur est refusée au démarrage, même celle d'un fournisseur.
+- À fournir côté cloud : inscription, vérification d'e-mail, mot de passe oublié, hachage (`scrypt` est dans `node:crypto`), sessions révocables, limitation des tentatives par adresse **et** par compte, 2FA. Le fournisseur par défaut (`src/auth-env.js`) est un exemple minimal : un compte, cookie signé, 5 tentatives par minute et par IP, **en mémoire** (donc par processus).
+
+### 3.2 `authorize(ctx, action, resource)` — le droit d'agir
+
+Renvoie un booléen (ou une promesse). Défaut : tout est permis. Il est appelé :
+
+- automatiquement, avec la `perm` de la route, **avant** la lecture du corps de la requête (un refus ne consomme rien et ne modifie rien) ;
+- par `ctx.can(action, resource)` (booléen) et `ctx.require(action, resource)` (lève 403 « Accès refusé »), pour les contrôles propres à une route, avec la ressource concernée.
+
+Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de VigieWeb, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
+
+C'est ici que vivra le partage de l'offre Agence : un invité « rapport » n'a que `report:read` (et `site:read` limité à ce qui lui est partagé) ; un invité « complet » a les actions de lecture et d'acquittement. `authorize` reçoit `ctx.user`, `ctx.account` et, pour les contrôles par ressource, la ressource.
+
+> `authorize` décide du *droit*, pas de l'*appartenance* : un site d'un autre compte reste introuvable (404) quel que soit le droit. Pour qu'un invité voie les sites d'un autre compte, il faudra élargir `ctx.data` (§4) — c'est le point le plus délicat de l'offre Agence.
+
+### 3.3 `entitlements` — les quotas du forfait
+
+```js
+{
+  check(ctx, action, details) { /* lève une HttpError pour refuser */ },
+  limits(ctx) → { minIntervalMin?: number }   // plafonds ; {} si aucun
+}
+```
+
+Le cœur appelle `check` dans trois cas :
+
+| Action | Quand | Si refusé |
+|---|---|---|
+| `site:create` | création d'un site ; **chaque** site d'un import (au-delà du quota, les suivants sont ignorés et comptés dans `skipped`, sans erreur globale) | 402 (ou le statut de votre `HttpError`) |
+| `site:enable` | reprise d'un site en pause | idem |
+
+`limits().minIntervalMin` ramène un intervalle plus court au minimum autorisé, **sans refuser** la requête. Il ne couvre que l'intervalle des contrôles ; les autres plafonds (captures, rétention, pages par site, connecteur CMS, page de statut) sont à imposer vous-même, soit par `check`, soit dans vos routes, soit en filtrant la configuration reçue (voir §9).
+
+À trancher côté cloud : un site en pause compte-t-il dans le quota ? Le cœur appelle `site:create` pour tout nouveau site et `site:enable` pour toute reprise ; c'est à votre `check` de compter comme le forfait l'exige. Que faire quand un compte dépasse son forfait après une rétrogradation (mettre les sites en trop en pause, ne **jamais** supprimer) est aussi de votre ressort.
+
+### 3.4 `routes` — des routes supplémentaires
+
+Chaque élément est une fonction qui reçoit `api` :
+
+```js
+function registerBilling({ route, app, HttpError, HANDLED, send, sendHtml }) {
+  route('GET', '/api/billing', async (ctx) => ({ plan: await planOf(ctx.account.id) }), { perm: 'billing:read' });
+  route('POST', '/api/billing/webhook', handleStripe, { public: true });   // pas de session ; signature Stripe : voir la limite du corps brut, §9
+}
+```
+
+- Options : `{ public: true }` ou `{ perm: 'action' }`. Une route privée sans `perm` n'est vérifiée que par l'authentification ; **déclarez toujours une `perm`**.
+- Une route déjà déclarée (même méthode et même chemin) est refusée au démarrage.
+- Un gestionnaire reçoit `ctx` : `req`, `res`, `params`, `query` (`URLSearchParams`), `body` (JSON déjà lu, `{}` en GET), `headers` (en-têtes de réponse à ajouter), `app` (`info`, `root`, `env`, `capabilities`, `clientIp(req)`, `emit`), `user`, `account`, `data`, `can`, `require`, `entitle`, `limits`.
+- Il renvoie un objet (réponse JSON 200), lève une `HttpError(status, message)` (le message est montré à l'utilisateur), ou écrit lui-même la réponse et renvoie `HANDLED`.
+- Protection CSRF, valable pour vos routes aussi : une requête avec un corps non JSON est refusée (415), et une requête inter-sites sans corps sur une route privée l'est aussi (403).
+- **Le corps JSON est lu et analysé AVANT le gestionnaire.** Une route qui a besoin des octets bruts — typiquement le **webhook Stripe**, dont la signature se vérifie sur le corps exact — ne peut donc pas l'obtenir aujourd'hui : voir §9. C'est la première chose à ajouter au cœur pour le lot 5.
+
+### 3.5 `hooks`
+
+`onWatchCreated(ctx, site)`, `onWatchUpdated(ctx, site)`, `onWatchDeleted(ctx, id)`, `onStart(handle)`, `onStop(handle)`. Informatifs : une erreur est journalisée (`[hook nom]`) et **jamais** renvoyée au client. Ils servent à mesurer l'usage, pas à refuser (pour refuser : `entitlements`).
+
+### 3.6 `notifier` — qui reçoit les alertes
+
+```js
+{ resolveChannels(site, alertes, réglages) → [canal…] }   // valeur ou promesse ; [] = personne
+
+canal = {
+  type, minSeverity, sendRecovery, wantsPhoto,
+  send(site, alertes, réglages)  → promesse (rejetée si l'envoi échoue),
+  sendPhoto?(image, légende)     → promesse,
+}
+```
+
+Appelé à chaque contrôle qui produit des alertes, après le réglage « ne pas notifier » du site. Chaque canal reçoit les alertes qui lui reviennent selon sa gravité minimale. Une alerte est marquée « envoyée » si **au moins un** canal aboutit ; si tous échouent, l'erreur du dernier échec est conservée. Une seule capture est prise pour tous les canaux qui en veulent.
+
+C'est le point d'ancrage des **canaux multiples par compte, groupe et site** de l'offre Agence : votre `resolveChannels` lit vos tables de canaux et de règles (portée compte, groupe ou site) et renvoie la liste. Le cœur fournit `telegramChannel(t, site)` pour construire un canal Telegram.
+
+Pas de lecteur de boutons Telegram multi-comptes dans le cœur : le sien est lié au compte implicite et à un seul bot. Pour un bot partagé, prévoir un webhook (route `public` avec en-tête secret) qui retrouve le compte à partir de la conversation, **et vérifie que le site du bouton appartient à ce compte** avant de marquer des alertes comme lues (les fonctions `markAlertsReadUpTo` et `rememberDomainAck` ne vérifient pas le compte).
+
+### 3.7 `scheduler`
+
+`{ concurrency, pickDue(now, limite) }`. `pickDue` renvoie les identifiants des sites à contrôler (au plus `limite`), dans l'ordre voulu ; le défaut est « les plus en retard d'abord ». C'est ici qu'iront l'équité entre comptes (tourniquet : un gros compte ne doit pas affamer les petits) et les intervalles minimaux par forfait. Le passage a lieu toutes les 5 s ; il ne démarre pas tant que le précédent n'est pas fini, et une erreur est journalisée sans arrêter la surveillance.
+
+### 3.8 `netGuard` — protection SSRF
+
+`createNetGuard({ enabled, allowedPorts, allowHosts })` ; ou ses options ; ou `VIGIE_NET_GUARD=1` (+ `VIGIE_NET_ALLOW_PORTS`, `VIGIE_NET_ALLOW_HOSTS`). **À activer dès que des inconnus ajoutent des sites.** Voir `src/net-guard.js` pour le détail ; en résumé :
+
+- refuse tout ce qui n'est pas http(s), les ports hors liste (80, 443, 8080, 8443 par défaut) et toute adresse privée ou réservée, écrite telle quelle ou renvoyée par le DNS ;
+- vérifie l'adresse **dans le `lookup` de la connexion** : pas de fenêtre pour un « DNS rebinding » ;
+- s'applique à chaque étape d'une redirection, au relevé CMS, au certificat TLS et aux captures ;
+- refuse dès la saisie (400) une adresse interdite, avec la raison.
+
+**Limite à connaître** : Chrome résout les adresses lui-même. Ses requêtes sont interceptées et vérifiées une à une, mais l'adresse jugée peut différer de celle de la connexion. Pour une garantie complète, faites tourner Chrome dans un conteneur ou un réseau **sans accès à l'interne** (§7).
+
+### 3.9 `capabilities`
+
+Fusionné dans `GET /api/capabilities` (public), avec `{ mode: 'self-hosted', multiUser: false, billing: false, version }` par défaut. L'interface s'en servira pour afficher ou masquer des écrans (le contrôle réel reste côté serveur).
+
+## 4. Les données : ctx.data
+
+**Règle** : une route n'importe jamais directement les fonctions de `src/db.js` qui lisent ou écrivent par identifiant ou par liste. Elle passe par `ctx.data`, créé pour le compte de l'utilisateur :
+
+| Domaine | Fonctions |
+|---|---|
+| Sites | `getWatch(id)` (null si autre compte), `requireWatch(id)` (404), `listWatches()`, `createWatch(data)` |
+| Groupes | `getGroup`, `listGroups`, `createGroup`, `updateGroup`, `deleteGroup`, `applyLayout` |
+| Dépendances d'un site | `getSnapshot(id)`, `getScreenshot(id)`, `endMaintenance(id)` — on remonte au site pour contrôler son compte |
+| Alertes | `queryAlerts(filtres)`, `markEveryAlertRead()`, `markAlertsRead(ids)` |
+| Tableau de bord | `unreadAlertCounts`, `domainExpiryAlertState`, `checkStatsSince`, `sparklines`, `latestScreenshots`, `activeMaintenanceMap`, `screenshotUsage` |
+
+Les fonctions qui prennent l'identifiant d'un site **déjà obtenu par `ctx.data`** (`recentChecks(w.id)`, `listMaintenance(w.id)`, `uptimeSummary(w)`…) sont sûres : l'appartenance a été contrôlée. Conséquences pour vos routes :
+
+- obtenir le site par `ctx.data.requireWatch(id)` **avant** toute lecture ou écriture qui en dépend ;
+- une ressource étrangère répond 404, jamais 403 (ne rien révéler de son existence) ;
+- ne jamais appeler `listWatches()`, `getGroup()`… de `db.js` sans compte depuis une route.
+
+À savoir, les fonctions de `db.js` prennent `accountId = null` pour « toute l'installation » (planificateur, contrôles, tests) ; une valeur renseignée cloisonne. Les fonctions qui **créent** des lignes prennent le compte 1 par défaut : `ctx.data` fixe toujours le compte.
+
+**Supprimer un compte** n'a pas de fonction dédiée dans le cœur. Pour chaque site : `deleteWatch(id)` (les contrôles, alertes, versions, captures — lignes —, pannes et maintenances partent par cascade) puis `removeWatchShots(id)` (les **fichiers** d'images, dans `DATA_DIR/screenshots/<id>`, ne partent pas tout seuls) ; puis les groupes (`deleteGroup`) ; puis la ligne de réglages `account:<id>` de la table `settings`. À écrire côté cloud, avec les obligations RGPD d'effacement et d'export.
+
+## 5. Les réglages à deux niveaux
+
+| Niveau | Contenu | Stockage | Accès |
+|---|---|---|---|
+| Installation | secret de session, adresse publique (`baseUrl`), rétention des contrôles et des versions | ligne `app` | `getInstanceSettings()` (synchrone), `saveInstanceSettings(patch)` |
+| Compte | Telegram, mots-clés, User-Agent, intervalle par défaut, seuil des mises à jour CMS, conservation des captures | ligne `account:<id>` | `accountSettings(id)`, `saveAccountSettings(id, patch)` |
+
+`settingsFor(compteId)` donne la **vue fusionnée** (installation + compte) que reçoivent contrôles, messages et relevés. `getSettings()` (synchrone) est la vue du **compte implicite 1** : à ne pas utiliser dans du code multi-comptes. Un compte sans ligne a les valeurs par défaut (`accountDefaults()`). Les réglages d'un compte sont relus au bout de 30 s : une modification faite par un autre processus est vue dans ce délai.
+
+À faire côté cloud : **chiffrer les jetons Telegram** (ils sont stockés en clair dans les lignes de réglages), et décider si la rétention des contrôles devient un réglage de forfait (aujourd'hui d'installation).
+
+## 6. Le moteur de base de données
+
+### Contrat de l'adaptateur
+
+Voir l'en-tête de `src/store/sqlite.js`. En résumé : `dialect`, `all`, `get`, `run → { changes }`, `insert → id`, `exec`, `transaction(fn(tx))`, `close`. Toutes les méthodes peuvent renvoyer une valeur ou une promesse. Pour PostgreSQL, l'adaptateur doit :
+
+- traduire les `?` en `$1, $2…` ;
+- ajouter `RETURNING id` à `insert` (tables avec colonne `id` uniquement ; `daily_stats` et `settings` passent par `run`) ;
+- renvoyer **tous les nombres en `Number`** : `COUNT`, `SUM`, `AVG`, `BIGINT` (horodatages en ms) sortent de `pg` en texte par défaut — régler les analyseurs de types (`int8`, `numeric`) ;
+- garder des entiers 0/1 pour les indicateurs, et un `Buffer` pour les colonnes `BYTEA` (versions de page compressées) ;
+- exécuter `transaction(fn)` sur **une connexion réservée** et passer `tx` à `fn` : tout ce qui est lu dans la transaction doit passer par `tx` (le cœur le fait pour la suppression de groupe et la réorganisation) ;
+- accepter `exec` avec plusieurs instructions.
+
+### Tests de contrat
+
+```js
+import { adapterContract } from '<cœur>/test-support/adapter-contract.js';
+adapterContract({ name: 'postgres', open: async () => openPostgresVide() });   // un adaptateur NEUF et vide à chaque test
+```
+
+Dix tests : identifiants, paramètres et `NULL`, nombres, octets, `"end"`, upsert, transactions (validation, annulation, lecture de ses propres écritures). **Ils n'ont été joués que sur SQLite** : le contrat n'a jamais tourné contre un vrai pilote PostgreSQL. C'est la première chose à faire dans le dépôt cloud.
+
+### Migrations
+
+- Le cœur occupe les numéros 1 à 999 ; **les migrations d'extension portent des numéros ≥ 1000**.
+- Chaque migration a une fonction par moteur utilisé (`sqlite`, `postgres`) ; une migration publiée ne change plus.
+- Elles s'appliquent dans l'ordre, chacune dans sa transaction, au démarrage.
+- **Pas de verrou entre processus** : si plusieurs processus démarrent en même temps sur la même base PostgreSQL, ils peuvent appliquer la même migration. Dans votre adaptateur, prendre un verrou consultatif (`pg_advisory_lock`) autour de la migration, ou lancer les migrations dans une étape de déploiement séparée.
+- Pas de table `accounts` dans le cœur : la vôtre en créera une (clé étrangère facultative depuis `watches.account_id` et `site_groups.account_id`, qui sont de simples entiers avec défaut 1).
+
+### Ce qui n'a pas été vérifié
+
+Les requêtes de `db.js` ont été validées par `PREPARE` contre PostgreSQL 17 (syntaxe, types, mots réservés comme `"end"`), et le comportement de quelques-unes (tri, `IS NOT DISTINCT FROM`, upsert, `LIMIT`/`OFFSET`) exécuté à la main. **Aucune n'a tourné dans l'application contre un pilote réel** : les différences de types renvoyés par le pilote sont le risque principal.
+
+## 7. Sécurité : avant d'ouvrir les inscriptions
+
+- [ ] **Garde réseau activée** (`netGuard`), avec la liste de ports voulue.
+- [ ] **Chrome isolé.** L'image Docker du cœur lance Chrome avec `CHROME_NO_SANDBOX=1` (le bac à sable exige des privilèges que Docker n'accorde pas). Avec des sites inconnus, c'est une surface d'attaque : exécuter Chrome dans un conteneur dédié, sans accès à la base ni aux secrets, ni au réseau interne, avec un vrai bac à sable (profil seccomp, ou machine à part). Les captures sont alors à produire par ce worker.
+- [ ] **`instance:write` refusé** aux comptes clients.
+- [ ] **Secrets chiffrés** : jetons Telegram (§5), et tout secret que vous ajoutez.
+- [ ] **Authentification complète** (§3.1) : hachage, e-mail vérifié, limitation des tentatives par compte, 2FA pour l'offre Agence.
+- [ ] **Anti-abus** : un compte gratuit ne doit pas servir à surveiller ou capturer à haute fréquence un site tiers. Leviers : `limits().minIntervalMin`, quotas de captures, `User-Agent` identifiable avec un contact, vérification de propriété du domaine pour les fonctions agressives.
+- [ ] **Limitation de débit** : celle du cœur est en mémoire et par processus (connexion : 5 par minute et par IP ; page de statut : 120 par minute et par IP). Insuffisant derrière plusieurs processus.
+- [ ] **`TRUST_PROXY=1`** derrière un reverse proxy : sinon `clientIp` voit l'adresse du proxy ; sans proxy de confiance, ne **pas** l'activer (l'en-tête `X-Forwarded-For` serait falsifiable).
+- [ ] **Pages de statut publiques** : le jeton est l'unique accès ; unique dans toute l'installation (vérifié), mais la recherche se fait par `LIKE` sur toute la table `watches` (§9).
+
+## 8. Les garde-fous à reprendre ou à étendre
+
+Tests du cœur qui doivent rester verts, et dont le dépôt cloud doit s'inspirer :
+
+| Test | Ce qu'il garantit |
+|---|---|
+| `test/account-isolation.test.js` | chaque route à paramètre, essayée avec les identifiants d'un autre compte → 404 ; **échoue si une route privée à paramètre n'est pas dans la matrice** ; les routes n'importent pas les fonctions non cloisonnées de `db.js` ; flux temps réel filtré. Comptes de test 10 et 20, jamais 1. |
+| `test/app-extensions.test.js` | chaque option de `createApp`, et : **toute route privée du cœur déclare une `perm`** (sauf `GET /api/me`). |
+| `test/account-settings.test.js` | réglages par compte (User-Agent, mots-clés, Telegram sans croisement). |
+| `test/net-guard.test.js` | adresses refusées, client HTTP équivalent à `fetch`, Chrome réel intercepté. |
+| `test-support/adapter-contract.js` | contrat de l'adaptateur (§6). |
+
+Pour vos propres routes : ajoutez-les à une matrice d'isolation équivalente, avec un faux fournisseur d'authentification (`{ authenticate: req => USERS[req.headers['x-user']], register }`, voir le haut de `test/app-extensions.test.js`).
+
+## 9. Limites connues du cœur
+
+À lever dans le cœur ou à contourner côté cloud :
+
+| Limite | Effet | Piste |
+|---|---|---|
+| Corps de requête toujours analysé en JSON avant le gestionnaire | impossible de vérifier la signature d'un webhook (Stripe), qui porte sur les octets bruts | option de route `raw: true` fournissant `ctx.rawBody` (Buffer) à la place de `ctx.body` ; **à ajouter au cœur avant le lot 5** |
+| Planificateur **sans réservation** | deux processus contrôleraient les mêmes sites | `pickDue` qui réserve (`UPDATE … SET next_run = … RETURNING`), ou un seul processus de planification |
+| Bus d'événements **en mémoire** (`src/events.js`) | un worker séparé n'alimente pas le temps réel des processus web ; chaque connexion SSE ajoute un écouteur (plafond réglé à 100) | `LISTEN/NOTIFY` PostgreSQL ou Redis, et revoir le plafond |
+| Captures sur **disque local** (`DATA_DIR/screenshots`) | pas de multi-machines ; pas de quota disque | stockage objet derrière une interface, quota par forfait |
+| Quotas : seul l'intervalle est plafonné (`limits`) | captures, rétention, pages par site, connecteur CMS, page de statut : à imposer vous-même | étendre `limits()` si le besoin se confirme |
+| `GET /api/watches` **non paginé**, avec une requête par site pour la courbe (`sparklines`) | lent pour un compte de centaines de sites | pagination, requête unique |
+| Barres de disponibilité : 90 × 2 requêtes par site affiché | idem | agréger côté SQL |
+| Page de statut : jeton cherché par `LIKE '%jeton%'` sur `watches.config` | parcours complet de la table | colonne `status_token` indexée |
+| Lecteur Telegram du cœur : un bot, le compte 1 | inutilisable en multi-comptes | webhook côté cloud (§3.6) |
+| Relevé CMS et contrôles : mêmes `fetch` globaux sans limitation par compte | un compte peut saturer le serveur | `pickDue` équitable, `concurrency` |
+| Disponibilité mesurée depuis **un seul point** | une panne réseau du serveur ressemble à une panne du site | sondes multi-régions (hors périmètre actuel) |
+
+## 10. Ce qu'il reste à construire, par point d'extension
+
+Plan en sept lots, du plus fondamental au plus visible. Chaque lot dit où il s'accroche.
+
+| # | Lot | S'accroche à |
+|---|---|---|
+| 1 | **Adaptateur PostgreSQL** (`pg`, types, transactions, verrou de migration) + tests de contrat + migrations cloud (comptes, utilisateurs, sessions, e-mails) | `configureStore` |
+| 2 | **Comptes et utilisateurs** : inscription, vérification d'e-mail, mot de passe oublié, sessions, 2FA ; compte ↔ utilisateurs ; invitations | `auth`, migrations ≥ 1000, routes |
+| 3 | **Durcissement** : garde réseau, Chrome isolé, secrets chiffrés, anti-abus | `netGuard`, worker de capture |
+| 4 | **Forfaits paramétrables** : table `plans` (limites et options en JSON, prix, identifiants Stripe), moteur de droits, jauges d'usage, page d'administration | `entitlements`, `authorize`, `capabilities`, `hooks`, routes |
+| 5 | **Paiement Stripe** : Checkout, portail client, webhooks idempotents, rétrogradation sans suppression, TVA/facturation | routes (`public` pour le webhook), `entitlements` |
+| 6 | **Partage et notifications Agence** : accès par groupe ou site, niveau complet ou rapport ; canaux multiples par compte, groupe, site ; bot Telegram partagé | `authorize` + élargissement de `ctx.data`, `notifier`, routes |
+| 7 | **Exploitation** : séparation web/worker, équité du planificateur, sauvegardes, effacement et export RGPD, pages légales, site vitrine | `scheduler`, hooks, déploiement |
+
+Les trois forfaits prévus (« Perso » : gratuit, 1 site ; « Standard » : 10 sites ; « Agence » : illimité, canaux multiples globaux/groupe/site, partage par groupe ou site en accès complet ou « rapport ») se traduisent en lignes de la table `plans`, lues par `entitlements.check` et `limits`. Les accès « rapport » s'appuient sur `report:read` et sur le rapport mensuel et la page de statut du cœur.
+
+Décisions encore ouvertes : prix et essai gratuit ; contenu exact de chaque forfait (captures, CMS, page de statut, intervalle minimal) ; droits précis de l'accès « complet » (peut-il modifier la configuration d'un site ?) ; les invités comptent-ils comme sièges ; bot Telegram partagé ou propre à chaque client ; vérification de propriété du domaine (obligatoire, optionnelle, absente) ; fournisseur de paiement (Stripe ou intermédiaire gérant la TVA) et d'e-mail transactionnel ; échelle visée à 12 mois.
+
+## 11. Compatibilité et versions
+
+- Le cœur suit un numéro `x.y.z` dans `package.json` (source unique, affichée dans l'interface) : correctif → `z`, nouvelle fonction → `y`. Une modification qui **casse** un contrat décrit ici (signature d'une option, d'un hook, de `ctx.data`, de l'adaptateur) devra passer en `2.0.0` et être annoncée.
+- Les migrations du cœur ne sont jamais modifiées une fois publiées : on en ajoute une. Les vôtres, numérotées à partir de 1000, suivent la même règle.
+- Embarquer le cœur par sous-module Git épinglé sur une version ; lire les commits entre deux versions avant de mettre à jour.
+
+## Annexe A — Routes et permissions (version 1.7.0)
+
+| Permission | Routes |
+|---|---|
+| *(publique, sans connexion)* | `GET /api/auth` · `POST /api/login` · `POST /api/logout` · `GET /api/capabilities` |
+| `alert:ack` | `POST /api/alerts/read` |
+| `alert:read` | `GET /api/alerts` |
+| `data:export` | `GET /api/export` |
+| `data:import` | `POST /api/import` |
+| `group:read` | `GET /api/groups` |
+| `group:write` | `POST /api/groups` · `PUT /api/groups/:id` · `DELETE /api/groups/:id` · `PUT /api/layout` |
+| `maintenance:write` | `POST /api/watches/:id/maintenance` · `DELETE /api/maintenance/:id` |
+| `plugin:download` | `GET /api/plugins/:file` |
+| `report:read` | `GET /api/watches/:id/report` · `GET /api/groups/:id/report` |
+| `settings:read` | `GET /api/settings` |
+| `settings:write` | `PUT /api/settings` · `POST /api/telegram/test` · `POST /api/telegram/detect` |
+| `site:ack` | `POST /api/watches/:id/ack` · `POST /api/watches/:id/cms/admins/accept` |
+| `site:check` | `POST /api/watches/:id/check` · `POST /api/watches/:id/screenshot` · `POST /api/watches/:id/cms` |
+| `site:create` | `POST /api/watches` · `POST /api/test-url` |
+| `site:delete` | `DELETE /api/watches/:id` |
+| `site:read` | `GET /api/watches` · `GET /api/watches/:id` · `GET /api/watches/:id/uptime` · `GET /api/watches/:id/series` · `GET /api/watches/:id/domain` · `GET /api/watches/:id/history` · `GET /api/snapshots/:id/diff` · `GET /api/snapshots/:id/text` · `GET /api/watches/:id/screenshots` · `GET /api/screenshots/:id/image` · `GET /api/events` |
+| `site:update` | `PUT /api/watches/:id` · `POST /api/watches/:id/toggle` |
+| *(aucune : connexion seule)* | `GET /api/me` |
+
+44 routes. `GET /api/auth`, `POST /api/login` et `POST /api/logout` viennent du fournisseur d'authentification par défaut ; le vôtre déclare les siennes.
+
+
+## Annexe B — Événements du flux temps réel
+
+`running`, `idle` (un contrôle démarre, se termine), `check` (contrôle terminé, avec le nombre d'alertes), `shot` (capture), `ack` (acquittement), `layout` (réorganisation des groupes). Chaque événement porte `watchId` ou `accountId` ; un événement dont le compte est inconnu n'est transmis à personne. Si vous émettez les vôtres sur `bus` (`src/events.js`), mettez-y `accountId`.
+
+## Annexe C — Variables d'environnement lues par le cœur
+
+| Variable | Rôle |
+|---|---|
+| `DATA_DIR` | dossier des données (base SQLite par défaut, captures) |
+| `PORT`, `HOST` | écoute (dans `server.js` ; `createApp` n'écoute qu'à l'appel de `listen`) |
+| `VIGIE_USER`, `VIGIE_PASSWORD` | identifiants du fournisseur par défaut (inutiles avec votre `auth`) |
+| `TRUST_PROXY` | lire `X-Forwarded-*` derrière un reverse proxy de confiance |
+| `TELEGRAM_POLL` | `0` désactive le lecteur des boutons Telegram (à faire en multi-comptes) |
+| `TELEGRAM_API` | adresse de l'API Telegram (tests) |
+| `VIGIE_DEMO` | `1` : données fictives, aucun contrôle ni capture |
+| `VIGIE_NET_GUARD`, `VIGIE_NET_ALLOW_PORTS`, `VIGIE_NET_ALLOW_HOSTS` | garde réseau |
+| `CHROME_PATH`, `CHROME_NO_SANDBOX`, `SCREENSHOT_CONCURRENCY` | Chrome et captures |
+| `ENV_FILE` | emplacement du `.env` (chargé seulement par `server.js`) |

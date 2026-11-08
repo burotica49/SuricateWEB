@@ -544,6 +544,7 @@ public/layout.js     organisation en groupes : calcul pur (déplacements, pas au
 test/                node --test (unitaires, API réelle, et bout en bout dans un vrai Chrome)
 test-support/        lancement d'un serveur de test et pilotage de Chrome (tests et captures)
 scripts/docs/        mode démo : faux sites, données fictives, génération des captures de ce README
+docs/couche-cloud.md référence pour construire une version hébergée (points d'extension, comptes, base, sécurité, limites)
 docs/screenshots/    images de ce README (régénérables avec npm run docs:screenshots)
 ```
 
@@ -556,6 +557,8 @@ Les tests lancent un faux site qu'ils « piratent » en direct et un faux serveu
 Scripts disponibles : `npm start`, `npm run dev` (rechargement automatique), `npm test`, `npm run demo`, `npm run docs:screenshots`.
 
 ### Étendre VigieWeb (version hébergée, intégrations)
+
+> Référence complète, à l'usage de qui construit une couche hébergée sur VigieWeb : **[docs/couche-cloud.md](docs/couche-cloud.md)** (assemblage, chaque point d'extension, données et comptes, base PostgreSQL, sécurité, limites connues, travail restant).
 
 Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'est l'installation classique : un compte, les identifiants du `.env`, aucune limite. Une version qui embarque VigieWeb (comptes multiples, forfaits…) fournit ses propres extensions :
 

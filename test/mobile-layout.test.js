@@ -77,7 +77,7 @@ test('téléphone : les onglets défilent, et on le voit (flèche, onglet actif 
     assert.equal(s.left, true, 'on peut revenir en arrière');
 
     // Dernier onglet : il est visible dès l'arrivée (avant, il pouvait être hors de l'écran).
-    await open(`#/sites/${id}/alertes`, '.tabs-wrap');
+    await open(`#/sites/${id}/domaine`, '.tabs-wrap'); // le dernier onglet d'un site sans CMS
     await wait(`document.querySelector('.tabs').scrollLeft > 0`);
     s = await state();
     assert.equal(s.activeIn, true, 'l’onglet actif est amené à l’écran');

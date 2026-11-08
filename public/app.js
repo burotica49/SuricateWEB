@@ -887,8 +887,8 @@ async function viewDetail(id, tab, tok, openSnap) {
   const cmsN = cmsPending(w.cms);
   const cmsSecN = cmsSecurityCount(w);
   const tabs = domainOnly
-    ? [['apercu', 'Aperçu', 'activity'], ['domaine', 'Domaine & DNS', 'globe'], ['alertes', 'Alertes', 'bell']]
-    : [['apercu', 'Aperçu', 'activity'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers'], ['securite', 'Sécurité', 'shield']] : []), ['alertes', 'Alertes', 'bell']];
+    ? [['apercu', 'Aperçu', 'activity'], ['alertes', 'Alertes', 'bell'], ['domaine', 'Domaine & DNS', 'globe']]
+    : [['apercu', 'Aperçu', 'activity'], ['alertes', 'Alertes', 'bell'], ['captures', 'Captures', 'image'], ['disponibilite', 'Disponibilité', 'clock'], ['modifications', 'Modifications', 'file'], ['domaine', 'Domaine & DNS', 'globe'], ...(cmsOn ? [['mises-a-jour', 'Mises à jour', 'layers'], ['securite', 'Sécurité', 'shield']] : [])];
   root.append(tabStrip(...tabs.map(([k, l, icn]) => h('a', { href: `#/sites/${id}/${k}`, class: tab === k ? 'on' : '', role: 'tab' }, ic(icn), l,
     k === 'alertes' && unread ? h('span', { class: 'badge' }, unread) : null,
     k === 'mises-a-jour' && cmsN ? h('span', { class: 'badge warn' }, cmsN) : null,

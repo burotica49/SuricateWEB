@@ -10,7 +10,9 @@
 //                     (voir PERMS ci-dessous) et par ctx.can() / ctx.require() dans le code des routes.
 //     entitlements,   { check(ctx, action, info), limits(ctx) } : quotas du forfait. `check` lève une HttpError (402, 403…)
 //                     pour refuser ; `limits` renvoie des plafonds (ex. { minIntervalMin: 5 }). Défaut : aucune limite.
-//     routes,         [(api) => void] : routes supplémentaires, via api.route(méthode, chemin, gestionnaire, { public, perm })
+//     routes,         [(api) => void] : routes supplémentaires, via api.route(méthode, chemin, gestionnaire, { public, perm, raw })
+//                     raw: true (ou une taille en octets) : le corps n'est pas analysé, le gestionnaire reçoit ctx.rawBody (Buffer) —
+//                     indispensable pour vérifier la signature d'un webhook (Stripe…), qui porte sur les octets exacts
 //     hooks,          { onWatchCreated(ctx, site), onWatchUpdated(ctx, site), onWatchDeleted(ctx, id), onStart(app), onStop(app) }
 //                     — informatifs : une erreur y est journalisée, jamais renvoyée au client
 //     notifier,       { resolveChannels(site, alertes, réglages) } : canaux de notification (src/notify.js)
@@ -34,7 +36,7 @@ import { startTelegramPoller } from './telegram-poll.js';
 import { configureExtensions } from './extensions.js';
 import { createNetGuard, netGuardFromEnv } from './net-guard.js';
 import { bus } from './events.js';
-import { HttpError, HANDLED, send, sendHtml, readJson, clientIpOf } from './http.js';
+import { HttpError, HANDLED, send, sendHtml, readJson, readRaw, MAX_BODY, clientIpOf } from './http.js';
 import { readCredentials } from './auth.js';
 import { scopedData } from './scoped.js';
 import { createEnvAuth } from './auth-env.js';
@@ -145,8 +147,9 @@ export function createApp({
       const identity = r.public ? null : await auth.authenticate(req);
       if (!r.public && !identity) return send(res, 401, { error: 'Authentification requise' });
       // Protection CSRF : un navigateur ne peut pas poster du JSON cross-origin sans pré-requête CORS.
+      // Une route « raw » (webhook d'un service tiers) en est dispensée : elle s'authentifie elle-même, par la signature du corps.
       const hasBody = Number(req.headers['content-length'] || 0) > 0 || req.headers['transfer-encoding'];
-      if (req.method !== 'GET' && hasBody && !/application\/json/.test(req.headers['content-type'] || '')) {
+      if (req.method !== 'GET' && hasBody && !r.raw && !/application\/json/.test(req.headers['content-type'] || '')) {
         return send(res, 415, { error: 'Content-Type application/json requis' });
       }
       if (req.method !== 'GET' && !r.public && !hasBody && !req.headers['content-type'] && req.headers['sec-fetch-site'] === 'cross-site') {
@@ -171,7 +174,8 @@ export function createApp({
       /** Plafonds du forfait (ex. { minIntervalMin }), {} si aucun. */
       ctx.limits = async () => (await entitlements.limits(ctx)) ?? {};
       if (r.perm) await ctx.require(r.perm);
-      ctx.body = req.method === 'GET' ? {} : await readJson(req);
+      if (r.raw) ctx.rawBody = await readRaw(req, typeof r.raw === 'number' ? Math.min(r.raw, 20e6) : MAX_BODY); // octets bruts, rien n'est analysé
+      else ctx.body = req.method === 'GET' ? {} : await readJson(req);
       const out = await r.handler(ctx);
       if (out === HANDLED) return;
       send(res, 200, out, ctx.headers);
@@ -187,8 +191,8 @@ export function createApp({
 
   const handle = {
     server, info, auth,
-    /** Les routes déclarées (documentation, tests) : [{ method, path, public, perm }]. */
-    routes: () => table.map(({ method, path, public: isPublic, perm }) => ({ method, path, public: !!isPublic, perm: perm ?? null })),
+    /** Les routes déclarées (documentation, tests) : [{ method, path, public, perm, raw }]. */
+    routes: () => table.map(({ method, path, public: isPublic, perm, raw }) => ({ method, path, public: !!isPublic, perm: perm ?? null, raw: !!raw })),
 
     /** Démarre l'écoute HTTP. Résolu quand le serveur accepte les connexions ; renvoie le port effectif (utile avec 0). */
     listen: (port, host) => new Promise((resolve, reject) => {

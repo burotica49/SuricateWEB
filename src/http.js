@@ -18,18 +18,27 @@ export const send = (res, status, data, headers = {}) => {
   res.end(body);
 };
 
-/** Corps JSON de la requête, limité à 2 Mo. */
-export async function readJson(req) {
+/** Taille maximale du corps d'une requête (JSON ou brut) : 2 Mo. */
+export const MAX_BODY = 2e6;
+
+/** Octets bruts du corps de la requête, tels que reçus (Buffer vide s'il n'y en a pas). Lève 413 au-delà de `limit` octets. */
+export async function readRaw(req, limit = MAX_BODY) {
   const chunks = [];
   let n = 0;
   for await (const c of req) {
     n += c.length;
-    if (n > 2e6) throw new HttpError(413, 'Requête trop volumineuse');
+    if (n > limit) throw new HttpError(413, 'Requête trop volumineuse');
     chunks.push(c);
   }
-  if (!chunks.length) return {};
+  return Buffer.concat(chunks);
+}
+
+/** Corps JSON de la requête, limité à 2 Mo ({} s'il n'y en a pas). */
+export async function readJson(req) {
+  const raw = await readRaw(req);
+  if (!raw.length) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return JSON.parse(raw.toString('utf8'));
   } catch {
     throw new HttpError(400, 'JSON invalide');
   }

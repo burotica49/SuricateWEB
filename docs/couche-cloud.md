@@ -2,7 +2,7 @@
 
 Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, forfaits, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
-État du cœur décrit ici : **version 1.7.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
+État du cœur décrit ici : **version 1.8.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
 
 ## 1. Ce que le cœur garantit
 
@@ -120,16 +120,23 @@ Chaque élément est une fonction qui reçoit `api` :
 ```js
 function registerBilling({ route, app, HttpError, HANDLED, send, sendHtml }) {
   route('GET', '/api/billing', async (ctx) => ({ plan: await planOf(ctx.account.id) }), { perm: 'billing:read' });
-  route('POST', '/api/billing/webhook', handleStripe, { public: true });   // pas de session ; signature Stripe : voir la limite du corps brut, §9
+  route('POST', '/api/billing/webhook', handleStripe, { public: true, raw: true });   // pas de session : la signature du corps brut authentifie
 }
 ```
 
-- Options : `{ public: true }` ou `{ perm: 'action' }`. Une route privée sans `perm` n'est vérifiée que par l'authentification ; **déclarez toujours une `perm`**.
+- Options : `{ public: true }` ou `{ perm: 'action' }`, et `{ raw: true }` pour recevoir le corps brut (ci-dessous). Une route privée sans `perm` n'est vérifiée que par l'authentification ; **déclarez toujours une `perm`**.
 - Une route déjà déclarée (même méthode et même chemin) est refusée au démarrage.
-- Un gestionnaire reçoit `ctx` : `req`, `res`, `params`, `query` (`URLSearchParams`), `body` (JSON déjà lu, `{}` en GET), `headers` (en-têtes de réponse à ajouter), `app` (`info`, `root`, `env`, `capabilities`, `clientIp(req)`, `emit`), `user`, `account`, `data`, `can`, `require`, `entitle`, `limits`.
+- Un gestionnaire reçoit `ctx` : `req`, `res`, `params`, `query` (`URLSearchParams`), `body` (JSON déjà lu, `{}` en GET), `rawBody` (octets bruts, routes `raw` seulement), `headers` (en-têtes de réponse à ajouter), `app` (`info`, `root`, `env`, `capabilities`, `clientIp(req)`, `emit`), `user`, `account`, `data`, `can`, `require`, `entitle`, `limits`.
 - Il renvoie un objet (réponse JSON 200), lève une `HttpError(status, message)` (le message est montré à l'utilisateur), ou écrit lui-même la réponse et renvoie `HANDLED`.
 - Protection CSRF, valable pour vos routes aussi : une requête avec un corps non JSON est refusée (415), et une requête inter-sites sans corps sur une route privée l'est aussi (403).
-- **Le corps JSON est lu et analysé AVANT le gestionnaire.** Une route qui a besoin des octets bruts — typiquement le **webhook Stripe**, dont la signature se vérifie sur le corps exact — ne peut donc pas l'obtenir aujourd'hui : voir §9. C'est la première chose à ajouter au cœur pour le lot 5.
+- **Corps brut (`raw`).** Par défaut le corps JSON est lu et analysé avant le gestionnaire. Une route qui déclare `{ raw: true }` (ou `raw: <octets>` pour une autre limite que 2 Mo, plafonnée à 20 Mo) reçoit à la place **les octets exacts** dans `ctx.rawBody` (`Buffer`, vide s'il n'y a pas de corps) ; `ctx.body` vaut `{}`. C'est indispensable pour vérifier la signature d'un webhook (Stripe…), qui porte sur le corps tel qu'il a été envoyé : `JSON.stringify(JSON.parse(corps))` ne le restitue pas (espaces, ordre des clés, échappements). Sur une route brute, le contrôle « corps JSON uniquement » ne s'applique pas — la signature tient lieu d'authentification — mais le droit (`perm`) est vérifié **avant** la lecture du corps, et la taille reste limitée (413 au-delà).
+
+  ```js
+  route('POST', '/api/billing/webhook', (ctx) => {
+    const event = stripe.webhooks.constructEvent(ctx.rawBody, ctx.req.headers['stripe-signature'], secret);  // lève si la signature est fausse
+    return handleStripeEvent(event);
+  }, { public: true, raw: true });
+  ```
 
 ### 3.5 `hooks`
 
@@ -271,7 +278,6 @@ Pour vos propres routes : ajoutez-les à une matrice d'isolation équivalente, a
 
 | Limite | Effet | Piste |
 |---|---|---|
-| Corps de requête toujours analysé en JSON avant le gestionnaire | impossible de vérifier la signature d'un webhook (Stripe), qui porte sur les octets bruts | option de route `raw: true` fournissant `ctx.rawBody` (Buffer) à la place de `ctx.body` ; **à ajouter au cœur avant le lot 5** |
 | Planificateur **sans réservation** | deux processus contrôleraient les mêmes sites | `pickDue` qui réserve (`UPDATE … SET next_run = … RETURNING`), ou un seul processus de planification |
 | Bus d'événements **en mémoire** (`src/events.js`) | un worker séparé n'alimente pas le temps réel des processus web ; chaque connexion SSE ajoute un écouteur (plafond réglé à 100) | `LISTEN/NOTIFY` PostgreSQL ou Redis, et revoir le plafond |
 | Captures sur **disque local** (`DATA_DIR/screenshots`) | pas de multi-machines ; pas de quota disque | stockage objet derrière une interface, quota par forfait |
@@ -293,7 +299,7 @@ Plan en sept lots, du plus fondamental au plus visible. Chaque lot dit où il s'
 | 2 | **Comptes et utilisateurs** : inscription, vérification d'e-mail, mot de passe oublié, sessions, 2FA ; compte ↔ utilisateurs ; invitations | `auth`, migrations ≥ 1000, routes |
 | 3 | **Durcissement** : garde réseau, Chrome isolé, secrets chiffrés, anti-abus | `netGuard`, worker de capture |
 | 4 | **Forfaits paramétrables** : table `plans` (limites et options en JSON, prix, identifiants Stripe), moteur de droits, jauges d'usage, page d'administration | `entitlements`, `authorize`, `capabilities`, `hooks`, routes |
-| 5 | **Paiement Stripe** : Checkout, portail client, webhooks idempotents, rétrogradation sans suppression, TVA/facturation | routes (`public` pour le webhook), `entitlements` |
+| 5 | **Paiement Stripe** : Checkout, portail client, webhooks idempotents, rétrogradation sans suppression, TVA/facturation | routes (`{ public: true, raw: true }` pour le webhook : signature sur le corps brut), `entitlements` |
 | 6 | **Partage et notifications Agence** : accès par groupe ou site, niveau complet ou rapport ; canaux multiples par compte, groupe, site ; bot Telegram partagé | `authorize` + élargissement de `ctx.data`, `notifier`, routes |
 | 7 | **Exploitation** : séparation web/worker, équité du planificateur, sauvegardes, effacement et export RGPD, pages légales, site vitrine | `scheduler`, hooks, déploiement |
 
@@ -307,7 +313,7 @@ Décisions encore ouvertes : prix et essai gratuit ; contenu exact de chaque for
 - Les migrations du cœur ne sont jamais modifiées une fois publiées : on en ajoute une. Les vôtres, numérotées à partir de 1000, suivent la même règle.
 - Embarquer le cœur par sous-module Git épinglé sur une version ; lire les commits entre deux versions avant de mettre à jour.
 
-## Annexe A — Routes et permissions (version 1.7.0)
+## Annexe A — Routes et permissions (version 1.8.0)
 
 | Permission | Routes |
 |---|---|

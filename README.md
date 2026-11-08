@@ -510,7 +510,12 @@ Si des alertes d'avertissement ou critiques ont été retenues, VigieWeb envoie 
 ## Architecture
 
 ```
-server.js            API REST + fichiers statiques + SSE (temps réel) + authentification
+server.js            point d'entrée : environnement, createApp(), écoute, tâches de fond, arrêt propre
+src/app.js           createApp(options) : routeur, pipeline des requêtes (authentification, droits, CSRF), points d'extension
+src/routes/          les routes de l'API, un module par thème (sites, suivi, captures, rapports, groupes, alertes, réglages…)
+src/http.js          erreurs HTTP, réponses JSON / HTML, lecture du corps
+src/auth-env.js      fournisseur d'authentification par défaut : un compte, identifiants du .env, cookie signé
+src/notify.js        canaux de notification (Telegram par défaut) ; src/extensions.js : notifications et planificateur remplaçables
 src/checker.js       un contrôle : HTTP → pannes → contenu → DNS/TLS/RDAP → incidents/évènements → alertes
 src/html.js          parseur HTML tolérant + sélecteurs CSS + extraction des signaux
 src/diff.js          diff ligne à ligne (LCS)
@@ -528,6 +533,7 @@ src/zip.js           archive ZIP sans compression, pour télécharger les plugin
 src/db.js            sites, groupes, contrôles, versions (gzip), alertes, réglages : tout le SQL de l'application, en SQL portable, fonctions asynchrones
 src/store/sqlite.js  adaptateur de base (SQLite) : la seule porte d'accès à la base, même contrat pour tout moteur
 src/store/migrate.js migrations de schéma numérotées (src/store/migrations/), une version par moteur (SQLite, PostgreSQL)
+src/store/registry.js moteur de base remplaçable avant le premier import de db.js (+ migrations supplémentaires)
 plugins/             plugins WordPress et PrestaShop (jeton, versions, mises à jour, intégrité, administrateurs)
 public/              interface (JS/CSS vanilla, sans build)
 public/report.js     bouton « Imprimer / PDF » du rapport (sans script en ligne)
@@ -545,6 +551,23 @@ npm test
 Les tests lancent un faux site qu'ils « piratent » en direct et un faux serveur Telegram pour vérifier les messages réellement envoyés ; les tests d'interface s'exécutent dans un vrai Chrome (ils sont ignorés si aucun navigateur n'est installé).
 
 Scripts disponibles : `npm start`, `npm run dev` (rechargement automatique), `npm test`, `npm run demo`, `npm run docs:screenshots`.
+
+### Étendre VigieWeb (version hébergée, intégrations)
+
+Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'est l'installation classique : un compte, les identifiants du `.env`, aucune limite. Une version qui embarque VigieWeb (comptes multiples, forfaits…) fournit ses propres extensions :
+
+| Option | Rôle |
+|---|---|
+| `auth` | qui est l'utilisateur et son compte pour chaque requête (`ctx.user`, `ctx.account`) ; déclare ses routes de connexion |
+| `authorize(ctx, action, ressource)` | droit d'agir ; chaque route du cœur déclare son action (`site:read`, `site:create`, `settings:write`…) |
+| `entitlements` | `check(ctx, action)` refuse (HttpError 402…) au-delà du forfait ; `limits(ctx)` plafonne (ex. intervalle minimal) |
+| `routes` | routes supplémentaires, publiques ou protégées par une permission |
+| `hooks` | `onWatchCreated`, `onWatchUpdated`, `onWatchDeleted`, `onStart`, `onStop` (une erreur y est journalisée, jamais renvoyée) |
+| `notifier` | canaux de notification d'une alerte (`src/notify.js`) : Telegram par défaut, d'autres sur demande |
+| `scheduler` | quels sites contrôler à chaque passage, et la concurrence |
+| `capabilities` | ce que `GET /api/capabilities` annonce à l'interface |
+
+Le moteur de base se remplace avant le premier import de `src/db.js` (`configureStore` dans `src/store/registry.js`) : un adaptateur qui respecte le contrat de `src/store/sqlite.js`, vérifiable avec `test-support/adapter-contract.js`, et ses propres migrations. Les tests `test/app-extensions.test.js` illustrent chaque point d'extension.
 
 ## Nom du produit et identifiants techniques
 

@@ -4,32 +4,18 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 import { clamp } from './util.js';
-import { openSqlite } from './store/sqlite.js';
+import { openStore, getExtraMigrations } from './store/registry.js';
 import { migrate } from './store/migrate.js';
+import { MIGRATIONS } from './store/migrations/index.js';
 
 export const DATA_DIR = process.env.DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 
-const DB_PATH = join(DATA_DIR, 'vigie.db');
-function openDb() {
-  try {
-    return openSqlite(DB_PATH);
-  } catch (e) {
-    // SQLITE_CANTOPEN (14) : le dossier existe mais n'est pas inscriptible (volume Docker root:root, typiquement).
-    if (e?.errcode === 14) {
-      const uid = typeof process.getuid === 'function' ? process.getuid() : '?';
-      console.error(`Impossible d'ouvrir ${DB_PATH} : accès refusé en écriture (uid ${uid}).`);
-      console.error(`Le dossier ${DATA_DIR} doit être accessible en écriture à cet utilisateur. Avec Docker, montez un volume sur ce chemin et redéployez : l'image en corrige les droits au démarrage.`);
-      process.exit(1);
-    }
-    throw e;
-  }
-}
-
-// Toute la base passe par cet adaptateur (src/store) : le SQL de ce fichier est portable, le moteur est interchangeable.
-export const db = openDb();
+// Toute la base passe par cet adaptateur (src/store) : le SQL de ce fichier est portable, le moteur est interchangeable
+// (SQLite par défaut ; la version hébergée en fournit un autre via src/store/registry.js avant d'importer ce fichier).
+export const db = await openStore({ path: join(DATA_DIR, 'vigie.db'), dataDir: DATA_DIR });
 // Le schéma est tenu à jour par des migrations numérotées (src/store/migrations), appliquées ici avant tout le reste.
-await migrate(db);
+await migrate(db, [...MIGRATIONS, ...getExtraMigrations()]);
 
 const json = (s, fallback) => {
   try {

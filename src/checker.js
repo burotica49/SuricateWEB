@@ -18,7 +18,8 @@ import { cmsIncidents, cmsIncidentGroup } from './cms-alerts.js';
 import { resolvePage, pageName } from './pages.js';
 import { parseHtml, selectAll, textLines, extractFeatures } from './html.js';
 import { diffLines, preview } from './diff.js';
-import { sendAlert, sendPhoto } from './telegram.js';
+import { eligibleFor } from './notify.js';
+import { getExtensions } from './extensions.js';
 import { captureWatch, engine } from './screenshot.js';
 import { bus } from './events.js';
 import { sha1, registrable, isIp, SEV, fmtDuration } from './util.js';
@@ -794,27 +795,41 @@ const VISUAL = new Set(['content_changed', 'size_collapse', 'forbidden', 'requir
 
 /** Retourne { photo } : la promesse de l'envoi de la capture (non attendue par le contrôle, qui ne doit pas ralentir). */
 async function notify(w, alerts, settings) {
-  const t = settings.telegram;
-  if (!alerts.length || !w.config.notify || !t.enabled || !t.token || !t.chatId) return {};
-  const min = SEV[w.config.minSeverity || t.minSeverity] || 1;
-  const eligible = alerts.filter((a) => (a.severity === 'recovery' ? t.sendRecovery && (SEV[a.was] || 0) >= min : SEV[a.severity] >= min));
-  if (!eligible.length) return {};
-  const ids = eligible.map((a) => a.id);
-  try {
-    await sendAlert(t.token, t.chatId, w, eligible, settings);
-    await markNotified(ids);
-  } catch (e) {
-    console.error(`[telegram] ${w.name}: ${e.message}`);
-    await markNotified(ids, e.message);
-    return {};
+  if (!alerts.length || !w.config.notify) return {};
+  // Quels canaux reçoivent ces alertes ? Par défaut, Telegram (réglages) ; la version hébergée en ajoute (src/extensions.js).
+  const channels = await getExtensions().notifier.resolveChannels(w, alerts, settings);
+  const reached = []; // { channel, eligible } : canaux qui ont bien reçu quelque chose
+  const outcome = new Map(); // id d'alerte → null (envoyée) ou message d'erreur
+  for (const channel of channels) {
+    const eligible = eligibleFor(channel, alerts);
+    if (!eligible.length) continue;
+    try {
+      await channel.send(w, eligible, settings);
+      reached.push({ channel, eligible });
+      for (const a of eligible) outcome.set(a.id, null); // un seul canal qui aboutit suffit : l'alerte est « envoyée »
+    } catch (e) {
+      console.error(`[${channel.type}] ${w.name}: ${e.message}`);
+      for (const a of eligible) if (!outcome.has(a.id)) outcome.set(a.id, e.message);
+    }
   }
+  const sentIds = [...outcome].filter(([, err]) => err === null).map(([id]) => id);
+  if (sentIds.length) await markNotified(sentIds);
+  const failed = new Map(); // message d'erreur → alertes
+  for (const [id, err] of outcome) if (err !== null) failed.set(err, [...(failed.get(err) ?? []), id]);
+  for (const [err, ids] of failed) await markNotified(ids, err);
 
   // Une photo vaut mieux qu'un long message : le pirate a-t-il remplacé la page ? On le voit d'un coup d'œil, depuis le téléphone.
-  const wantsPhoto = t.sendScreenshot && w.config.mode !== 'domain' && w.config.screenshot.enabled && engine.available()
-    && eligible.some((a) => a.severity === 'critical' && VISUAL.has(a.type));
-  if (!wantsPhoto) return {};
+  const photoTargets = reached.filter(({ channel, eligible }) => channel.wantsPhoto && channel.sendPhoto
+    && eligible.some((a) => a.severity === 'critical' && VISUAL.has(a.type)));
+  if (!photoTargets.length || w.config.mode === 'domain' || !w.config.screenshot.enabled || !engine.available()) return {};
   const photo = captureWatch(w.id, { kind: 'alert' })
-    .then((r) => (r.image ? sendPhoto(t.token, t.chatId, r.image, `📸 ${w.name} — la page au moment de l'alerte`) : null))
-    .catch((e) => console.error(`[telegram] capture ${w.name}: ${e.message}`));
+    .then(async (r) => {
+      if (!r.image) return null;
+      // Une seule capture, envoyée à chaque canal concerné ; l'échec de l'un ne prive pas les autres.
+      for (const { channel } of photoTargets) {
+        await channel.sendPhoto(r.image, `📸 ${w.name} — la page au moment de l'alerte`).catch((e) => console.error(`[${channel.type}] capture ${w.name}: ${e.message}`));
+      }
+    })
+    .catch((e) => console.error(`[capture] ${w.name}: ${e.message}`));
   return { photo };
 }

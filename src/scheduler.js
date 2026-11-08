@@ -1,10 +1,10 @@
-import { dueWatchIds, dueCmsWatches, dueShotWatches } from './db.js';
+import { dueCmsWatches, dueShotWatches } from './db.js';
+import { getExtensions } from './extensions.js';
 import { runCheck } from './checker.js';
 import { captureWatch, isCapturing, engine } from './screenshot.js';
 import { pollCms } from './cms.js';
 import { bus } from './events.js';
 
-const CONCURRENCY = 5;
 const running = new Set();
 const queue = [];
 
@@ -28,7 +28,7 @@ export function enqueue(id, { wait = false } = {}) {
 
 let active = 0;
 function pump() {
-  while (active < CONCURRENCY && queue.length) {
+  while (active < getExtensions().scheduler.concurrency && queue.length) {
     const job = queue.shift();
     active++;
     bus.emit('event', { type: 'running', watchId: job.id });
@@ -56,7 +56,7 @@ export function startScheduler() {
     if (ticking) return;
     ticking = true;
     try {
-      for (const id of await dueWatchIds(Date.now(), 100)) {
+      for (const id of await getExtensions().scheduler.pickDue(Date.now(), 100)) {
         if (!running.has(id)) enqueue(id);
       }
       // Relevés CMS : fréquence propre (souvent 12 h), deux à la fois pour ne pas ouvrir toutes les boutiques d'un coup.

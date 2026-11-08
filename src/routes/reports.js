@@ -1,6 +1,5 @@
 // Rapports mensuels clients (un site, ou un groupe entier) : HTML imprimable ou enregistrable en PDF.
 import { HttpError, sendHtml } from '../http.js';
-import { listWatches, getGroup } from '../db.js';
 import { monthRange, siteReport, renderReport, serverTz } from '../report.js';
 import { clamp } from '../util.js';
 import { loadWatch } from './shared.js';
@@ -22,9 +21,9 @@ export default function register({ route }) {
 
   // Un groupe (un client) : tous ses sites dans un seul rapport.
   route('GET', '/api/groups/:id/report', async (ctx) => {
-    const g = await getGroup(Number(ctx.params.id));
+    const g = await ctx.data.getGroup(Number(ctx.params.id));
     if (!g) throw new HttpError(404, 'Groupe introuvable');
-    const members = (await listWatches()).filter((w) => w.groupId === g.id);
+    const members = (await ctx.data.listWatches()).filter((w) => w.groupId === g.id);
     if (!members.length) throw new HttpError(400, 'Ce groupe ne contient aucun site');
     const range = reportRange(ctx);
     return sendHtml(ctx.res, renderReport({ title: g.name, sites: await Promise.all(members.map((w) => siteReport(w, range))), range, nav: { base: `/api/groups/${g.id}/report` } }));

@@ -31,7 +31,7 @@ test('registre : un adaptateur fourni remplace SQLite, ses migrations s\'ajouten
     let opened = null;
     configureStore({
       open: async ({ path, dataDir }) => { opened = { file: path.endsWith('vigie.db'), dataDir: dataDir === process.env.DATA_DIR }; return openSqlite(path); },
-      migrations: [{ version: 2, name: 'comptes', sqlite: (db) => db.exec('CREATE TABLE cloud_accounts (id INTEGER PRIMARY KEY)'), postgres: () => {} }],
+      migrations: [{ version: 1000, name: 'comptes', sqlite: (db) => db.exec('CREATE TABLE cloud_accounts (id INTEGER PRIMARY KEY)'), postgres: () => {} }],
     });
     const dbm = await import('${url('src/db.js')}');
     console.log(JSON.stringify({
@@ -43,7 +43,7 @@ test('registre : un adaptateur fourni remplace SQLite, ses migrations s\'ajouten
   `);
   assert.deepEqual(out.opened, { file: true, dataDir: true }, 'l\'adaptateur reçoit le chemin du fichier et le dossier de données');
   assert.equal(out.cloud, 1, 'la migration de l\'extension a créé sa table');
-  assert.deepEqual(out.versions, [1, 2]);
+  assert.deepEqual(out.versions, [1, 2, 1000]);
 });
 
 test('registre : sans configuration, SQLite dans DATA_DIR, migrations du cœur seulement', () => {
@@ -55,5 +55,5 @@ test('registre : sans configuration, SQLite dans DATA_DIR, migrations du cœur s
     }));
     process.exit(0);
   `);
-  assert.deepEqual(out, { dialect: 'sqlite', versions: [1] });
+  assert.deepEqual(out, { dialect: 'sqlite', versions: [1, 2] });
 });

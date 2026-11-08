@@ -33,6 +33,7 @@ import { configureExtensions } from './extensions.js';
 import { bus } from './events.js';
 import { HttpError, HANDLED, send, sendHtml, readJson, clientIpOf } from './http.js';
 import { readCredentials } from './auth.js';
+import { scopedData } from './scoped.js';
 import { createEnvAuth } from './auth-env.js';
 import { rememberDomainAck } from './routes/shared.js';
 import { createStaticHandler } from './routes/static.js';
@@ -149,6 +150,8 @@ export function createApp({
       const ctx = {
         req, res, params, query: url.searchParams, body: {}, headers: {}, app,
         user: identity?.user ?? null, account: identity?.account ?? null,
+        /** Accès aux données limité au compte de l'utilisateur (src/scoped.js) ; null sur une route publique. */
+        data: identity ? scopedData(identity.account?.id) : null,
       };
       /** Le droit d'effectuer `action` (sur `resource`, si l'extension en tient compte) ? */
       ctx.can = async (action, resource) => !!(await authorize(ctx, action, resource));

@@ -7,6 +7,7 @@
 //                                                      (état de connexion, aussi lu par la sonde de santé Docker),
 //                                                      plus connexion et déconnexion }
 // `user` et `account` sont exposés aux gestionnaires de routes (ctx.user, ctx.account) et aux extensions.
+// `account.id` est OBLIGATOIRE : un entier ≥ 1, qui cloisonne les données (voir src/scoped.js). Sans lui, la requête est refusée (500).
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { HttpError, clientIpOf } from './http.js';
 import { checkLogin, sessionKey } from './auth.js';

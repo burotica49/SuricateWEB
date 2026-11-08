@@ -1,6 +1,6 @@
 // Suivi d'un site : disponibilité, courbe de réponse, domaine et DNS, historique des versions, comparaison, fenêtres de maintenance.
 import { HttpError } from '../http.js';
-import { getWatch, getSnapshot, previousSnapshot, snapshotLines, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, DAY_MS, UPTIME_PERIODS, addMaintenance, listMaintenance, endMaintenance, snapshotHistory, currentOutage, lastOutageEnd, domainAlerts } from '../db.js';
+import { previousSnapshot, snapshotLines, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, DAY_MS, UPTIME_PERIODS, addMaintenance, listMaintenance, snapshotHistory, currentOutage, lastOutageEnd, domainAlerts } from '../db.js';
 import { enqueue } from '../scheduler.js';
 import { diffLines, collapse } from '../diff.js';
 import { clamp, registrable } from '../util.js';
@@ -8,8 +8,7 @@ import { alertRow, loadWatch } from './shared.js';
 
 export default function register({ route }) {
   route('POST', '/api/watches/:id/maintenance', async (ctx) => {
-    const w = await getWatch(Number(ctx.params.id));
-    if (!w) throw new HttpError(404, 'Site introuvable');
+    const w = await ctx.data.requireWatch(Number(ctx.params.id));
     const now = Date.now();
     const minutes = Math.round(clamp(ctx.body.minutes, 5, 7 * 24 * 60, 60));
     const asked = Number(ctx.body.start);
@@ -21,7 +20,7 @@ export default function register({ route }) {
   }, { perm: 'maintenance:write' });
 
   route('DELETE', '/api/maintenance/:id', async (ctx) => {
-    const r = await endMaintenance(Number(ctx.params.id));
+    const r = await ctx.data.endMaintenance(Number(ctx.params.id));
     if (!r) throw new HttpError(404, 'Fenêtre introuvable ou déjà terminée');
     // Fenêtre arrêtée avant son terme : la surveillance reprend aussitôt (le récapitulatif part sans attendre l'échéance prévue).
     if (r.start <= Date.now()) enqueue(r.watchId);
@@ -65,16 +64,16 @@ export default function register({ route }) {
   }, { perm: 'site:read' });
 
   route('GET', '/api/watches/:id/history', async (ctx) => {
-    const id = Number(ctx.params.id);
+    const { id } = await loadWatch(ctx);
     const rows = await snapshotHistory(id, 100);
     return rows.map((r) => ({ id: r.id, ts: r.ts, title: r.title, size: r.size, meta: JSON.parse(r.meta || '{}') }));
   }, { perm: 'site:read' });
 
   route('GET', '/api/snapshots/:id/diff', async (ctx) => {
-    const cur = await getSnapshot(Number(ctx.params.id));
+    const cur = await ctx.data.getSnapshot(Number(ctx.params.id));
     if (!cur) throw new HttpError(404, 'Version introuvable (supprimée par la rétention ?)');
     const against = ctx.query.get('against');
-    const prev = against ? await getSnapshot(Number(against)) : await previousSnapshot(cur.watch_id, cur.id);
+    const prev = against ? await ctx.data.getSnapshot(Number(against)) : await previousSnapshot(cur.watch_id, cur.id);
     const a = snapshotLines(prev);
     const b = snapshotLines(cur);
     const d = diffLines(a, b);
@@ -85,7 +84,7 @@ export default function register({ route }) {
   }, { perm: 'site:read' });
 
   route('GET', '/api/snapshots/:id/text', async (ctx) => {
-    const s = await getSnapshot(Number(ctx.params.id));
+    const s = await ctx.data.getSnapshot(Number(ctx.params.id));
     if (!s) throw new HttpError(404, 'Version introuvable');
     return { id: s.id, ts: s.ts, lines: snapshotLines(s) };
   }, { perm: 'site:read' });

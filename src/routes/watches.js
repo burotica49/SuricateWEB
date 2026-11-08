@@ -1,6 +1,5 @@
 // Sites surveillés : liste, création, détail, modification, suppression, pause, contrôle immédiat, acquittement, test d'adresse.
-import { HttpError } from '../http.js';
-import { getSettings, listWatches, getWatch, createWatch, updateWatch, deleteWatch, normalizeConfig, closeOutage, listMaintenance, recentChecks, markWatchAlertsRead } from '../db.js';
+import { getSettings, updateWatch, deleteWatch, normalizeConfig, closeOutage, listMaintenance, recentChecks, markWatchAlertsRead } from '../db.js';
 import { enqueue } from '../scheduler.js';
 import { resolvePage } from '../pages.js';
 import { phpSupport } from '../cms-alerts.js';
@@ -8,34 +7,33 @@ import { removeWatchShots, pruneWatchShots } from '../screenshot.js';
 import { fetchPage, analyze, describeError } from '../checker.js';
 import { bus } from '../events.js';
 import { registrable } from '../util.js';
-import { normalizeUrl, SELECTOR_CHECK, RESET_KEYS, rememberDomainAck, summarize, buildCtx, watchInput } from './shared.js';
+import { normalizeUrl, SELECTOR_CHECK, RESET_KEYS, rememberDomainAck, summarize, buildCtx, watchInput, loadWatch } from './shared.js';
 
 export default function register({ route }) {
-  route('GET', '/api/watches', async () => {
-    const ctx = await buildCtx();
+  route('GET', '/api/watches', async (ctx) => {
+    const dash = await buildCtx(ctx);
     const out = [];
-    for (const w of await listWatches()) out.push(await summarize(w, ctx));
+    for (const w of await ctx.data.listWatches()) out.push(await summarize(w, dash));
     return out;
   }, { perm: 'site:read' });
 
   route('POST', '/api/watches', async (ctx) => {
     await ctx.entitle('site:create'); // forfait : nombre de sites (aucune limite dans le cœur)
-    const { data, cfg } = await watchInput(ctx.body, undefined, await ctx.limits());
+    const { data, cfg } = await watchInput(ctx, ctx.body);
     await SELECTOR_CHECK(cfg);
-    let w = await createWatch(data);
+    let w = await ctx.data.createWatch(data);
     if (w.config.cms.type) w = await updateWatch(w.id, { nextCms: Date.now() });
     enqueue(w.id);
     await ctx.app.emit('onWatchCreated', ctx, w);
-    return await summarize(w, await buildCtx());
+    return await summarize(w, await buildCtx(ctx));
   }, { perm: 'site:create' });
 
   route('GET', '/api/watches/:id', async (ctx) => {
-    const w = await getWatch(Number(ctx.params.id));
-    if (!w) throw new HttpError(404, 'Site introuvable');
+    const w = await ctx.data.requireWatch(Number(ctx.params.id));
     const checks = await recentChecks(w.id, 200);
     const { state } = w;
     return {
-      ...(await summarize(w, await buildCtx())),
+      ...(await summarize(w, await buildCtx(ctx))),
       config: w.config,
       createdAt: w.createdAt,
       checks,
@@ -55,9 +53,8 @@ export default function register({ route }) {
   }, { perm: 'site:read' });
 
   route('PUT', '/api/watches/:id', async (ctx) => {
-    const w = await getWatch(Number(ctx.params.id));
-    if (!w) throw new HttpError(404, 'Site introuvable');
-    const { data, cfg } = await watchInput(ctx.body, w, await ctx.limits());
+    const w = await ctx.data.requireWatch(Number(ctx.params.id));
+    const { data, cfg } = await watchInput(ctx, ctx.body, w);
     await SELECTOR_CHECK(cfg);
     const state = { ...w.state };
     if (data.url !== w.url || RESET_KEYS.some((k) => JSON.stringify(cfg[k]) !== JSON.stringify(w.config[k]))) state.baseline = false;
@@ -71,12 +68,12 @@ export default function register({ route }) {
     const u = await updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}), nextCms });
     await pruneWatchShots(u.id); // une limite abaissée s'applique tout de suite
     await ctx.app.emit('onWatchUpdated', ctx, u);
-    return await summarize(u, await buildCtx());
+    return await summarize(u, await buildCtx(ctx));
   }, { perm: 'site:update' });
 
   route('DELETE', '/api/watches/:id', async (ctx) => {
-    const id = Number(ctx.params.id);
-    if (!await deleteWatch(id)) throw new HttpError(404, 'Site introuvable');
+    const { id } = await ctx.data.requireWatch(Number(ctx.params.id));
+    await deleteWatch(id);
     await removeWatchShots(id);
     await ctx.app.emit('onWatchDeleted', ctx, id);
     return { ok: true };
@@ -84,14 +81,13 @@ export default function register({ route }) {
 
   route('POST', '/api/watches/:id/check', async (ctx) => {
     const id = Number(ctx.params.id);
-    if (!await getWatch(id)) throw new HttpError(404, 'Site introuvable');
+    await ctx.data.requireWatch(id);
     const r = await enqueue(id, { wait: true });
     return { ok: true, result: r && { code: r.code, ms: r.ms, error: r.error, alerts: r.alerts?.length || 0 } };
   }, { perm: 'site:check' });
 
   route('POST', '/api/watches/:id/toggle', async (ctx) => {
-    const w = await getWatch(Number(ctx.params.id));
-    if (!w) throw new HttpError(404, 'Site introuvable');
+    const w = await ctx.data.requireWatch(Number(ctx.params.id));
     if (!w.enabled) await ctx.entitle('site:enable'); // reprendre la surveillance compte dans le forfait
     // Mettre en pause clôt une panne en cours : le temps en pause ne doit pas compter comme indisponibilité.
     const state = { ...w.state };
@@ -100,11 +96,11 @@ export default function register({ route }) {
       Object.assign(state, { outageId: null, failSince: null, fails: 0 });
     }
     const u = await updateWatch(w.id, { enabled: !w.enabled, nextRun: 0, state });
-    return await summarize(u, await buildCtx());
+    return await summarize(u, await buildCtx(ctx));
   }, { perm: 'site:update' });
 
   route('POST', '/api/watches/:id/ack', async (ctx) => {
-    const id = Number(ctx.params.id);
+    const { id } = await loadWatch(ctx);
     await markWatchAlertsRead(id);
     await rememberDomainAck(id);
     bus.emit('event', { type: 'ack', watchId: id });

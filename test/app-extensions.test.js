@@ -197,7 +197,7 @@ test('entitlements : check() refuse (HttpError 402) à la création, à l\'impor
   assert.deepEqual([imp.status, imp.json.added, imp.json.skipped], [200, 0, 2]);
 
   // Reprise : un site en pause (ancien, ou mis en pause par le forfait) ne peut pas être repris au-delà du quota.
-  const ancien = await dbm.createWatch({ name: 'Ancien', url: SITE.url, interval: 60, enabled: false, config: SITE.config });
+  const ancien = await dbm.createWatch({ name: 'Ancien', url: SITE.url, interval: 60, enabled: false, config: SITE.config, accountId: USERS.alice.account.id });
   const bloque = await call('POST', `/api/watches/${ancien.id}/toggle`, { as: 'alice' });
   assert.deepEqual([bloque.status, bloque.json.error], [402, 'Votre forfait est limité à 2 sites']);
   assert.equal((await dbm.getWatch(ancien.id)).enabled, false, 'le site refusé reste en pause');

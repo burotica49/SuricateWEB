@@ -2,7 +2,7 @@
 import { HttpError } from '../http.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getScreenshot, listScreenshots, screenshotStats, SHOTS_DIR } from '../db.js';
+import { listScreenshots, screenshotStats, SHOTS_DIR } from '../db.js';
 import { captureWatch, isCapturing, engine, shotLimits, NO_CHROME } from '../screenshot.js';
 import { clamp } from '../util.js';
 import { loadWatch } from './shared.js';
@@ -34,7 +34,7 @@ export default function register({ route }) {
 
   // L'image passe par l'API pour rester derrière la connexion : un lien de capture n'est jamais public.
   route('GET', '/api/screenshots/:id/image', async (ctx) => {
-    const s = await getScreenshot(Number(ctx.params.id));
+    const s = await ctx.data.getScreenshot(Number(ctx.params.id));
     if (!s) throw new HttpError(404, 'Capture introuvable (supprimée par la rétention ?)');
     const buf = await readFile(join(SHOTS_DIR, ctx.query.get('thumb') && s.thumb ? s.thumb : s.file)).catch(() => null);
     if (!buf) throw new HttpError(404, 'Fichier de capture introuvable');

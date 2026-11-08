@@ -2,7 +2,7 @@
 // Elles reçoivent `ctx` (utilisateur, application) quand elles en ont besoin : rien n'est lu dans l'environnement ici.
 import { HttpError } from '../http.js';
 import { randomBytes } from 'node:crypto';
-import { getSettings, listWatches, getWatch, updateWatch, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS, uptimeBetween, DAY_MS, latestScreenshots, screenshotUsage, getGroup, activeMaintenanceMap, unreadAlertCounts, domainExpiryAlertState, checkStatsSince, sparklines } from '../db.js';
+import { getSettings, statusTokenInUse, getWatch, updateWatch, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS, uptimeBetween, DAY_MS } from '../db.js';
 import { isRunning } from '../scheduler.js';
 import { cmsConfigError } from '../cms.js';
 import { resolvePage } from '../pages.js';
@@ -84,8 +84,11 @@ export function cmsIncidentAcked(w, key, i) {
   return !!stored && (SEV[i.severity] || 0) <= (SEV[stored.severity] || 0) && (i.count ?? 0) <= (stored.count ?? 0);
 }
 
-/** Mémorise l'acquittement sur le site : il survit aux contrôles suivants, même sans alerte non lue. */
-
+/**
+ * Mémorise l'acquittement sur le site : il survit aux contrôles suivants, même sans alerte non lue.
+ * `id` doit déjà avoir été contrôlé (site obtenu par ctx.data, ou alerte marquée lue par ctx.data.markAlertsRead) : cette fonction
+ * ne vérifie pas le compte. Elle sert aussi au lecteur des boutons Telegram, qui n'a pas de compte (installation à compte unique).
+ */
 export async function rememberDomainAck(id) {
   const w = await getWatch(id);
   if (!w) return;
@@ -126,11 +129,12 @@ export async function summarize(w, ctx) {
   };
 }
 
-export async function buildCtx() {
+/** Chiffres du tableau de bord (alertes non lues, statistiques, captures, maintenances), pour les sites du compte seulement. */
+export async function buildCtx(ctx) {
   // Dernière alerte d'échéance déjà émise (domainExpiry) : sert à la retirer de l'accueil une fois lue.
-  const stats = await checkStatsSince(Date.now() - 864e5);
-  for (const [id, spark] of Object.entries(await sparklines(40))) (stats[id] ||= {}).spark = spark;
-  return { unread: await unreadAlertCounts(), stats, shots: await latestScreenshots(), domainExpiry: await domainExpiryAlertState(), maint: await activeMaintenanceMap() };
+  const stats = await ctx.data.checkStatsSince(Date.now() - 864e5);
+  for (const [id, spark] of Object.entries(await ctx.data.sparklines(40))) (stats[id] ||= {}).spark = spark;
+  return { unread: await ctx.data.unreadAlertCounts(), stats, shots: await ctx.data.latestScreenshots(), domainExpiry: await ctx.data.domainExpiryAlertState(), maint: await ctx.data.activeMaintenanceMap() };
 }
 
 export const alertRow = (r) => ({
@@ -147,17 +151,18 @@ export async function publicSettings(ctx) {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: ctx.user?.name ?? '', defaultKeywords: DEFAULT_KEYWORDS,
-    screenshots: { available: engine.available(), browser: chromePath(), usage: await screenshotUsage() },
+    screenshots: { available: engine.available(), browser: chromePath(), usage: await ctx.data.screenshotUsage() },
     app: ctx.app.info,
   };
 }
 
 /**
- * Valide et normalise les données d'un site. `limits` : plafonds du forfait (ctx.limits()) — { minIntervalMin } :
- * un intervalle plus court est ramené au minimum autorisé, jamais refusé.
+ * Valide et normalise les données d'un site pour le compte de `ctx`. Les plafonds du forfait (ctx.limits(), ex. { minIntervalMin })
+ * s'appliquent : un intervalle plus court est ramené au minimum autorisé, jamais refusé. Un groupe d'un autre compte est « inconnu ».
  */
-export async function watchInput(body, existing, limits = {}) {
+export async function watchInput(ctx, body, existing) {
   const s = getSettings();
+  const limits = await ctx.limits();
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
   if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');
   const url = body.url !== undefined ? normalizeUrl(body.url) : existing.url;
@@ -165,13 +170,13 @@ export async function watchInput(body, existing, limits = {}) {
   // Adresse de la page de statut : un jeton aléatoire, propre à ce site (jamais deux sites avec le même).
   const st = cfg.statusPage;
   if (st.enabled && !st.token) st.token = randomBytes(18).toString('base64url');
-  if (st.token && (await listWatches()).some((o) => o.id !== existing?.id && o.config.statusPage.token === st.token)) st.token = randomBytes(18).toString('base64url');
+  if (st.token && (await statusTokenInUse(st.token, existing?.id ?? null))) st.token = randomBytes(18).toString('base64url');
   const tags = Array.isArray(body.tags) ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10) : existing?.tags || [];
   // Groupe : absent = inchangé ; null / '' = « Sans groupe » ; sinon il doit exister.
   let groupId = existing?.groupId ?? null;
   if (body.groupId !== undefined) {
     if (body.groupId === null || body.groupId === '') groupId = null;
-    else if (await getGroup(Number(body.groupId))) groupId = Number(body.groupId);
+    else if (await ctx.data.getGroup(Number(body.groupId))) groupId = Number(body.groupId);
     else throw new HttpError(400, 'Groupe inconnu');
   }
   return {
@@ -188,8 +193,5 @@ export async function watchInput(body, existing, limits = {}) {
   };
 }
 
-export const loadWatch = async (ctx) => {
-  const w = await getWatch(Number(ctx.params.id));
-  if (!w) throw new HttpError(404, 'Site introuvable');
-  return w;
-};
+/** Le site de l'adresse (:id) s'il est au compte de l'utilisateur, sinon 404. */
+export const loadWatch = (ctx) => ctx.data.requireWatch(Number(ctx.params.id));

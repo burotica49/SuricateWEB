@@ -530,6 +530,7 @@ src/cms-alerts.js    alertes tirées du relevé : mises à jour en retard, fin d
 src/pages.js         pages supplémentaires d'un site : adresse résolue (même domaine) et nom affiché
 src/report.js        rapport mensuel (par site ou groupe) et page de statut publique : calculs et mise en page HTML
 src/zip.js           archive ZIP sans compression, pour télécharger les plugins
+src/scoped.js        accès aux données limité à un compte (ctx.data) : c'est par là que les routes lisent et écrivent
 src/db.js            sites, groupes, contrôles, versions (gzip), alertes, réglages : tout le SQL de l'application, en SQL portable, fonctions asynchrones
 src/store/sqlite.js  adaptateur de base (SQLite) : la seule porte d'accès à la base, même contrat pour tout moteur
 src/store/migrate.js migrations de schéma numérotées (src/store/migrations/), une version par moteur (SQLite, PostgreSQL)
@@ -566,6 +567,8 @@ Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'e
 | `notifier` | canaux de notification d'une alerte (`src/notify.js`) : Telegram par défaut, d'autres sur demande |
 | `scheduler` | quels sites contrôler à chaque passage, et la concurrence |
 | `capabilities` | ce que `GET /api/capabilities` annonce à l'interface |
+
+**Comptes.** Chaque site et chaque groupe appartient à un compte (colonne `account_id`) ; le cœur n'en a qu'un, le compte 1. Les routes n'accèdent aux données que par `ctx.data` (`src/scoped.js`) : un compte ne voit, ne modifie ni ne supprime que les siens, et une ressource d'un autre compte répond « introuvable » (404), jamais « interdit ». Le fournisseur `auth` doit donner un `account.id` entier ≥ 1. `test/account-isolation.test.js` essaie chaque route à paramètre avec les identifiants d'un autre compte, et échoue si une nouvelle route n'y est pas ajoutée.
 
 Le moteur de base se remplace avant le premier import de `src/db.js` (`configureStore` dans `src/store/registry.js`) : un adaptateur qui respecte le contrat de `src/store/sqlite.js`, vérifiable avec `test-support/adapter-contract.js`, et ses propres migrations. Les tests `test/app-extensions.test.js` illustrent chaque point d'extension.
 

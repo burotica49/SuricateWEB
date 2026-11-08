@@ -17,6 +17,17 @@ export const db = await openStore({ path: join(DATA_DIR, 'vigie.db'), dataDir: D
 // Le schéma est tenu à jour par des migrations numérotées (src/store/migrations), appliquées ici avant tout le reste.
 await migrate(db, [...MIGRATIONS, ...getExtraMigrations()]);
 
+/**
+ * Comptes. Dans le cœur il n'y en a qu'un (« compte implicite », identifiant 1). La version hébergée en crée d'autres :
+ * chaque site et chaque groupe appartient à un compte (colonne account_id), et tout le reste (contrôles, alertes, captures,
+ * versions, pannes, maintenances) en dépend via le site.
+ *
+ * Convention des fonctions ci-dessous : `accountId` à null (par défaut) = SANS cloisonnement, pour tout ce qui travaille sur
+ * l'installation entière (planificateur, contrôles, tests). Le code de l'API ne les appelle jamais ainsi : il passe par
+ * ctx.data (src/scoped.js), qui fixe le compte. Les fonctions qui créent des lignes prennent le compte implicite par défaut.
+ */
+export const DEFAULT_ACCOUNT_ID = 1;
+
 const json = (s, fallback) => {
   try {
     return JSON.parse(s);
@@ -255,6 +266,7 @@ const rowToWatch = (r) =>
     shotError: r.shot_error,
     groupId: r.group_id ?? null,
     position: r.position,
+    accountId: r.account_id ?? DEFAULT_ACCOUNT_ID,
   };
 
 /** Site dont la page de statut publique porte ce jeton, ou null. Le jeton est validé avant d'entrer dans la requête. */
@@ -268,16 +280,34 @@ export async function getWatchByStatusToken(token) {
   return null;
 }
 
-export const listWatches = async () => (await db.all('SELECT * FROM watches ORDER BY position, LOWER(name)')).map(rowToWatch);
+/**
+ * Un site (autre que `exceptId`) utilise-t-il déjà ce jeton de page de statut ? Le jeton est l'unique accès à une page
+ * publique : il doit être unique dans TOUTE l'installation, tous comptes confondus.
+ */
+export async function statusTokenInUse(token, exceptId = null) {
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token ?? ''))) return false;
+  for (const r of await db.all('SELECT * FROM watches WHERE config LIKE ?', [`%${token}%`])) {
+    if (r.id !== exceptId && rowToWatch(r).config.statusPage.token === token) return true;
+  }
+  return false;
+}
+
+export const listWatches = async (accountId = null) =>
+  (await (accountId === null
+    ? db.all('SELECT * FROM watches ORDER BY position, LOWER(name)')
+    : db.all('SELECT * FROM watches WHERE account_id = ? ORDER BY position, LOWER(name)', [accountId]))).map(rowToWatch);
 export const getWatch = async (id) => rowToWatch(await db.get('SELECT * FROM watches WHERE id = ?', [id]));
 
-/** Rang suivant dans un groupe (null = « Sans groupe »). */
+/** Rang suivant dans un groupe (null = « Sans groupe ») du compte. */
 // IS NOT DISTINCT FROM : égalité qui accepte NULL (« Sans groupe »), valable sous SQLite comme sous PostgreSQL.
 // `q` : la base, ou la transaction en cours (tout ce qui est lu dans une transaction doit passer par elle).
-const nextPosition = async (groupId, q = db) => (await q.get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM watches WHERE group_id IS NOT DISTINCT FROM ?', [groupId ?? null])).p;
+const nextPosition = async (groupId, q = db, accountId = null) =>
+  (await (accountId === null
+    ? q.get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM watches WHERE group_id IS NOT DISTINCT FROM ?', [groupId ?? null])
+    : q.get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM watches WHERE account_id = ? AND group_id IS NOT DISTINCT FROM ?', [accountId, groupId ?? null]))).p;
 
-export async function createWatch({ name, url, interval, tags = [], config = {}, enabled = true, groupId = null }) {
-  const id = await db.insert('INSERT INTO watches(name, url, interval_min, enabled, tags, config, created_at, next_run, group_id, position) VALUES(?,?,?,?,?,?,?,?,?,?)', [name, url, interval, enabled ? 1 : 0, JSON.stringify(tags), JSON.stringify(normalizeConfig(config)), Date.now(), 0, groupId ?? null, await nextPosition(groupId)]);
+export async function createWatch({ name, url, interval, tags = [], config = {}, enabled = true, groupId = null, accountId = DEFAULT_ACCOUNT_ID }) {
+  const id = await db.insert('INSERT INTO watches(name, url, interval_min, enabled, tags, config, created_at, next_run, group_id, position, account_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)', [name, url, interval, enabled ? 1 : 0, JSON.stringify(tags), JSON.stringify(normalizeConfig(config)), Date.now(), 0, groupId ?? null, await nextPosition(groupId, db, accountId), accountId]);
   return await getWatch(id);
 }
 
@@ -291,7 +321,7 @@ export async function updateWatch(id, p) {
   if (p.nextCms !== undefined) await db.run('UPDATE watches SET next_cms = ? WHERE id = ?', [p.nextCms, id]);
   // Changer un site de groupe le place à la fin du nouveau groupe ; ne pas changer de groupe ne touche pas à son rang.
   if (p.groupId !== undefined && (p.groupId ?? null) !== w.groupId) {
-    await db.run('UPDATE watches SET group_id = ?, position = ? WHERE id = ?', [p.groupId ?? null, await nextPosition(p.groupId), id]);
+    await db.run('UPDATE watches SET group_id = ?, position = ? WHERE id = ?', [p.groupId ?? null, await nextPosition(p.groupId, db, w.accountId), id]);
   }
   return await getWatch(id);
 }
@@ -309,15 +339,20 @@ export const getScreenshot = async (id) => db.get('SELECT * FROM screenshots WHE
 
 /** Nombre et poids (octets, images seules) des captures d'un site. */
 export const screenshotStats = async (watchId) => db.get('SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM screenshots WHERE watch_id = ?', [watchId]);
-/** Idem pour tous les sites. */
-export const screenshotUsage = async () => db.get('SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM screenshots');
+/** Idem pour tous les sites (ceux d'un compte, si `accountId` est donné). */
+export const screenshotUsage = async (accountId = null) =>
+  accountId === null
+    ? db.get('SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM screenshots')
+    : db.get('SELECT COUNT(*) AS count, COALESCE(SUM(s.size), 0) AS bytes FROM screenshots s JOIN watches w ON w.id = s.watch_id WHERE w.account_id = ?', [accountId]);
 
 export const listScreenshots = async (watchId, limit = 120) =>
   await db.all('SELECT id, ts, kind, size, width, height, final_url AS finalUrl, page_title AS title FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?', [watchId, limit]);
 
 /** Dernière capture de chaque site : { [watchId]: { id, ts } }. */
-export const latestScreenshots = async () =>
-  Object.fromEntries((await db.all('SELECT watch_id, id, ts FROM screenshots WHERE id IN (SELECT MAX(id) FROM screenshots GROUP BY watch_id)'))
+export const latestScreenshots = async (accountId = null) =>
+  Object.fromEntries((await (accountId === null
+    ? db.all('SELECT watch_id, id, ts FROM screenshots WHERE id IN (SELECT MAX(id) FROM screenshots GROUP BY watch_id)')
+    : db.all('SELECT watch_id, id, ts FROM screenshots WHERE id IN (SELECT MAX(id) FROM screenshots GROUP BY watch_id) AND watch_id IN (SELECT id FROM watches WHERE account_id = ?)', [accountId])))
     .map((r) => [r.watch_id, { id: r.id, ts: r.ts }]));
 
 /** Captures à supprimer : au-delà de `keep` pour les planifiées, au-delà de `keepOther` pour les manuelles / d'alerte. */
@@ -369,26 +404,33 @@ export class GroupError extends Error {
 // Les réorganisations (suppression de groupe, glisser-déposer) s'exécutent dans db.transaction : tout ou rien.
 // Une organisation à moitié appliquée corromprait l'ordre.
 
-const rowToGroup = (r) => (r ? { id: r.id, name: r.name, color: r.color, position: r.position, collapsed: !!r.collapsed } : null);
+const rowToGroup = (r) => (r ? { id: r.id, name: r.name, color: r.color, position: r.position, collapsed: !!r.collapsed, accountId: r.account_id ?? DEFAULT_ACCOUNT_ID } : null);
 
-export const listGroups = async (q = db) => (await q.all('SELECT * FROM site_groups ORDER BY position, id')).map(rowToGroup);
+/** Groupes d'un compte (tous, si `accountId` est null). `q` : la base, ou la transaction en cours. */
+export const listGroups = async (accountId = null, q = db) =>
+  (await (accountId === null
+    ? q.all('SELECT * FROM site_groups ORDER BY position, id')
+    : q.all('SELECT * FROM site_groups WHERE account_id = ? ORDER BY position, id', [accountId]))).map(rowToGroup);
 export const getGroup = async (id) => rowToGroup(await db.get('SELECT * FROM site_groups WHERE id = ?', [id]));
 
-async function cleanGroupName(name, exceptId = null) {
+/** Le nom d'un groupe est unique DANS son compte : deux comptes peuvent avoir chacun leur groupe « Clients ». */
+async function cleanGroupName(name, exceptId = null, accountId = null) {
   const n = String(name ?? '').replace(/\s+/g, ' ').trim();
   if (!n) throw new GroupError('Le nom du groupe est obligatoire');
   if (n.length > 40) throw new GroupError('Le nom du groupe est limité à 40 caractères');
-  const dup = await db.get('SELECT id FROM site_groups WHERE LOWER(name) = LOWER(?) AND id IS DISTINCT FROM ?', [n, exceptId]);
+  const dup = await (accountId === null
+    ? db.get('SELECT id FROM site_groups WHERE LOWER(name) = LOWER(?) AND id IS DISTINCT FROM ?', [n, exceptId])
+    : db.get('SELECT id FROM site_groups WHERE account_id = ? AND LOWER(name) = LOWER(?) AND id IS DISTINCT FROM ?', [accountId, n, exceptId]));
   if (dup) throw new GroupError(`Un groupe « ${n} » existe déjà`, 409);
   return n;
 }
 
 const cleanColor = (c) => (GROUP_COLORS.includes(c) || /^#[0-9a-f]{6}$/i.test(String(c)) ? String(c).toLowerCase() : GROUP_COLORS[0]);
 
-export async function createGroup({ name, color }) {
-  const n = await cleanGroupName(name);
-  const pos = (await db.get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM site_groups')).p;
-  const id = await db.insert('INSERT INTO site_groups(name, color, position, created_at) VALUES(?,?,?,?)', [n, cleanColor(color), pos, Date.now()]);
+export async function createGroup({ name, color, accountId = DEFAULT_ACCOUNT_ID }) {
+  const n = await cleanGroupName(name, null, accountId);
+  const pos = (await db.get('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM site_groups WHERE account_id = ?', [accountId])).p;
+  const id = await db.insert('INSERT INTO site_groups(name, color, position, created_at, account_id) VALUES(?,?,?,?,?)', [n, cleanColor(color), pos, Date.now(), accountId]);
   return await getGroup(id);
 }
 
@@ -396,7 +438,7 @@ export async function updateGroup(id, patch) {
   const g = await getGroup(id);
   if (!g) return null;
   const next = {
-    name: patch.name !== undefined ? await cleanGroupName(patch.name, id) : g.name,
+    name: patch.name !== undefined ? await cleanGroupName(patch.name, id, g.accountId) : g.name,
     color: patch.color !== undefined ? cleanColor(patch.color) : g.color,
     collapsed: patch.collapsed !== undefined ? !!patch.collapsed : g.collapsed,
   };
@@ -406,20 +448,21 @@ export async function updateGroup(id, patch) {
 
 /** Supprime le groupe ; ses sites ne sont JAMAIS supprimés : ils passent dans « Sans groupe » (à la fin, dans leur ordre). */
 export async function deleteGroup(id) {
-  if (!await getGroup(id)) return false;
+  const group = await getGroup(id);
+  if (!group) return false;
   await db.transaction(async (tx) => {
     const members = await tx.all('SELECT id FROM watches WHERE group_id = ? ORDER BY position, id', [id]);
-    let pos = await nextPosition(null, tx);
+    let pos = await nextPosition(null, tx, group.accountId);
     for (const m of members) await tx.run('UPDATE watches SET group_id = NULL, position = ? WHERE id = ?', [pos++, m.id]);
     await tx.run('DELETE FROM site_groups WHERE id = ?', [id]);
-    await renumberGroups(tx);
+    await renumberGroups(tx, group.accountId);
   });
   return true;
 }
 
-/** Rend les rangs des groupes consécutifs (1, 2, 3…), en conservant l'ordre. */
-async function renumberGroups(q = db) {
-  const groups = await listGroups(q);
+/** Rend les rangs des groupes d'un compte consécutifs (1, 2, 3…), en conservant l'ordre. */
+async function renumberGroups(q = db, accountId = null) {
+  const groups = await listGroups(accountId, q);
   for (const [i, g] of groups.entries()) await q.run('UPDATE site_groups SET position = ? WHERE id = ?', [i + 1, g.id]);
 }
 
@@ -428,11 +471,12 @@ async function renumberGroups(q = db) {
  *   groups : identifiants des groupes dans l'ordre voulu (ceux qui manquent suivent, dans leur ordre actuel)
  *   items  : [{ groupId: id | null, ids: [sites dans l'ordre] }]  (null = « Sans groupe »)
  * Tout est validé AVANT d'écrire quoi que ce soit, puis appliqué dans une transaction.
+ * Avec `accountId`, seuls les groupes et les sites de ce compte sont connus : un identifiant étranger est « inconnu ».
  */
-export async function applyLayout({ groups = [], items = [] }) {
+export async function applyLayout({ groups = [], items = [] }, accountId = null) {
   if (!Array.isArray(groups) || !Array.isArray(items)) throw new GroupError('Organisation invalide');
-  const groupIds = new Set((await db.all('SELECT id FROM site_groups')).map((r) => r.id));
-  const watchIds = new Set((await db.all('SELECT id FROM watches')).map((r) => r.id));
+  const groupIds = new Set((await listGroups(accountId)).map((g) => g.id));
+  const watchIds = new Set((await listWatches(accountId)).map((w) => w.id));
 
   const order = groups.map(Number);
   if (order.some((g) => !groupIds.has(g))) throw new GroupError('Groupe inconnu dans l\'organisation');
@@ -453,7 +497,7 @@ export async function applyLayout({ groups = [], items = [] }) {
   });
 
   await db.transaction(async (tx) => {
-    const rest = (await listGroups(tx)).map((g) => g.id).filter((id) => !order.includes(id));
+    const rest = (await listGroups(accountId, tx)).map((g) => g.id).filter((id) => !order.includes(id));
     for (const [i, id] of [...order, ...rest].entries()) await tx.run('UPDATE site_groups SET position = ? WHERE id = ?', [i + 1, id]);
     for (const { gid, ids } of lists) {
       for (const [i, id] of ids.entries()) await tx.run('UPDATE watches SET group_id = ?, position = ? WHERE id = ?', [gid, i + 1, id]);
@@ -529,10 +573,19 @@ export async function listMaintenance(watchId, now = Date.now()) {
 }
 
 /** Pour le tableau de bord : site → fenêtre en cours. */
-export async function activeMaintenanceMap(now = Date.now()) {
+export async function activeMaintenanceMap(now = Date.now(), accountId = null) {
   const map = new Map();
-  for (const r of await db.all('SELECT * FROM maintenance WHERE start <= ? AND "end" > ? ORDER BY "end"', [now, now])) map.set(r.watch_id, maintRow(r));
+  const rows = accountId === null
+    ? await db.all('SELECT * FROM maintenance WHERE start <= ? AND "end" > ? ORDER BY "end"', [now, now])
+    : await db.all('SELECT * FROM maintenance WHERE start <= ? AND "end" > ? AND watch_id IN (SELECT id FROM watches WHERE account_id = ?) ORDER BY "end"', [now, now, accountId]);
+  for (const r of rows) map.set(r.watch_id, maintRow(r));
   return map;
+}
+
+/** Une fenêtre par son identifiant (pour vérifier à qui elle appartient avant d'agir), ou null. */
+export async function getMaintenance(id) {
+  const r = await db.get('SELECT * FROM maintenance WHERE id = ?', [id]);
+  return r ? maintRow(r) : null;
 }
 
 /** Fenêtres de maintenance qui recoupent [from, to[ (pour le rapport mensuel). */
@@ -574,9 +627,12 @@ export async function markNotified(ids, error = null) {
 // C'est la condition pour brancher plus tard un autre moteur de base derrière les mêmes fonctions.
 
 /** Alertes non lues par site et par gravité : { [siteId]: { critical, warning, info } } (les rétablissements n'y figurent pas). */
-export async function unreadAlertCounts() {
+export async function unreadAlertCounts(accountId = null) {
   const out = {};
-  for (const r of await db.all("SELECT watch_id, severity, COUNT(*) n FROM alerts WHERE read = 0 AND severity IN ('critical','warning','info') GROUP BY watch_id, severity")) {
+  const rows = accountId === null
+    ? await db.all("SELECT watch_id, severity, COUNT(*) n FROM alerts WHERE read = 0 AND severity IN ('critical','warning','info') GROUP BY watch_id, severity")
+    : await db.all("SELECT a.watch_id, a.severity, COUNT(*) n FROM alerts a JOIN watches w ON w.id = a.watch_id WHERE a.read = 0 AND a.severity IN ('critical','warning','info') AND w.account_id = ? GROUP BY a.watch_id, a.severity", [accountId]);
+  for (const r of rows) {
     (out[r.watch_id] ||= { critical: 0, warning: 0, info: 0 })[r.severity] = r.n;
   }
   return out;
@@ -586,20 +642,23 @@ export async function unreadAlertCounts() {
  * Dernière alerte d'échéance du domaine déjà émise, par site : { unread, max }.
  * Sert à retirer le rappel de l'accueil une fois lu ; `max` est la gravité la plus haute déjà émise (3 = critique).
  */
-export async function domainExpiryAlertState() {
+export async function domainExpiryAlertState(accountId = null) {
   const map = new Map();
-  for (const r of await db.all(`
-    SELECT watch_id, MIN(read) = 0 AS unread,
-           MAX(CASE severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END) AS max
-    FROM alerts WHERE type = 'rdap_expiring' GROUP BY watch_id
-  `)) map.set(r.watch_id, { unread: !!r.unread, max: r.max });
+  const rows = await db.all(`
+    SELECT a.watch_id, MIN(a.read) = 0 AS unread,
+           MAX(CASE a.severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END) AS max
+    FROM alerts a ${accountId === null ? '' : 'JOIN watches w ON w.id = a.watch_id'}
+    WHERE a.type = 'rdap_expiring' ${accountId === null ? '' : 'AND w.account_id = ?'} GROUP BY a.watch_id
+  `, accountId === null ? [] : [accountId]);
+  for (const r of rows) map.set(r.watch_id, { unread: !!r.unread, max: r.max });
   return map;
 }
 
-/** Alertes filtrées, les plus récentes d'abord, avec le nom du site. Filtres : watchId, severity, unread, before (id), limit. */
-export async function queryAlerts({ watchId = null, severity = '', unread = false, before = null, limit = 50 } = {}) {
+/** Alertes filtrées, les plus récentes d'abord, avec le nom du site. Filtres : accountId, watchId, severity, unread, before (id), limit. */
+export async function queryAlerts({ accountId = null, watchId = null, severity = '', unread = false, before = null, limit = 50 } = {}) {
   const where = [];
   const args = [];
+  if (accountId !== null) (where.push('w.account_id = ?'), args.push(accountId));
   if (watchId !== null) (where.push('a.watch_id = ?'), args.push(watchId));
   if (severity) (where.push('a.severity = ?'), args.push(severity));
   if (unread) where.push('a.read = 0');
@@ -614,18 +673,24 @@ export const domainAlerts = async (watchId, limit = 100) =>
 /** « Tout est normal » : toutes les alertes d'un site passent en lu. */
 export const markWatchAlertsRead = async (watchId) => db.run('UPDATE alerts SET read = 1 WHERE watch_id = ?', [watchId]);
 
-/** « Tout marquer comme lu » : toutes les alertes de l'installation. */
-export const markEveryAlertRead = async () => db.run('UPDATE alerts SET read = 1');
+/** « Tout marquer comme lu » : toutes les alertes de l'installation (ou celles des sites d'un compte). */
+export const markEveryAlertRead = async (accountId = null) =>
+  accountId === null
+    ? db.run('UPDATE alerts SET read = 1')
+    : db.run('UPDATE alerts SET read = 1 WHERE watch_id IN (SELECT id FROM watches WHERE account_id = ?)', [accountId]);
 
 /**
  * Marque ces alertes comme lues. Retourne les sites qui avaient parmi elles une alerte d'échéance du domaine :
  * l'appelant doit alors mémoriser l'acquittement, comme pour « Tout est normal ».
  */
-export async function markAlertsRead(ids) {
+export async function markAlertsRead(ids, accountId = null) {
   if (!ids.length) return [];
-  for (const id of ids) await db.run('UPDATE alerts SET read = 1 WHERE id = ?', [id]);
+  // Avec un compte, une alerte d'un autre compte est ignorée en silence (comme si elle n'existait pas).
+  const mine = accountId === null ? '' : ' AND watch_id IN (SELECT id FROM watches WHERE account_id = ?)';
+  const extra = accountId === null ? [] : [accountId];
+  for (const id of ids) await db.run(`UPDATE alerts SET read = 1 WHERE id = ?${mine}`, [id, ...extra]);
   const marks = ids.map(() => '?').join(',');
-  return (await db.all(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${marks})`, [...ids])).map((r) => r.watch_id);
+  return (await db.all(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${marks})${mine}`, [...ids, ...extra])).map((r) => r.watch_id);
 }
 
 /** Alertes d'une période (hors rétablissements et récapitulatifs de maintenance), pour le rapport : gravités critique et attention. */
@@ -635,18 +700,24 @@ export const alertsBetween = async (watchId, from, to) =>
 // ───────────── Tableau de bord : statistiques récentes ─────────────
 
 /** Contrôles des dernières 24 h par site : { [siteId]: { uptime (%), avgMs } }. */
-export async function checkStatsSince(since) {
+export async function checkStatsSince(since, accountId = null) {
   const stats = {};
-  for (const r of await db.all('SELECT watch_id, COUNT(*) n, SUM(ok) ok, AVG(CASE WHEN ok = 1 THEN ms END) avg FROM checks WHERE ts > ? GROUP BY watch_id', [since])) {
+  const rows = accountId === null
+    ? await db.all('SELECT watch_id, COUNT(*) n, SUM(ok) ok, AVG(CASE WHEN ok = 1 THEN ms END) avg FROM checks WHERE ts > ? GROUP BY watch_id', [since])
+    : await db.all('SELECT c.watch_id, COUNT(*) n, SUM(c.ok) ok, AVG(CASE WHEN c.ok = 1 THEN c.ms END) avg FROM checks c JOIN watches w ON w.id = c.watch_id WHERE c.ts > ? AND w.account_id = ? GROUP BY c.watch_id', [since, accountId]);
+  for (const r of rows) {
     stats[r.watch_id] = { uptime: r.n ? Math.round((r.ok / r.n) * 1000) / 10 : null, avgMs: r.avg ? Math.round(r.avg) : null };
   }
   return stats;
 }
 
+const listWatchIds = async (accountId) =>
+  accountId === null ? db.all('SELECT id FROM watches') : db.all('SELECT id FROM watches WHERE account_id = ?', [accountId]);
+
 /** Derniers temps de réponse de chaque site (null = échec), du plus ancien au plus récent : { [siteId]: [ms…] }. */
-export async function sparklines(limit = 40) {
+export async function sparklines(limit = 40, accountId = null) {
   const out = {};
-  for (const w of await db.all('SELECT id FROM watches')) {
+  for (const w of await listWatchIds(accountId)) {
     out[w.id] = (await db.all('SELECT ms, ok FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT ?', [w.id, limit])).reverse().map((r) => (r.ok ? r.ms : null));
   }
   return out;

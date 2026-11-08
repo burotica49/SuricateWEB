@@ -3,11 +3,11 @@
 // La version hébergée (PostgreSQL) fait, dans son point d'entrée :
 //
 //     import { configureStore } from '<cœur>/src/store/registry.js';
-//     configureStore({ open: async () => openPostgres(process.env.DATABASE_URL), migrations: [m0100Comptes] });
+//     configureStore({ open: async () => openPostgres(process.env.DATABASE_URL), migrations: [m1000Comptes] });
 //     await import('<cœur>/server.js');   // db.js s'ouvre alors sur l'adaptateur fourni
 //
-// `open` renvoie un adaptateur (contrat : src/store/sqlite.js). `migrations` s'ajoutent à celles du cœur : leurs numéros
-// doivent être supérieurs à ceux du cœur (voir migrate.js), et chacune doit exister pour tous les moteurs utilisés.
+// `open` renvoie un adaptateur (contrat : src/store/sqlite.js). `migrations` s'ajoutent à celles du cœur : numéros à partir de
+// 1000 (le cœur garde les numéros en dessous, sans collision possible), et chacune doit exister pour tous les moteurs utilisés.
 import { openSqlite } from './sqlite.js';
 
 let customOpen = null;

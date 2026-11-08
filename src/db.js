@@ -723,6 +723,131 @@ export function markNotified(ids, error = null) {
   for (const id of ids) st.run(error ? 0 : 1, error, id);
 }
 
+// ───────────── Alertes : lecture et acquittement (API) ─────────────
+//
+// Tout le SQL vit dans ce fichier : server.js, scheduler.js et report.js n'écrivent plus de requêtes.
+// C'est la condition pour brancher plus tard un autre moteur de base derrière les mêmes fonctions.
+
+/** Alertes non lues par site et par gravité : { [siteId]: { critical, warning, info } } (les rétablissements n'y figurent pas). */
+export function unreadAlertCounts() {
+  const out = {};
+  for (const r of db.prepare("SELECT watch_id, severity, COUNT(*) n FROM alerts WHERE read = 0 AND severity IN ('critical','warning','info') GROUP BY watch_id, severity").all()) {
+    (out[r.watch_id] ||= { critical: 0, warning: 0, info: 0 })[r.severity] = r.n;
+  }
+  return out;
+}
+
+/**
+ * Dernière alerte d'échéance du domaine déjà émise, par site : { unread, max }.
+ * Sert à retirer le rappel de l'accueil une fois lu ; `max` est la gravité la plus haute déjà émise (3 = critique).
+ */
+export function domainExpiryAlertState() {
+  const map = new Map();
+  for (const r of db.prepare(`
+    SELECT watch_id, MIN(read) = 0 AS unread,
+           MAX(CASE severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END) AS max
+    FROM alerts WHERE type = 'rdap_expiring' GROUP BY watch_id
+  `).all()) map.set(r.watch_id, { unread: !!r.unread, max: r.max });
+  return map;
+}
+
+/** Alertes filtrées, les plus récentes d'abord, avec le nom du site. Filtres : watchId, severity, unread, before (id), limit. */
+export function queryAlerts({ watchId = null, severity = '', unread = false, before = null, limit = 50 } = {}) {
+  const where = [];
+  const args = [];
+  if (watchId !== null) (where.push('a.watch_id = ?'), args.push(watchId));
+  if (severity) (where.push('a.severity = ?'), args.push(severity));
+  if (unread) where.push('a.read = 0');
+  if (before !== null) (where.push('a.id < ?'), args.push(before));
+  return db
+    .prepare(`SELECT a.*, w.name watch_name FROM alerts a JOIN watches w ON w.id = a.watch_id ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY a.id DESC LIMIT ?`)
+    .all(...args, limit);
+}
+
+/** Alertes liées au domaine (DNS, registre, redirection hors domaine) d'un site, avec le nom du site. */
+export const domainAlerts = (watchId, limit = 100) =>
+  db
+    .prepare("SELECT a.*, w.name watch_name FROM alerts a JOIN watches w ON w.id = a.watch_id WHERE a.watch_id = ? AND (a.type LIKE 'dns%' OR a.type LIKE 'rdap%' OR a.type = 'redirect_domain') ORDER BY a.id DESC LIMIT ?")
+    .all(watchId, limit);
+
+/** « Tout est normal » : toutes les alertes d'un site passent en lu. */
+export const markWatchAlertsRead = (watchId) => db.prepare('UPDATE alerts SET read = 1 WHERE watch_id = ?').run(watchId);
+
+/** « Tout marquer comme lu » : toutes les alertes de l'installation. */
+export const markEveryAlertRead = () => db.prepare('UPDATE alerts SET read = 1').run();
+
+/**
+ * Marque ces alertes comme lues. Retourne les sites qui avaient parmi elles une alerte d'échéance du domaine :
+ * l'appelant doit alors mémoriser l'acquittement, comme pour « Tout est normal ».
+ */
+export function markAlertsRead(ids) {
+  if (!ids.length) return [];
+  const st = db.prepare('UPDATE alerts SET read = 1 WHERE id = ?');
+  for (const id of ids) st.run(id);
+  const marks = ids.map(() => '?').join(',');
+  return db.prepare(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${marks})`).all(...ids).map((r) => r.watch_id);
+}
+
+/** Alertes d'une période (hors rétablissements et récapitulatifs de maintenance), pour le rapport : gravités critique et attention. */
+export const alertsBetween = (watchId, from, to) =>
+  db.prepare("SELECT ts, severity, type, title FROM alerts WHERE watch_id = ? AND ts >= ? AND ts < ? AND severity IN ('critical','warning') AND type != 'maintenance_summary' ORDER BY ts DESC")
+    .all(watchId, from, to);
+
+// ───────────── Tableau de bord : statistiques récentes ─────────────
+
+/** Contrôles des dernières 24 h par site : { [siteId]: { uptime (%), avgMs } }. */
+export function checkStatsSince(since) {
+  const stats = {};
+  for (const r of db.prepare('SELECT watch_id, COUNT(*) n, SUM(ok) ok, AVG(CASE WHEN ok = 1 THEN ms END) avg FROM checks WHERE ts > ? GROUP BY watch_id').all(since)) {
+    stats[r.watch_id] = { uptime: r.n ? Math.round((r.ok / r.n) * 1000) / 10 : null, avgMs: r.avg ? Math.round(r.avg) : null };
+  }
+  return stats;
+}
+
+/** Derniers temps de réponse de chaque site (null = échec), du plus ancien au plus récent : { [siteId]: [ms…] }. */
+export function sparklines(limit = 40) {
+  const out = {};
+  const q = db.prepare('SELECT ms, ok FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT ?');
+  for (const w of db.prepare('SELECT id FROM watches').all()) out[w.id] = q.all(w.id, limit).reverse().map((r) => (r.ok ? r.ms : null));
+  return out;
+}
+
+/** Derniers contrôles d'un site, du plus ancien au plus récent. */
+export const recentChecks = (watchId, limit = 200) =>
+  db.prepare('SELECT id, ts, ok, code, ms, size, error, alerts FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT ?').all(watchId, limit).reverse();
+
+/** Liste des versions enregistrées d'un site (sans le texte), les plus récentes d'abord. */
+export const snapshotHistory = (watchId, limit = 100) =>
+  db.prepare('SELECT id, ts, hash, title, size, meta FROM snapshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?').all(watchId, limit);
+
+// ───────────── Planificateur : échéances ─────────────
+
+/** Sites actifs dont le contrôle est dû, les plus en retard d'abord. */
+export const dueWatchIds = (now, limit = 100) =>
+  db.prepare('SELECT id FROM watches WHERE enabled = 1 AND next_run <= ? ORDER BY next_run LIMIT ?').all(now, limit).map((r) => r.id);
+
+/** Lit la configuration d'une ligne : une configuration illisible écarte le site plutôt que de bloquer tout le passage. */
+function dueRows(rows) {
+  const out = [];
+  for (const { id, config } of rows) {
+    try {
+      out.push({ id, config: normalizeConfig(JSON.parse(config)) });
+    } catch {
+      /* configuration corrompue : le site est ignoré */
+    }
+  }
+  return out;
+}
+
+/** Sites dont le relevé CMS est dû (next_cms > 0 : 0 veut dire « aucun relevé planifié »), avec leur configuration. */
+export const dueCmsWatches = (now) => dueRows(db.prepare('SELECT id, config FROM watches WHERE enabled = 1 AND next_cms > 0 AND next_cms <= ?').all(now));
+
+/** Sites dont la capture d'écran est due, avec leur configuration. */
+export const dueShotWatches = (now) => dueRows(db.prepare('SELECT id, config FROM watches WHERE enabled = 1 AND next_shot <= ?').all(now));
+
+/** Ferme la base proprement à l'arrêt du serveur (le mode WAL est alors replié dans le fichier principal). */
+export const closeDb = () => db.close();
+
 // ───────────── Disponibilité (à la UptimeRobot) ─────────────
 //
 // La disponibilité est calculée en TEMPS, à partir des pannes confirmées (table outages), et non en
@@ -737,6 +862,13 @@ export function closeOutage(id, end) {
   db.prepare('UPDATE outages SET end = ? WHERE id = ? AND end IS NULL').run(end, id);
   return db.prepare('SELECT * FROM outages WHERE id = ?').get(id);
 }
+
+/** Panne en cours du site ({ start, reason }), ou undefined s'il n'y en a pas. */
+export const currentOutage = (watchId) =>
+  db.prepare('SELECT start, reason FROM outages WHERE watch_id = ? AND end IS NULL ORDER BY start DESC LIMIT 1').get(watchId);
+
+/** Fin de la dernière panne terminée (ms), ou null. */
+export const lastOutageEnd = (watchId) => db.prepare('SELECT MAX(end) e FROM outages WHERE watch_id = ?').get(watchId).e ?? null;
 
 export function upsertDaily(watchId, ts, ok, ms) {
   const hasMs = ok && ms != null;

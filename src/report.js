@@ -3,7 +3,7 @@
 // Données (disponibilité, pannes, alertes, mises à jour) → `siteReport()` ; mise en page → `renderReport()` et `renderStatusPage()`.
 // Les fuseaux horaires sont donnés en minutes de décalage avec UTC (+60 pour Paris en hiver), comme pour les barres de disponibilité.
 import {
-  db, DAY_MS, uptimeBetween, uptimeSummary, uptimeBars, outageList, outagesBetween, maintenanceBetween, listMaintenance, responseBetween,
+  DAY_MS, alertsBetween, currentOutage, uptimeBetween, uptimeSummary, uptimeBars, outageList, outagesBetween, maintenanceBetween, listMaintenance, responseBetween,
 } from './db.js';
 import { phpSupport } from './cms-alerts.js';
 import { esc, fmtDuration } from './util.js';
@@ -86,8 +86,7 @@ export function siteReport(w, range, now = Date.now()) {
   out.maintenanceMs = maint.reduce((s, m) => s + overlap(m.start, m.end, from, end), 0);
 
   // Alertes de la période (hors rétablissements et récapitulatifs de maintenance) : titres seulement, jamais le détail technique.
-  const rows = db.prepare("SELECT ts, severity, type, title FROM alerts WHERE watch_id = ? AND ts >= ? AND ts < ? AND severity IN ('critical','warning') AND type != 'maintenance_summary' ORDER BY ts DESC")
-    .all(w.id, from, to);
+  const rows = alertsBetween(w.id, from, to);
   out.alerts = { critical: rows.filter((r) => r.severity === 'critical').length, warning: rows.filter((r) => r.severity === 'warning').length, items: rows.slice(0, 15) };
   out.alerts.total = rows.length;
 
@@ -260,7 +259,7 @@ export function renderReport({ title, sites, range, nav, generatedAt = Date.now(
 
 /** Ce que la page publique montre : disponibilité, pannes, maintenances. Jamais d'alerte de sécurité ni de détail technique. */
 export function statusData(w, tz = 0, now = Date.now()) {
-  const open = db.prepare('SELECT start FROM outages WHERE watch_id = ? AND end IS NULL ORDER BY start DESC LIMIT 1').get(w.id);
+  const open = currentOutage(w.id);
   const maint = listMaintenance(w.id, now);
   const active = maint.find((m) => m.start <= now) || null;
   let state = 'up';

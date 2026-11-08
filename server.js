@@ -7,12 +7,14 @@ import { join, extname, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
-  db, getSettings, saveSettings, listWatches, getWatch, createWatch, updateWatch, deleteWatch,
+  getSettings, saveSettings, listWatches, getWatch, createWatch, updateWatch, deleteWatch,
   getSnapshot, previousSnapshot, snapshotLines, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS,
   uptimeBetween, uptimeSummary, uptimeBars, outageList, responseStats, responseSeries, closeOutage, DAY_MS, UPTIME_PERIODS,
   getScreenshot, listScreenshots, latestScreenshots, screenshotStats, screenshotUsage, SHOTS_DIR, MAX_KEEP,
   listGroups, getGroup, createGroup, updateGroup, deleteGroup, applyLayout, GroupError,
   addMaintenance, listMaintenance, endMaintenance, activeMaintenanceMap, markAlertsReadUpTo, getWatchByStatusToken,
+  unreadAlertCounts, domainExpiryAlertState, checkStatsSince, sparklines, recentChecks, snapshotHistory, currentOutage, lastOutageEnd,
+  queryAlerts, domainAlerts, markWatchAlertsRead, markEveryAlertRead, markAlertsRead, closeDb,
 } from './src/db.js';
 import { enqueue, isRunning, startScheduler } from './src/scheduler.js';
 import { cmsConfigError, pollCms, acceptCmsAdmins } from './src/cms.js';
@@ -232,27 +234,10 @@ function summarize(w, ctx) {
 }
 
 function buildCtx() {
-  const unread = {};
-  for (const r of db.prepare("SELECT watch_id, severity, COUNT(*) n FROM alerts WHERE read = 0 AND severity IN ('critical','warning','info') GROUP BY watch_id, severity").all()) {
-    (unread[r.watch_id] ||= { critical: 0, warning: 0, info: 0 })[r.severity] = r.n;
-  }
-  // Dernière alerte d'échéance déjà émise : sert à la retirer de l'accueil une fois lue.
-  const domainExpiry = new Map();
-  for (const r of db.prepare(`
-    SELECT watch_id, MIN(read) = 0 AS unread,
-           MAX(CASE severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END) AS max
-    FROM alerts WHERE type = 'rdap_expiring' GROUP BY watch_id
-  `).all()) domainExpiry.set(r.watch_id, { unread: !!r.unread, max: r.max });
-  const stats = {};
-  const since = Date.now() - 864e5;
-  for (const r of db.prepare('SELECT watch_id, COUNT(*) n, SUM(ok) ok, AVG(CASE WHEN ok = 1 THEN ms END) avg FROM checks WHERE ts > ? GROUP BY watch_id').all(since)) {
-    stats[r.watch_id] = { uptime: r.n ? Math.round((r.ok / r.n) * 1000) / 10 : null, avgMs: r.avg ? Math.round(r.avg) : null };
-  }
-  const spark = db.prepare('SELECT ms, ok FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT 40');
-  for (const w of db.prepare('SELECT id FROM watches').all()) {
-    (stats[w.id] ||= {}).spark = spark.all(w.id).reverse().map((r) => (r.ok ? r.ms : null));
-  }
-  return { unread, stats, shots: latestScreenshots(), domainExpiry, maint: activeMaintenanceMap() };
+  // Dernière alerte d'échéance déjà émise (domainExpiry) : sert à la retirer de l'accueil une fois lue.
+  const stats = checkStatsSince(Date.now() - 864e5);
+  for (const [id, spark] of Object.entries(sparklines(40))) (stats[id] ||= {}).spark = spark;
+  return { unread: unreadAlertCounts(), stats, shots: latestScreenshots(), domainExpiry: domainExpiryAlertState(), maint: activeMaintenanceMap() };
 }
 
 const alertRow = (r) => ({
@@ -346,7 +331,7 @@ route('POST', '/api/watches', async (ctx) => {
 route('GET', '/api/watches/:id', (ctx) => {
   const w = getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
-  const checks = db.prepare('SELECT id, ts, ok, code, ms, size, error, alerts FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT 200').all(w.id).reverse();
+  const checks = recentChecks(w.id, 200);
   const { state } = w;
   return {
     ...summarize(w, buildCtx()),
@@ -590,8 +575,8 @@ const loadWatch = (ctx) => {
 route('GET', '/api/watches/:id/uptime', (ctx) => {
   const w = loadWatch(ctx);
   const now = Date.now();
-  const open = db.prepare('SELECT start, reason FROM outages WHERE watch_id = ? AND end IS NULL ORDER BY start DESC LIMIT 1').get(w.id);
-  const lastEnd = db.prepare('SELECT MAX(end) e FROM outages WHERE watch_id = ?').get(w.id).e;
+  const open = currentOutage(w.id);
+  const lastEnd = lastOutageEnd(w.id);
   const current = !w.enabled ? { state: 'paused' } : open ? { state: 'down', since: open.start, reason: open.reason } : { state: 'up', since: lastEnd || w.createdAt };
   return {
     current,
@@ -616,9 +601,7 @@ route('GET', '/api/watches/:id/domain', (ctx) => {
   const w = loadWatch(ctx);
   const s = w.state;
   const host = new URL(w.url).hostname;
-  const events = db
-    .prepare("SELECT a.*, w.name watch_name FROM alerts a JOIN watches w ON w.id = a.watch_id WHERE a.watch_id = ? AND (a.type LIKE 'dns%' OR a.type LIKE 'rdap%' OR a.type = 'redirect_domain') ORDER BY a.id DESC LIMIT 100")
-    .all(w.id);
+  const events = domainAlerts(w.id, 100);
   const incidents = Object.entries(s.incidents || {}).filter(([k]) => /^(dns|rdap)/.test(k)).map(([key, i]) => ({ key, ...i }));
   return {
     host, domain: registrable(host), zone: s.dns?.zone || '', mode: w.config.mode,
@@ -629,7 +612,7 @@ route('GET', '/api/watches/:id/domain', (ctx) => {
 
 route('POST', '/api/watches/:id/ack', (ctx) => {
   const id = Number(ctx.params.id);
-  db.prepare('UPDATE alerts SET read = 1 WHERE watch_id = ?').run(id);
+  markWatchAlertsRead(id);
   rememberDomainAck(id);
   bus.emit('event', { type: 'ack', watchId: id });
   return { ok: true };
@@ -637,7 +620,7 @@ route('POST', '/api/watches/:id/ack', (ctx) => {
 
 route('GET', '/api/watches/:id/history', (ctx) => {
   const id = Number(ctx.params.id);
-  const rows = db.prepare('SELECT id, ts, hash, title, size, meta FROM snapshots WHERE watch_id = ? ORDER BY id DESC LIMIT 100').all(id);
+  const rows = snapshotHistory(id, 100);
   return rows.map((r) => ({ id: r.id, ts: r.ts, title: r.title, size: r.size, meta: JSON.parse(r.meta || '{}') }));
 });
 
@@ -678,31 +661,24 @@ route('POST', '/api/test-url', async (ctx) => {
 
 route('GET', '/api/alerts', (ctx) => {
   const q = ctx.query;
-  const where = [];
-  const args = [];
-  if (q.get('watch')) (where.push('a.watch_id = ?'), args.push(Number(q.get('watch'))));
-  if (q.get('severity')) (where.push('a.severity = ?'), args.push(q.get('severity')));
-  if (q.get('unread') === '1') where.push('a.read = 0');
-  if (q.get('before')) (where.push('a.id < ?'), args.push(Number(q.get('before'))));
-  const rows = db
-    .prepare(`SELECT a.*, w.name watch_name FROM alerts a JOIN watches w ON w.id = a.watch_id ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY a.id DESC LIMIT ?`)
-    .all(...args, clamp(q.get('limit'), 1, 200, 50));
+  const rows = queryAlerts({
+    watchId: q.get('watch') ? Number(q.get('watch')) : null,
+    severity: q.get('severity') || '',
+    unread: q.get('unread') === '1',
+    before: q.get('before') ? Number(q.get('before')) : null,
+    limit: clamp(q.get('limit'), 1, 200, 50),
+  });
   return rows.map(alertRow);
 });
 
 route('POST', '/api/alerts/read', (ctx) => {
   const { ids, all } = ctx.body;
   if (all) {
-    db.prepare('UPDATE alerts SET read = 1').run();
+    markEveryAlertRead();
     for (const w of listWatches()) rememberDomainAck(w.id);
   } else if (Array.isArray(ids) && ids.length) {
     const nums = ids.map(Number).filter((n) => Number.isFinite(n));
-    if (nums.length) {
-      const st = db.prepare('UPDATE alerts SET read = 1 WHERE id = ?');
-      nums.forEach((i) => st.run(i));
-      const q = nums.map(() => '?').join(',');
-      for (const r of db.prepare(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${q})`).all(...nums)) rememberDomainAck(r.watch_id);
-    }
+    for (const watchId of markAlertsRead(nums)) rememberDomainAck(watchId);
   }
   bus.emit('event', { type: 'ack' });
   return { ok: true };
@@ -942,7 +918,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     poller?.stop();
     server.close();
-    db.close();
+    closeDb();
     process.exit(0);
   });
 }

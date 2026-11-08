@@ -1,4 +1,4 @@
-import { db, normalizeConfig } from './db.js';
+import { dueWatchIds, dueCmsWatches, dueShotWatches } from './db.js';
 import { runCheck } from './checker.js';
 import { captureWatch, isCapturing, engine } from './screenshot.js';
 import { pollCms } from './cms.js';
@@ -51,33 +51,20 @@ export const isRunning = (id) => running.has(id);
 export function startScheduler() {
   if (DEMO) return null;
   const tick = () => {
-    const due = db.prepare('SELECT id FROM watches WHERE enabled = 1 AND next_run <= ? ORDER BY next_run LIMIT 100').all(Date.now());
-    for (const { id } of due) {
+    for (const id of dueWatchIds(Date.now(), 100)) {
       if (!running.has(id)) enqueue(id);
     }
     // Relevés CMS : fréquence propre (souvent 12 h), deux à la fois pour ne pas ouvrir toutes les boutiques d'un coup.
     let cmsSlots = 2;
-    for (const { id, config } of db.prepare('SELECT id, config FROM watches WHERE enabled = 1 AND next_cms > 0 AND next_cms <= ?').all(Date.now())) {
+    for (const { id, config: cfg } of dueCmsWatches(Date.now())) {
       if (cmsSlots <= 0) break;
-      let cfg;
-      try {
-        cfg = normalizeConfig(JSON.parse(config));
-      } catch {
-        continue;
-      }
       if (cfg.mode === 'domain' || (cfg.cms.type !== 'wordpress' && cfg.cms.type !== 'prestashop')) continue;
       cmsSlots--;
       pollCms(id).catch((e) => console.error(`[cms ${id}]`, e));
     }
     // Captures d'écran : planifiées à part, selon leur propre fréquence (la file interne limite la charge de Chrome).
     if (!engine.available()) return;
-    for (const { id, config } of db.prepare('SELECT id, config FROM watches WHERE enabled = 1 AND next_shot <= ?').all(Date.now())) {
-      let cfg;
-      try {
-        cfg = normalizeConfig(JSON.parse(config));
-      } catch {
-        continue;
-      }
+    for (const { id, config: cfg } of dueShotWatches(Date.now())) {
       if (cfg.mode === 'domain' || !cfg.screenshot.enabled || isCapturing(id)) continue;
       captureWatch(id); // ne lève jamais : l'erreur est enregistrée sur le site
     }

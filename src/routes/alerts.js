@@ -25,7 +25,7 @@ export default function register({ route }) {
       const nums = ids.map(Number).filter((n) => Number.isFinite(n));
       for (const watchId of await ctx.data.markAlertsRead(nums)) await rememberDomainAck(watchId);
     }
-    bus.emit('event', { type: 'ack' });
+    bus.emit('event', { type: 'ack', accountId: ctx.account.id });
     return { ok: true };
   }, { perm: 'alert:ack' });
 

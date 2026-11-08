@@ -52,38 +52,119 @@ export const DEFAULT_KEYWORDS = [
   'viagra', 'cialis', 'payday loan', 'replica watches', 'louis vuitton outlet', 'casino online', 'online casino', 'porn',
 ];
 
-const DEFAULT_SETTINGS = {
+// ───────────── Réglages : deux niveaux ─────────────
+//
+// INSTALLATION (ligne « app » de la table settings) : ce qui ne dépend d'aucun compte — secret de signature des sessions,
+// adresse publique de VigieWeb, rétention des contrôles et des versions (politique de stockage), version des migrations de réglages.
+// COMPTE (ligne « account:<id> ») : ce que chaque compte règle pour lui — Telegram, mots-clés, User-Agent, intervalle par défaut,
+// seuil des mises à jour CMS, nombre de captures conservées. Un compte sans ligne a les valeurs par défaut.
+//
+// Vue fusionnée (installation + compte) : c'est ce que reçoivent les contrôles, les messages et l'interface.
+//   settingsFor(accountId)   asynchrone, pour le compte demandé (les routes, le contrôle d'un site : celui de SON compte)
+//   getSettings()            synchrone, pour l'installation et le compte implicite (1) : démarrage, session, lecteur Telegram du cœur
+// Les écritures passent par saveAccountSettings / saveInstanceSettings (saveSettings répartit une ancienne écriture entre les deux).
+// Limite assumée : le cache du compte implicite et celui de l'installation sont ceux d'un seul processus.
+
+const instanceDefaults = () => ({
+  baseUrl: '',
+  retention: { checks: 10000, snapshots: 300 },
+  sessionSecret: '',
+});
+
+export const accountDefaults = () => ({
   // buttons : boutons « Marquer comme lu » / « Ouvrir dans VigieWeb » sous chaque message.
   telegram: { token: '', chatId: '', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true, buttons: true },
-  baseUrl: '',
   defaultInterval: 15,
   userAgent: 'Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)',
-  builtinKeywords: DEFAULT_KEYWORDS,
-  retention: { checks: 10000, snapshots: 300, screenshots: 168 },
+  builtinKeywords: [...DEFAULT_KEYWORDS],
+  retention: { screenshots: 168 },
   // Une mise à jour du CMS en attente depuis plus de N jours déclenche une alerte.
   cmsAfterDays: 7,
-  sessionSecret: '',
+});
+
+/** Réglages complets (installation + compte) : la rétention des deux niveaux est regroupée sous « retention ». */
+const mergeSettings = (instance, account) => ({ ...instance, ...account, retention: { ...instance.retention, ...account.retention } });
+
+/** Applique une écriture partielle : telegram et retention se fusionnent champ par champ, le reste est remplacé. */
+const applyPatch = (cur, patch) => ({ ...cur, ...patch, ...(cur.telegram || patch.telegram ? { telegram: { ...cur.telegram, ...patch.telegram } } : {}), retention: { ...cur.retention, ...patch.retention } });
+
+const ACCOUNT_TTL_MS = 30e3;
+let instanceCache = null;
+const accountCache = new Map(); // identifiant de compte → { value, at }
+
+const settingsRow = async (key) => {
+  const row = await db.get('SELECT value FROM settings WHERE key = ?', [key]);
+  return row ? json(row.value, {}) : null;
 };
+const persistRow = (key, value) =>
+  db.run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, JSON.stringify(value)]);
 
-// Les réglages sont lus UNE fois au démarrage (loadSettings, plus bas) puis servis depuis la mémoire : getSettings()
-// reste synchrone, car il est appelé partout (contrôles, messages, session) et change rarement. Les écritures passent par
-// saveSettings, qui met la mémoire à jour. Limite assumée : un seul processus ; les réglages par compte (version hébergée)
-// auront leur propre accès asynchrone.
-let settingsCache = null;
-
-export function getSettings() {
-  if (!settingsCache) throw new Error('Réglages non chargés : db.js n\'a pas fini de démarrer');
-  return settingsCache;
+/** Réglages de l'installation (secret de session, adresse publique, rétention des contrôles et versions). */
+export function getInstanceSettings() {
+  if (!instanceCache) throw new Error('Réglages non chargés : db.js n\'a pas fini de démarrer');
+  return instanceCache;
 }
 
+/** Réglages propres à un compte (sans ceux de l'installation). Relus au bout de 30 s : un autre processus a pu les changer. */
+export async function accountSettings(accountId = DEFAULT_ACCOUNT_ID) {
+  const hit = accountCache.get(accountId);
+  if (hit && Date.now() - hit.at < ACCOUNT_TTL_MS) return hit.value;
+  const saved = (await settingsRow(`account:${accountId}`)) ?? {};
+  const value = applyPatch(accountDefaults(), saved);
+  accountCache.set(accountId, { value, at: accountId === DEFAULT_ACCOUNT_ID ? Infinity : Date.now() });
+  return value;
+}
+
+/** Réglages complets d'un compte : les siens et ceux de l'installation. C'est la vue qu'utilisent contrôles, messages et interface. */
+export async function settingsFor(accountId = DEFAULT_ACCOUNT_ID) {
+  return mergeSettings(getInstanceSettings(), await accountSettings(accountId));
+}
+
+/** Vue synchrone pour l'installation et le compte implicite (1) : démarrage, session, lecteur Telegram du cœur. */
+export function getSettings() {
+  const hit = accountCache.get(DEFAULT_ACCOUNT_ID);
+  if (!hit) throw new Error('Réglages non chargés : db.js n\'a pas fini de démarrer');
+  return mergeSettings(getInstanceSettings(), hit.value);
+}
+
+export async function saveAccountSettings(accountId, patch) {
+  const next = applyPatch(await accountSettings(accountId), patch);
+  await persistRow(`account:${accountId}`, next);
+  accountCache.set(accountId, { value: next, at: accountId === DEFAULT_ACCOUNT_ID ? Infinity : Date.now() });
+  return next;
+}
+
+export async function saveInstanceSettings(patch) {
+  const next = applyPatch(getInstanceSettings(), patch);
+  await persistRow('app', next);
+  instanceCache = next;
+  return next;
+}
+
+/** Ancienne écriture (tout dans un seul objet) : répartie entre l'installation et le compte implicite. */
+export async function saveSettings(patch) {
+  const { baseUrl, sessionSecret, settingsVersion, retention = {}, ...account } = patch;
+  const { checks, snapshots, ...accountRetention } = retention;
+  const instance = {};
+  for (const [k, v] of Object.entries({ baseUrl, sessionSecret, settingsVersion })) if (v !== undefined) instance[k] = v;
+  if (checks !== undefined || snapshots !== undefined) instance.retention = { ...(checks !== undefined ? { checks } : {}), ...(snapshots !== undefined ? { snapshots } : {}) };
+  if (Object.keys(instance).length) await saveInstanceSettings(instance);
+  if (Object.keys(account).length || Object.keys(accountRetention).length) await saveAccountSettings(DEFAULT_ACCOUNT_ID, { ...account, ...(Object.keys(accountRetention).length ? { retention: accountRetention } : {}) });
+  return getSettings();
+}
+
+/**
+ * Lecture au démarrage. Les anciennes versions stockaient TOUT dans la ligne « app » : on rejoue d'abord les migrations
+ * d'origine sur cet objet complet (v2 à v5), puis la v6 sépare les réglages du compte implicite dans « account:1 ».
+ */
 async function loadSettings() {
-  const row = await db.get("SELECT value FROM settings WHERE key = 'app'");
-  const saved = row ? json(row.value, {}) : {};
+  const saved = (await settingsRow('app')) ?? {};
+  const legacy = { ...instanceDefaults(), ...accountDefaults() };
   const s = {
-    ...DEFAULT_SETTINGS,
+    ...legacy,
     ...saved,
-    telegram: { ...DEFAULT_SETTINGS.telegram, ...saved.telegram },
-    retention: { ...DEFAULT_SETTINGS.retention, ...saved.retention },
+    telegram: { ...legacy.telegram, ...saved.telegram },
+    retention: { ...instanceDefaults().retention, ...accountDefaults().retention, ...saved.retention },
   };
   let dirty = false;
   if (!s.sessionSecret) {
@@ -107,25 +188,24 @@ async function loadSettings() {
     // v5 : le produit s'appelle VigieWeb. Le User-Agent par défaut déjà copié en base suit, mais un User-Agent
     // personnalisé n'est jamais touché. (Chaîne volontairement coupée : un futur renommage global ne doit pas la casser.)
     const oldDefault = ['Mozilla/5.0 (compatible; ', 'Vigie', '/1.0; surveillance de site)'].join('');
-    if (s.userAgent === oldDefault) s.userAgent = DEFAULT_SETTINGS.userAgent;
-    s.settingsVersion = 5;
+    if (s.userAgent === oldDefault) s.userAgent = accountDefaults().userAgent;
+  }
+  if (version < 6) {
+    // v6 : les réglages du compte implicite quittent la ligne de l'installation pour « account:1 ».
+    await persistRow(`account:${DEFAULT_ACCOUNT_ID}`, {
+      telegram: s.telegram, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
+      retention: { screenshots: s.retention.screenshots }, cmsAfterDays: s.cmsAfterDays,
+    });
     dirty = true;
   }
-  if (dirty) await persistSettings(s);
-  settingsCache = s;
-  return s;
-}
-
-async function persistSettings(s) {
-  await db.run("INSERT INTO settings(key, value) VALUES('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [JSON.stringify(s)]);
-}
-
-export async function saveSettings(patch) {
-  const cur = getSettings();
-  const next = { ...cur, ...patch, telegram: { ...cur.telegram, ...patch.telegram }, retention: { ...cur.retention, ...patch.retention } };
-  await persistSettings(next);
-  settingsCache = next;
-  return next;
+  instanceCache = {
+    baseUrl: s.baseUrl,
+    retention: { checks: s.retention.checks, snapshots: s.retention.snapshots },
+    sessionSecret: s.sessionSecret,
+    settingsVersion: 6,
+  };
+  if (dirty || version < 6) await persistRow('app', instanceCache);
+  await accountSettings(DEFAULT_ACCOUNT_ID); // met en cache le compte implicite
 }
 
 await loadSettings();
@@ -290,6 +370,12 @@ export async function statusTokenInUse(token, exceptId = null) {
     if (r.id !== exceptId && rowToWatch(r).config.statusPage.token === token) return true;
   }
   return false;
+}
+
+/** Compte propriétaire d'un site, ou null s'il n'existe pas (le flux temps réel s'en sert pour router les événements). */
+export async function watchAccountId(id) {
+  const r = await db.get('SELECT account_id FROM watches WHERE id = ?', [id]);
+  return r ? r.account_id : null;
 }
 
 export const listWatches = async (accountId = null) =>
@@ -893,7 +979,7 @@ export async function prune(watchId) {
   await db.run('DELETE FROM outages WHERE watch_id = ? AND "end" IS NOT NULL AND "end" < ?', [watchId, cutoff]);
   await db.run('DELETE FROM daily_stats WHERE watch_id = ? AND day < ?', [watchId, Math.floor(cutoff / DAY_MS)]);
   await db.run('DELETE FROM maintenance WHERE watch_id = ? AND "end" < ?', [watchId, Date.now() - 90 * DAY_MS]);
-  const { checks, snapshots } = getSettings().retention;
+  const { checks, snapshots } = getInstanceSettings().retention;
   await db.run('DELETE FROM checks WHERE watch_id = ? AND id NOT IN (SELECT id FROM checks WHERE watch_id = ? ORDER BY id DESC LIMIT ?)', [watchId, watchId, checks]);
   await db.run('DELETE FROM snapshots WHERE watch_id = ? AND id NOT IN (SELECT id FROM snapshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?)', [watchId, watchId, snapshots]);
 }

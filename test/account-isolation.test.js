@@ -15,6 +15,7 @@ const dbm = await import('../src/db.js');
 const { createApp } = await import('../src/app.js');
 const { isRunning } = await import('../src/scheduler.js');
 const { scopedData } = await import('../src/scoped.js');
+const { bus } = await import('../src/events.js');
 
 const A = 10;
 const B = 20;
@@ -231,6 +232,51 @@ test('compte implicite : le cœur (identifiants du .env) travaille dans le compt
   } finally {
     await core.stop();
   }
+});
+
+// ───────────── Flux temps réel ─────────────
+
+/** Ouvre le flux d'événements d'un utilisateur ; stop() le ferme et renvoie les événements reçus, dans l'ordre. */
+async function listen(who) {
+  const ctrl = new AbortController();
+  const res = await fetch(`${base}/api/events`, { headers: { 'x-user': who }, signal: ctrl.signal });
+  assert.equal(res.status, 200);
+  const reader = res.body.getReader();
+  let text = '';
+  const reading = (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += new TextDecoder().decode(value);
+      }
+    } catch { /* flux fermé */ }
+  })();
+  return {
+    stop: async () => {
+      await new Promise((r) => setTimeout(r, 100)); // laisse arriver les derniers événements (recherche du compte asynchrone)
+      ctrl.abort();
+      await reading;
+      return [...text.matchAll(/^data: (.*)$/gm)].map((m) => JSON.parse(m[1]));
+    },
+  };
+}
+
+test('temps réel : chaque utilisateur ne reçoit que les événements de SON compte, dans l\'ordre', async () => {
+  const bobSite = (await dbm.listWatches(B))[0].id;
+  const [alice, carol, bob] = [await listen('alice'), await listen('carol'), await listen('bob')];
+  await new Promise((r) => setTimeout(r, 50));
+  bus.emit('event', { type: 'running', watchId: site.id });
+  bus.emit('event', { type: 'layout', accountId: A });
+  bus.emit('event', { type: 'ack', accountId: B });
+  bus.emit('event', { type: 'check', watchId: bobSite, alerts: 0 });
+  bus.emit('event', { type: 'check', watchId: site.id, alerts: 0 });
+  bus.emit('event', { type: 'idle', watchId: 987654321 }); // site inconnu : transmis à personne
+  bus.emit('event', { type: 'sans-compte' }); // ni compte ni site : transmis à personne
+  const got = async (l) => (await l.stop()).map((e) => e.type);
+  assert.deepEqual(await got(alice), ['running', 'layout', 'check'], 'compte A (alice)');
+  assert.deepEqual(await got(carol), ['running', 'layout', 'check'], 'compte A (carol, autre utilisateur du même compte)');
+  assert.deepEqual(await got(bob), ['ack', 'check'], 'compte B');
 });
 
 // ───────────── Garde statique ─────────────

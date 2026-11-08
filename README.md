@@ -531,6 +531,7 @@ src/pages.js         pages supplémentaires d'un site : adresse résolue (même 
 src/report.js        rapport mensuel (par site ou groupe) et page de statut publique : calculs et mise en page HTML
 src/zip.js           archive ZIP sans compression, pour télécharger les plugins
 src/scoped.js        accès aux données limité à un compte (ctx.data) : c'est par là que les routes lisent et écrivent
+                     (réglages : db.js, deux niveaux — installation et compte)
 src/db.js            sites, groupes, contrôles, versions (gzip), alertes, réglages : tout le SQL de l'application, en SQL portable, fonctions asynchrones
 src/store/sqlite.js  adaptateur de base (SQLite) : la seule porte d'accès à la base, même contrat pour tout moteur
 src/store/migrate.js migrations de schéma numérotées (src/store/migrations/), une version par moteur (SQLite, PostgreSQL)
@@ -569,6 +570,8 @@ Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'e
 | `capabilities` | ce que `GET /api/capabilities` annonce à l'interface |
 
 **Comptes.** Chaque site et chaque groupe appartient à un compte (colonne `account_id`) ; le cœur n'en a qu'un, le compte 1. Les routes n'accèdent aux données que par `ctx.data` (`src/scoped.js`) : un compte ne voit, ne modifie ni ne supprime que les siens, et une ressource d'un autre compte répond « introuvable » (404), jamais « interdit ». Le fournisseur `auth` doit donner un `account.id` entier ≥ 1. `test/account-isolation.test.js` essaie chaque route à paramètre avec les identifiants d'un autre compte, et échoue si une nouvelle route n'y est pas ajoutée.
+
+**Réglages à deux niveaux.** Ceux de l'**installation** (secret de session, adresse publique, rétention des contrôles et des versions) et ceux du **compte** (Telegram, mots-clés, User-Agent, intervalle par défaut, seuil des mises à jour CMS, conservation des captures). Chaque contrôle, message et relevé CMS utilise les réglages du compte propriétaire du site (`settingsFor(compte)`). Modifier l'adresse publique demande le droit `instance:write`, accordé par défaut. Le flux temps réel (`/api/events`) ne transmet à chaque utilisateur que les événements de son compte. Tests : `test/account-settings.test.js` et `test/account-isolation.test.js`.
 
 Le moteur de base se remplace avant le premier import de `src/db.js` (`configureStore` dans `src/store/registry.js`) : un adaptateur qui respecte le contrat de `src/store/sqlite.js`, vérifiable avec `test-support/adapter-contract.js`, et ses propres migrations. Les tests `test/app-extensions.test.js` illustrent chaque point d'extension.
 

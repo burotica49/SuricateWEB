@@ -2,7 +2,7 @@
 import { HttpError } from '../http.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { listScreenshots, screenshotStats, SHOTS_DIR } from '../db.js';
+import { listScreenshots, screenshotStats, settingsFor, SHOTS_DIR } from '../db.js';
 import { captureWatch, isCapturing, engine, shotLimits, NO_CHROME } from '../screenshot.js';
 import { clamp } from '../util.js';
 import { loadWatch } from './shared.js';
@@ -14,7 +14,7 @@ export default function register({ route }) {
       available: engine.available(),
       enabled: w.config.screenshot.enabled && w.config.mode !== 'domain',
       interval: w.config.screenshot.interval,
-      ...shotLimits(w),
+      ...shotLimits(w, await settingsFor(ctx.account.id)),
       ...(await screenshotStats(w.id)),
       nextShot: w.nextShot,
       error: w.shotError,

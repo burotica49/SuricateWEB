@@ -50,12 +50,12 @@ test('configuration : limite 0 = réglage général, valeurs bornées', () => {
 
 test('limites : réglage du site, sinon réglage général ; quota des manuelles = même nombre, au plus 100', async () => {
   await dbm.saveSettings({ retention: { screenshots: 168 } });
-  assert.deepEqual(shots.shotLimits(await mk('Général')), { keep: 168, keepOther: 100 });
-  assert.deepEqual(shots.shotLimits(await mk('Propre', { keep: 24 })), { keep: 24, keepOther: 24 });
-  assert.deepEqual(shots.shotLimits(await mk('Grand', { keep: 1000 })), { keep: 1000, keepOther: 100 });
+  assert.deepEqual(shots.shotLimits(await mk('Général'), await dbm.settingsFor(1)), { keep: 168, keepOther: 100 });
+  assert.deepEqual(shots.shotLimits(await mk('Propre', { keep: 24 }), await dbm.settingsFor(1)), { keep: 24, keepOther: 24 });
+  assert.deepEqual(shots.shotLimits(await mk('Grand', { keep: 1000 }), await dbm.settingsFor(1)), { keep: 1000, keepOther: 100 });
   await dbm.saveSettings({ retention: { screenshots: 50 } });
-  assert.deepEqual(shots.shotLimits(await mk('Autre général')), { keep: 50, keepOther: 50 }, 'le réglage général suit');
-  assert.deepEqual(shots.shotLimits(await mk('Propre 2', { keep: 24 })), { keep: 24, keepOther: 24 }, 'le réglage du site l’emporte');
+  assert.deepEqual(shots.shotLimits(await mk('Autre général'), await dbm.settingsFor(1)), { keep: 50, keepOther: 50 }, 'le réglage général suit');
+  assert.deepEqual(shots.shotLimits(await mk('Propre 2', { keep: 24 }), await dbm.settingsFor(1)), { keep: 24, keepOther: 24 }, 'le réglage du site l’emporte');
   await dbm.saveSettings({ retention: { screenshots: 168 } });
 });
 

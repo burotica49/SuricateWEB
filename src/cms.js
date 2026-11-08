@@ -1,5 +1,5 @@
 // Relevé des versions PHP / CMS. VigieWeb appelle le plugin du site (le plugin n'appelle jamais VigieWeb).
-import { getWatch, getSettings, setCmsReport, updateWatch, wakeWatch } from './db.js';
+import { getWatch, settingsFor, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
 import { carrySince, carryAdmins, carryHistory, acceptAdmins } from './cms-alerts.js';
 
@@ -174,7 +174,7 @@ async function readLimited(res) {
   return Buffer.concat(chunks);
 }
 
-async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFound } = {}) {
+async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFound, userAgent } = {}) {
   const started = new URL(target);
   let cur = target;
   for (let hop = 0; hop <= 4; hop++) {
@@ -182,7 +182,7 @@ async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFo
       authorization: `Bearer ${token}`,
       'x-vigie-token': token,
       accept: 'application/json',
-      'user-agent': getSettings().userAgent,
+      'user-agent': userAgent,
     };
     if (refresh) headers['x-vigie-refresh'] = '1';
     const res = await fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(timeoutS * 1000) });
@@ -238,13 +238,15 @@ export async function pollCms(id, { refresh = false } = {}) {
     if (!cms.token) throw new Error('Jeton manquant : copiez-le dans le plugin.');
     const target = cmsEndpoint(w.url, cms);
     if (!target) throw new Error('Adresse du site invalide pour le relevé CMS');
-    const text = await fetchReport(target, cms.token, refresh);
+    const { userAgent } = await settingsFor(w.accountId); // le User-Agent du compte propriétaire du site
+    const text = await fetchReport(target, cms.token, refresh, { userAgent });
     report = parseCmsReport(text, cms.type);
     if (cms.security !== false) {
       // Relevé séparé : un plugin sans cette route (ancienne version) ne doit pas faire échouer le relevé des versions.
       try {
         const sum = await fetchReport(cmsEndpoint(w.url, cms, 'integrity'), cms.token, refresh, {
           timeoutS: INTEGRITY_TIMEOUT_S,
+          userAgent,
           notFound: `${cms.type === 'prestashop' ? 'Module' : 'Plugin'} trop ancien : mettez-le à jour pour contrôler l'intégrité des fichiers.`,
         });
         integrity = parseIntegrityReport(sum, cms.type);

@@ -2,7 +2,7 @@
 // Elles reçoivent `ctx` (utilisateur, application) quand elles en ont besoin : rien n'est lu dans l'environnement ici.
 import { HttpError } from '../http.js';
 import { randomBytes } from 'node:crypto';
-import { getSettings, statusTokenInUse, getWatch, updateWatch, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS, uptimeBetween, DAY_MS } from '../db.js';
+import { settingsFor, statusTokenInUse, getWatch, updateWatch, normalizeConfig, defaultConfig, DEFAULT_KEYWORDS, uptimeBetween, DAY_MS } from '../db.js';
 import { isRunning } from '../scheduler.js';
 import { cmsConfigError } from '../cms.js';
 import { resolvePage } from '../pages.js';
@@ -146,7 +146,7 @@ export const maskToken = (t) => (t ? t.slice(0, 4) + '••••••••' 
 
 /** Réglages tels que l'interface les voit (jeton Telegram masqué). `ctx` apporte l'utilisateur connecté et les infos de l'application. */
 export async function publicSettings(ctx) {
-  const s = getSettings();
+  const s = await settingsFor(ctx.account.id); // installation + réglages du compte
   return {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
@@ -161,7 +161,7 @@ export async function publicSettings(ctx) {
  * s'appliquent : un intervalle plus court est ramené au minimum autorisé, jamais refusé. Un groupe d'un autre compte est « inconnu ».
  */
 export async function watchInput(ctx, body, existing) {
-  const s = getSettings();
+  const s = await settingsFor(ctx.account.id);
   const limits = await ctx.limits();
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
   if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');

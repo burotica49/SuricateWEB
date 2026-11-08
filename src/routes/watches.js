@@ -1,5 +1,5 @@
 // Sites surveillés : liste, création, détail, modification, suppression, pause, contrôle immédiat, acquittement, test d'adresse.
-import { getSettings, updateWatch, deleteWatch, normalizeConfig, closeOutage, listMaintenance, recentChecks, markWatchAlertsRead } from '../db.js';
+import { settingsFor, updateWatch, deleteWatch, normalizeConfig, closeOutage, listMaintenance, recentChecks, markWatchAlertsRead } from '../db.js';
 import { enqueue } from '../scheduler.js';
 import { resolvePage } from '../pages.js';
 import { phpSupport } from '../cms-alerts.js';
@@ -109,7 +109,7 @@ export default function register({ route }) {
 
   route('POST', '/api/test-url', async (ctx) => {
     const url = normalizeUrl(ctx.body.url);
-    const s = getSettings();
+    const s = await settingsFor(ctx.account.id);
     const cfg = normalizeConfig({ timeoutS: 12 });
     try {
       const p = await fetchPage(url, cfg, s);

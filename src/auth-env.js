@@ -16,7 +16,7 @@ const SESSION_DAYS = 30;
 
 /**
  * @param creds  { user, password } lus par readCredentials()
- * @param getSettings  donne le secret de signature des sessions (réglages de l'installation)
+ * @param getSettings  donne { sessionSecret } : le secret de signature des sessions, propre à l'installation
  * @param trustProxy  true derrière un reverse proxy de confiance : cookie « Secure » et vraie IP du client
  */
 export function createEnvAuth({ creds, getSettings, trustProxy = false }) {

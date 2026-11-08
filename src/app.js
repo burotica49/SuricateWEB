@@ -26,7 +26,7 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSettings, markAlertsReadUpTo, GroupError } from './db.js';
+import { getSettings, getInstanceSettings, markAlertsReadUpTo, GroupError } from './db.js';
 import { startScheduler } from './scheduler.js';
 import { startTelegramPoller } from './telegram-poll.js';
 import { configureExtensions } from './extensions.js';
@@ -57,6 +57,7 @@ const CORE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  * site:read · site:create · site:update · site:delete · site:check (contrôle, capture, relevé CMS à la demande) · site:ack
  * maintenance:write · group:read · group:write · alert:read · alert:ack · settings:read · settings:write
  * data:export · data:import · report:read · plugin:download
+ * instance:write — modifier un réglage de l'INSTALLATION (adresse publique) : à refuser aux comptes clients de la version hébergée
  */
 const allowAll = () => true;
 const noLimits = { check: () => {}, limits: () => ({}) };
@@ -89,7 +90,7 @@ export function createApp({
   if (!auth) {
     const creds = readCredentials(env);
     if (creds.error) throw new Error(creds.error);
-    auth = createEnvAuth({ creds, getSettings, trustProxy });
+    auth = createEnvAuth({ creds, getSettings: getInstanceSettings, trustProxy });
   }
   configureExtensions({ notifier, scheduler });
 

@@ -11,7 +11,7 @@
 import dnsP from 'node:dns/promises';
 import tls from 'node:tls';
 import {
-  getWatch, getSettings, saveRun, insertSnapshot, latestSnapshot, snapshotLines, insertCheck, insertAlert, markNotified,
+  getWatch, settingsFor, saveRun, insertSnapshot, latestSnapshot, snapshotLines, insertCheck, insertAlert, markNotified,
   prune, openOutage, closeOutage, upsertDaily, activeMaintenance, pendingMaintenanceAlerts, markMaintenanceSummarized,
 } from './db.js';
 import { cmsIncidents, cmsIncidentGroup } from './cms-alerts.js';
@@ -345,7 +345,7 @@ const RISKY_STATUS = /pending transfer|hold|redemption|pending delete|pending re
 export async function runCheck(id) {
   const w = await getWatch(id);
   if (!w) return null;
-  const settings = getSettings();
+  const settings = await settingsFor(w.accountId); // installation + réglages du compte du site
   const cfg = w.config;
   const c = cfg.checks;
   const domainOnly = cfg.mode === 'domain';

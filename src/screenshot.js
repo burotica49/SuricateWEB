@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getWatch, listWatches, getSettings, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
+import { getWatch, listWatches, settingsFor, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
 import { bus } from './events.js';
 
 const CANDIDATES = [
@@ -386,15 +386,18 @@ async function doCapture(id, kind) {
 /**
  * Limites de conservation d'un site : `keep` captures planifiées (réglage du site, sinon réglage général), et le même nombre,
  * plafonné à 100, de captures manuelles ou d'alerte, qui ont leur quota et ne sont jamais écrasées par les planifiées.
+ * `settings` : les réglages du compte du site (settingsFor), dont le réglage général de conservation.
  */
-export function shotLimits(watch) {
-  const keep = watch?.config?.screenshot?.keep || getSettings().retention.screenshots;
+export function shotLimits(watch, settings) {
+  const keep = watch?.config?.screenshot?.keep || settings.retention.screenshots;
   return { keep, keepOther: Math.max(1, Math.min(100, keep)) };
 }
 
 /** Supprime les captures (lignes et fichiers) au-delà des limites du site. Retourne le nombre de captures supprimées. */
 export async function pruneWatchShots(id) {
-  const { keep, keepOther } = shotLimits(await getWatch(id));
+  const w = await getWatch(id);
+  if (!w) return 0;
+  const { keep, keepOther } = shotLimits(w, await settingsFor(w.accountId));
   const rows = await screenshotsToPrune(id, keep, keepOther);
   if (!rows.length) return 0;
   await deleteScreenshotRows(rows.map((r) => r.id));
@@ -402,10 +405,10 @@ export async function pruneWatchShots(id) {
   return rows.length;
 }
 
-/** Applique les limites à tous les sites (après un changement du réglage général). */
-export async function pruneAllShots() {
+/** Applique les limites aux sites d'un compte, ou à tous (après un changement du réglage général de conservation). */
+export async function pruneAllShots(accountId = null) {
   let n = 0;
-  for (const w of await listWatches()) n += await pruneWatchShots(w.id);
+  for (const w of await listWatches(accountId)) n += await pruneWatchShots(w.id);
   return n;
 }
 

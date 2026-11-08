@@ -222,7 +222,7 @@ function sameSite(from, to) {
 export async function pollCms(id, { refresh = false } = {}) {
   if (process.env.VIGIE_DEMO === '1') return { ok: false, error: 'Mode démo : les contrôles sont désactivés (données fictives).', cms: null };
   if (running.has(id)) return { ok: false, error: 'Relevé déjà en cours', cms: null };
-  const w = getWatch(id);
+  const w = await getWatch(id);
   if (!w) return { ok: false, error: 'Site introuvable', cms: null };
   const cms = w.config.cms;
   if (w.config.mode === 'domain' || (cms.type !== 'wordpress' && cms.type !== 'prestashop')) {
@@ -258,7 +258,7 @@ export async function pollCms(id, { refresh = false } = {}) {
   } finally {
     running.delete(id);
   }
-  const current = getWatch(id);
+  const current = await getWatch(id);
   if (!current) return { ok: !error, error, cms: report };
   const prev = current.state.cms && typeof current.state.cms === 'object' ? current.state.cms : {};
   const now = Date.now();
@@ -276,15 +276,15 @@ export async function pollCms(id, { refresh = false } = {}) {
     ? { ...report, checkedAt: now, ok: true, error: null }
     : { ...prev, checkedAt: now, ok: false, error };
   const nextCms = now + (report ? interval : Math.min(interval, RETRY_MS));
-  setCmsReport(id, saved, nextCms);
+  await setCmsReport(id, saved, nextCms);
   // Les incidents (mises à jour, intégrité, administrateurs) sont évalués par le contrôle du site : on le lance sans attendre.
-  if (report) wakeWatch(id);
+  if (report) await wakeWatch(id);
   return { ok: !!report, error, cms: saved };
 }
 
 /** « Je connais ces comptes » : l'état actuel des administrateurs devient la référence, l'incident disparaît sans message « rétabli ». */
-export function acceptCmsAdmins(id) {
-  const w = getWatch(id);
+export async function acceptCmsAdmins(id) {
+  const w = await getWatch(id);
   const admins = w?.state.cms?.admins;
   if (!admins) return null;
   const state = { ...w.state, cms: { ...w.state.cms, admins: acceptAdmins(admins) } };
@@ -292,5 +292,5 @@ export function acceptCmsAdmins(id) {
     state.incidents = { ...state.incidents };
     delete state.incidents.cms_admins;
   }
-  return updateWatch(id, { state });
+  return await updateWatch(id, { state });
 }

@@ -102,6 +102,8 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
   const { diffLines } = await import('../../src/diff.js');
   const { sha1, fmtDuration } = await import('../../src/util.js');
   const { db } = dbm;
+  // Ancienne écriture `stmt(sql).run(...)` : l'adaptateur de base n'a que run / get / all (sql, paramètres).
+  const stmt = (sql) => ({ run: (...params) => db.run(sql, params) });
   const now = Date.now();
   const REPORT = Object.fromEntries(Object.entries(CMS_REPORTS).map(([slug, r]) => [slug, withSince(r, now)]));
   // Moment où chaque incident CMS a franchi son seuil (le vrai code recalcule titre et détail à cet instant).
@@ -120,24 +122,27 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
   }
 
   // ── Réglages : Telegram « configuré » avec un faux jeton (jamais utilisé : aucun envoi en mode démo) ──
-  dbm.saveSettings({
+  await dbm.saveSettings({
     telegram: { token: `123456789:${'DEMO'.padEnd(35, '0')}`, chatId: '987654321', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true },
     baseUrl: 'https://vigieweb.exemple-societe.example',
   });
 
   // ── Groupes et sites ──
-  const gid = GROUPS.map(([name, color]) => dbm.createGroup({ name, color }).id);
+  const gid = [];
+  for (const [name, color] of GROUPS) gid.push((await dbm.createGroup({ name, color })).id); // dans l'ordre : l'ordre des groupes est celui de création
   const watches = [];
-  const addWatch = (def, extra) => {
-    const w = dbm.createWatch({ name: def.name, url: def.url, interval: 15, tags: def.tags ?? [], groupId: def.group == null ? null : gid[def.group], config: def.config ?? {} });
+  const addWatch = async (def, extra) => {
+    const w = await dbm.createWatch({ name: def.name, url: def.url, interval: 15, tags: def.tags ?? [], groupId: def.group == null ? null : gid[def.group], config: def.config ?? {} });
     watches.push({ ...def, id: w.id, ...extra });
     return w.id;
   };
-  DEFS.forEach((d, i) => addWatch({ ...d, name: SITES[d.slug].name, url: `https://${SITES[d.slug].domain}/`, tags: d.slug === 'dupont' ? ['client', 'wordpress'] : [],
-    config: d.cms ? { cms: { type: d.cms, token: DEMO_CMS_TOKEN, path: '', intervalMin: 720 } } : {} }, { i }));
-  addWatch({ slug: 'domain', name: 'exemple-societe.example', url: 'https://exemple-societe.example/', group: null, config: { mode: 'domain' }, story: 'domain', registrar: 'Gandi SAS', dnssec: true, ms: 0 }, { i: 7 });
+  for (const [i, d] of DEFS.entries()) {
+    await addWatch({ ...d, name: SITES[d.slug].name, url: `https://${SITES[d.slug].domain}/`, tags: d.slug === 'dupont' ? ['client', 'wordpress'] : [],
+      config: d.cms ? { cms: { type: d.cms, token: DEMO_CMS_TOKEN, path: '', intervalMin: 720 } } : {} }, { i });
+  }
+  await addWatch({ slug: 'domain', name: 'exemple-societe.example', url: 'https://exemple-societe.example/', group: null, config: { mode: 'domain' }, story: 'domain', registrar: 'Gandi SAS', dnssec: true, ms: 0 }, { i: 7 });
 
-  db.exec('BEGIN');
+  await db.exec('BEGIN');
   const outageIds = {};
   const alerts = [];
   const alert = (w, ago, sev, type, title, detail = '', o = {}) => alerts.push({ w, ts: now - ago, sev, type, title, detail, ...o });
@@ -152,35 +157,35 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
 
     // Pannes : ce sont elles qui fondent le calcul de disponibilité.
     for (const o of outs) {
-      const id = dbm.openOutage(w.id, o.s, o.reason, o.code);
-      if (o.e) dbm.closeOutage(id, o.e);
+      const id = await dbm.openOutage(w.id, o.s, o.reason, o.code);
+      if (o.e) await dbm.closeOutage(id, o.e);
       else outageIds[w.id] = id;
     }
 
     // Contrôles des 7 derniers jours (courbe, frise, disponibilité 24 h) : un toutes les 15 min, le plus récent il y a 2 min.
-    const insCheck = db.prepare('INSERT INTO checks(watch_id, ts, ok, code, ms, size, hash, error, alerts) VALUES(?,?,?,?,?,?,?,?,0)');
+    const insCheck = stmt('INSERT INTO checks(watch_id, ts, ok, code, ms, size, hash, error, alerts) VALUES(?,?,?,?,?,?,?,?,0)');
     let last = null;
     if (w.slug !== 'domain') {
       // Du plus ancien au plus récent : l'application ordonne les mesures par identifiant.
       for (let k = Math.floor((7 * D) / every); k >= 0; k--) {
         const ts = now - 2 * MIN - k * every;
         const out = outs.find((o) => ts >= o.s && ts < (o.e ?? Infinity));
-        if (out) insCheck.run(w.id, ts, 0, out.code, null, null, null, out.reason);
+        if (out) await insCheck.run(w.id, ts, 0, out.code, null, null, null, out.reason);
         else {
           const hour = new Date(ts).getHours();
           let ms = w.ms * (1 + 0.22 * Math.sin(((hour - 15) / 24) * 2 * Math.PI)) * (1 + (r() - 0.5) * 0.35);
           if (r() < 0.025) ms *= 2.4;
-          insCheck.run(w.id, ts, 1, 200, Math.round(ms), 41000 + Math.round(r() * 6000), sha1(`${w.slug}-${Math.floor(ts / D)}`), null);
+          await insCheck.run(w.id, ts, 1, 200, Math.round(ms), 41000 + Math.round(r() * 6000), sha1(`${w.slug}-${Math.floor(ts / D)}`), null);
         }
         if (k === 0) last = { ts, out };
       }
     } else {
-      for (let k = Math.floor((7 * D) / H); k >= 0; k--) insCheck.run(w.id, now - 2 * MIN - k * H, 1, null, null, null, null, null);
+      for (let k = Math.floor((7 * D) / H); k >= 0; k--) await insCheck.run(w.id, now - 2 * MIN - k * H, 1, null, null, null, null, null);
       last = { ts: now - 2 * MIN, out: null };
     }
 
     // Agrégats journaliers (90 jours) : réponses 30 / 90 jours.
-    const insDay = db.prepare('INSERT OR REPLACE INTO daily_stats(watch_id, day, n, ok, sum_ms, ms_n, min_ms, max_ms) VALUES(?,?,?,?,?,?,?,?)');
+    const insDay = stmt('INSERT OR REPLACE INTO daily_stats(watch_id, day, n, ok, sum_ms, ms_n, min_ms, max_ms) VALUES(?,?,?,?,?,?,?,?)');
     if (w.slug !== 'domain') {
       const today = Math.floor(now / D);
       for (let d = 0; d < 92; d++) {
@@ -192,7 +197,7 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
         const failed = Math.min(n, Math.round(down / every));
         const ok = n - failed;
         const avg = w.ms * (1 + (r() - 0.5) * 0.3);
-        insDay.run(w.id, today - d, n, ok, Math.round(avg * ok), ok, Math.round(avg * 0.6), Math.round(avg * (2 + r())));
+        await insDay.run(w.id, today - d, n, ok, Math.round(avg * ok), ok, Math.round(avg * 0.6), Math.round(avg * (2 + r())));
       }
     }
 
@@ -228,16 +233,15 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     if (w.story === 'tls') state.incidents.tls_expiring = { severity: 'warning', title: 'Le certificat TLS expire dans 9 jour(s)', detail: `Valide jusqu'au ${fmtDate(tlsExpires)}`, since: now - 1 * D };
     if (w.story === 'domain') state.incidents.rdap_expiring = { severity: 'warning', title: 'Le nom de domaine expire dans 21 jour(s)', detail: `${root} · échéance le ${fmtDate(rdapExpires)}`, since: now - 3 * D };
 
-    db.prepare('UPDATE watches SET created_at = ?, next_run = ?, last_check = ?, last_code = ?, last_ms = ?, last_error = ?, state = ? WHERE id = ?').run(
-      now - 100 * D, now + 11 * MIN, last.ts, last.out ? null : 200, last.out ? null : Math.round(w.ms), last.out ? last.out.reason : null, JSON.stringify(state), w.id);
+    await db.run('UPDATE watches SET created_at = ?, next_run = ?, last_check = ?, last_code = ?, last_ms = ?, last_error = ?, state = ? WHERE id = ?', [now - 100 * D, now + 11 * MIN, last.ts, last.out ? null : 200, last.out ? null : Math.round(w.ms), last.out ? last.out.reason : null, JSON.stringify(state), w.id]);
   }
 
   // ── Versions enregistrées (onglet Modifications) : calculées avec le vrai moteur de diff ──
-  const snap = (w, ago, lines, title, prevLines) => {
+  const snap = async (w, ago, lines, title, prevLines) => {
     const d = prevLines ? diffLines(prevLines, lines) : null;
     const meta = d ? { added: d.added, removed: d.removed, similarity: +d.similarity.toFixed(3), pct: +(((d.added + d.removed) / Math.max(1, prevLines.length + lines.length)) * 100).toFixed(2) } : { baseline: true };
-    const id = dbm.insertSnapshot(w.id, { hash: sha1(lines.join('\n')), lines, title, size: 41000, meta });
-    db.prepare('UPDATE snapshots SET ts = ? WHERE id = ?').run(now - ago, id);
+    const id = await dbm.insertSnapshot(w.id, { hash: sha1(lines.join('\n')), lines, title, size: 41000, meta });
+    await db.run('UPDATE snapshots SET ts = ? WHERE id = ?', [now - ago, id]);
     return { id, lines, d };
   };
   const snaps = {};
@@ -245,19 +249,19 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     const s = SITES[w.slug];
     const base = linesOf(s);
     const title = `${s.name} — ${s.hero.title}`;
-    const first = snap(w, 60 * D, base, title);
+    const first = await snap(w, 60 * D, base, title);
     snaps[w.slug] = { first };
     if (w.slug === 'dupont') {
-      snaps.dupont.promo = snap(w, 6 * D, linesOf(s, { promo: true }), title, base);
-      snaps.dupont.defaced = snap(w, 37 * MIN, DEFACED_LINES, 'HACKED', snaps.dupont.promo.lines);
+      snaps.dupont.promo = await snap(w, 6 * D, linesOf(s, { promo: true }), title, base);
+      snaps.dupont.defaced = await snap(w, 37 * MIN, DEFACED_LINES, 'HACKED', snaps.dupont.promo.lines);
     }
     if (w.slug === 'martin') {
       const v2 = base.map((l) => (l.includes('02 41 00 00 00') ? l.replace('02 41 00 00 00', '02 41 00 00 01') : l));
-      snaps.martin.v2 = snap(w, 18 * D, v2, title, base);
+      snaps.martin.v2 = await snap(w, 18 * D, v2, title, base);
       const v3 = [...v2.slice(0, 5), 'Clôture comptable : vos pièces avant le 20 décembre', ...v2.slice(5)];
-      snaps.martin.v3 = snap(w, 3 * D, v3, title, v2);
+      snaps.martin.v3 = await snap(w, 3 * D, v3, title, v2);
     }
-    if (w.slug === 'nova') snaps.nova.v2 = snap(w, 5 * D, [...base.slice(0, 5), 'Livraison offerte dès 60 € d\'achat', ...base.slice(5)], title, base);
+    if (w.slug === 'nova') snaps.nova.v2 = await snap(w, 5 * D, [...base.slice(0, 5), 'Livraison offerte dès 60 € d\'achat', ...base.slice(5)], title, base);
   }
 
   // ── Alertes : insérées par ordre chronologique (l'application les affiche par identifiant décroissant) ──
@@ -307,23 +311,23 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
   alert(W.wiki, 3 * D - 9 * MIN, 'recovery', 'recovery', 'Le site est de nouveau accessible', 'Indisponible pendant 9 min.', { read: 1 });
   alert(W.domain, 3 * D, 'warning', 'rdap_expiring', 'Le nom de domaine expire dans 21 jour(s)', `exemple-societe.example · échéance le ${fmtDate(now + 21 * D)}`);
 
-  const insAlert = db.prepare('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read, notified, maintenance) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
-  for (const a of alerts.sort((x, y) => x.ts - y.ts)) insAlert.run(a.w, a.ts, a.sev, a.type, a.title, a.detail, a.snap ?? null, a.prev ?? null, a.read ?? 0, a.sev === 'info' || a.maint ? 0 : 1, a.maint ?? 0);
-  db.exec('COMMIT');
+  const insAlert = stmt('INSERT INTO alerts(watch_id, ts, severity, type, title, detail, snapshot_id, prev_snapshot_id, read, notified, maintenance) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+  for (const a of alerts.sort((x, y) => x.ts - y.ts)) await insAlert.run(a.w, a.ts, a.sev, a.type, a.title, a.detail, a.snap ?? null, a.prev ?? null, a.read ?? 0, a.sev === 'info' || a.maint ? 0 : 1, a.maint ?? 0);
+  await db.exec('COMMIT');
 
   // ── Maintenance : une fenêtre en cours et une prévue demain, sur « Wiki technique » ──
-  dbm.addMaintenance({ watchId: W.wiki, start: now - 20 * MIN, end: now + 40 * MIN, note: 'Mise à jour du serveur de sauvegarde' });
-  dbm.addMaintenance({ watchId: W.wiki, start: now + 20 * H, end: now + 21 * H, note: 'Renouvellement du certificat' });
+  await dbm.addMaintenance({ watchId: W.wiki, start: now - 20 * MIN, end: now + 40 * MIN, note: 'Mise à jour du serveur de sauvegarde' });
+  await dbm.addMaintenance({ watchId: W.wiki, start: now + 20 * H, end: now + 21 * H, note: 'Renouvellement du certificat' });
 
   // ── Captures d'écran enregistrées (images réelles des faux sites) ──
   const SHOTS = join(dataDir, 'screenshots');
-  const putShot = (w, ago, kind, img) => {
+  const putShot = async (w, ago, kind, img) => {
     const ts = now - ago;
     mkdirSync(join(SHOTS, String(w.id)), { recursive: true });
     const file = `${w.id}/${ts}.jpg`, thumb = `${w.id}/${ts}.t.jpg`;
     writeFileSync(join(SHOTS, file), img.image);
     writeFileSync(join(SHOTS, thumb), img.thumb);
-    dbm.insertScreenshot({ watchId: w.id, ts, kind, file, thumb, size: img.image.length, width: 1280, height: 800 });
+    await dbm.insertScreenshot({ watchId: w.id, ts, kind, file, thumb, size: img.image.length, width: 1280, height: 800 });
   };
   for (const w of canShoot ? watches.filter((x) => SITES[x.slug]) : []) {
     const normal = images[w.slug];
@@ -331,10 +335,10 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     // Insérées de la plus ancienne à la plus récente : l'application ordonne les captures par identifiant.
     const shots = times.map((m) => ({ ago: m * MIN, kind: 'scheduled', img: normal }));
     if (w.slug === 'dupont') shots.push({ ago: 37 * MIN, kind: 'alert', img: images.dupontDefaced }, { ago: 9 * H, kind: 'manual', img: normal });
-    for (const s of shots.sort((a, b) => b.ago - a.ago)) putShot(w, s.ago, s.kind, s.img);
-    dbm.setShotState(w.id, { nextShot: now + 38 * MIN, error: w.slug === 'lumiere' ? 'Connexion refusée par le serveur' : null });
+    for (const s of shots.sort((a, b) => b.ago - a.ago)) await putShot(w, s.ago, s.kind, s.img);
+    await dbm.setShotState(w.id, { nextShot: now + 38 * MIN, error: w.slug === 'lumiere' ? 'Connexion refusée par le serveur' : null });
   }
 
-  db.close?.();
+  await db.close?.();
   return { watches, groups: gid, now, images };
 }

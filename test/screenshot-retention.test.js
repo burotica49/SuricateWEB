@@ -19,7 +19,7 @@ test.after(async () => { await srv.stop(); dbm.db.close(); });
 
 /** Insère n captures (lignes + vrais fichiers) sans passer par Chrome. */
 let clock = Date.now() - 1e6;
-function addShots(watchId, kind, n, size = 1000) {
+async function addShots(watchId, kind, n, size = 1000) {
   mkdirSync(join(dbm.SHOTS_DIR, String(watchId)), { recursive: true });
   const ids = [];
   for (let i = 0; i < n; i++) {
@@ -28,13 +28,13 @@ function addShots(watchId, kind, n, size = 1000) {
     const thumb = `${watchId}/${ts}.t.jpg`;
     writeFileSync(join(dbm.SHOTS_DIR, file), Buffer.alloc(size));
     writeFileSync(join(dbm.SHOTS_DIR, thumb), Buffer.alloc(10));
-    ids.push(dbm.insertScreenshot({ watchId, ts, kind, file, thumb, size, width: 1280, height: 800 }));
+    ids.push(await dbm.insertScreenshot({ watchId, ts, kind, file, thumb, size, width: 1280, height: 800 }));
   }
   return ids;
 }
 const noNet = { checks: { dns: false, tls: false, rdap: false } };
-const mk = (name, screenshot = {}) => dbm.createWatch({ name, url: 'https://ret.test/', interval: 5, config: { ...noNet, screenshot } });
-const kinds = (id) => dbm.listScreenshots(id, 500).reduce((a, r) => ({ ...a, [r.kind]: (a[r.kind] || 0) + 1 }), {});
+const mk = async (name, screenshot = {}) => await dbm.createWatch({ name, url: 'https://ret.test/', interval: 5, config: { ...noNet, screenshot } });
+const kinds = async (id) => (await dbm.listScreenshots(id, 500)).reduce((a, r) => ({ ...a, [r.kind]: (a[r.kind] || 0) + 1 }), {});
 
 test('configuration : limite 0 = réglage général, valeurs bornées', () => {
   const keep = (v) => dbm.normalizeConfig({ screenshot: { keep: v } }).screenshot.keep;
@@ -48,68 +48,68 @@ test('configuration : limite 0 = réglage général, valeurs bornées', () => {
   assert.equal(dbm.MAX_KEEP, 2000);
 });
 
-test('limites : réglage du site, sinon réglage général ; quota des manuelles = même nombre, au plus 100', () => {
-  dbm.saveSettings({ retention: { screenshots: 168 } });
-  assert.deepEqual(shots.shotLimits(mk('Général')), { keep: 168, keepOther: 100 });
-  assert.deepEqual(shots.shotLimits(mk('Propre', { keep: 24 })), { keep: 24, keepOther: 24 });
-  assert.deepEqual(shots.shotLimits(mk('Grand', { keep: 1000 })), { keep: 1000, keepOther: 100 });
-  dbm.saveSettings({ retention: { screenshots: 50 } });
-  assert.deepEqual(shots.shotLimits(mk('Autre général')), { keep: 50, keepOther: 50 }, 'le réglage général suit');
-  assert.deepEqual(shots.shotLimits(mk('Propre 2', { keep: 24 })), { keep: 24, keepOther: 24 }, 'le réglage du site l’emporte');
-  dbm.saveSettings({ retention: { screenshots: 168 } });
+test('limites : réglage du site, sinon réglage général ; quota des manuelles = même nombre, au plus 100', async () => {
+  await dbm.saveSettings({ retention: { screenshots: 168 } });
+  assert.deepEqual(shots.shotLimits(await mk('Général')), { keep: 168, keepOther: 100 });
+  assert.deepEqual(shots.shotLimits(await mk('Propre', { keep: 24 })), { keep: 24, keepOther: 24 });
+  assert.deepEqual(shots.shotLimits(await mk('Grand', { keep: 1000 })), { keep: 1000, keepOther: 100 });
+  await dbm.saveSettings({ retention: { screenshots: 50 } });
+  assert.deepEqual(shots.shotLimits(await mk('Autre général')), { keep: 50, keepOther: 50 }, 'le réglage général suit');
+  assert.deepEqual(shots.shotLimits(await mk('Propre 2', { keep: 24 })), { keep: 24, keepOther: 24 }, 'le réglage du site l’emporte');
+  await dbm.saveSettings({ retention: { screenshots: 168 } });
 });
 
 test('suppression : les plus anciennes disparaissent (lignes et fichiers), chaque catégorie a son quota', async () => {
-  const w = mk('Purge', { keep: 4 });
-  const sched = addShots(w.id, 'scheduled', 10);
-  const manual = addShots(w.id, 'manual', 6);
-  const alertShots = addShots(w.id, 'alert', 2);
+  const w = await mk('Purge', { keep: 4 });
+  const sched = await addShots(w.id, 'scheduled', 10);
+  const manual = await addShots(w.id, 'manual', 6);
+  const alertShots = await addShots(w.id, 'alert', 2);
   // 10 planifiées pour 4 permises = 6 en trop ; 8 manuelles + d'alerte (quota commun) pour 4 permises = 4 en trop.
   assert.equal(await shots.pruneWatchShots(w.id), 6 + 4);
-  const rows = dbm.listScreenshots(w.id, 500);
+  const rows = await dbm.listScreenshots(w.id, 500);
   assert.deepEqual(rows.filter((r) => r.kind === 'scheduled').map((r) => r.id), sched.slice(-4).reverse(), 'les 4 plus récentes planifiées');
   assert.equal(rows.filter((r) => r.kind !== 'scheduled').length, 4, 'quota des manuelles et d’alerte : 4 au total');
   assert.ok(rows.some((r) => r.id === alertShots.at(-1)), 'la plus récente capture d’alerte est conservée');
   assert.equal((await shots.shotFiles(w.id)).length, 8 * 2, '8 captures × (image + miniature) : les autres sont effacées du disque');
-  assert.equal(existsSync(join(dbm.SHOTS_DIR, String(w.id), `${dbm.getScreenshot(sched[0])?.ts}.jpg`)), false);
+  assert.equal(existsSync(join(dbm.SHOTS_DIR, String(w.id), `${await dbm.getScreenshot(sched[0])?.ts}.jpg`)), false);
   assert.equal(await shots.pruneWatchShots(w.id), 0, 'rien de plus à supprimer');
   assert.deepEqual(manual.length + alertShots.length, 8);
 });
 
 test('suppression : abaisser le réglage général s’applique à tous les sites qui le suivent', async () => {
-  dbm.saveSettings({ retention: { screenshots: 100 } });
-  const a = mk('Suit A');
-  const b = mk('Suit B');
-  const own = mk('Garde la sienne', { keep: 30 });
-  for (const w of [a, b, own]) addShots(w.id, 'scheduled', 20);
-  dbm.saveSettings({ retention: { screenshots: 5 } });
+  await dbm.saveSettings({ retention: { screenshots: 100 } });
+  const a = await mk('Suit A');
+  const b = await mk('Suit B');
+  const own = await mk('Garde la sienne', { keep: 30 });
+  for (const w of [a, b, own]) await addShots(w.id, 'scheduled', 20);
+  await dbm.saveSettings({ retention: { screenshots: 5 } });
   await shots.pruneAllShots();
-  assert.equal(kinds(a.id).scheduled, 5);
-  assert.equal(kinds(b.id).scheduled, 5);
-  assert.equal(kinds(own.id).scheduled, 20, 'sa propre limite (30) n’est pas dépassée : rien de supprimé');
-  dbm.saveSettings({ retention: { screenshots: 168 } });
+  assert.equal((await kinds(a.id)).scheduled, 5);
+  assert.equal((await kinds(b.id)).scheduled, 5);
+  assert.equal((await kinds(own.id)).scheduled, 20, 'sa propre limite (30) n’est pas dépassée : rien de supprimé');
+  await dbm.saveSettings({ retention: { screenshots: 168 } });
 });
 
-test('statistiques : nombre et poids, par site et au total', () => {
-  const w = mk('Poids');
-  addShots(w.id, 'scheduled', 3, 2000);
-  addShots(w.id, 'manual', 1, 500);
-  assert.deepEqual({ ...dbm.screenshotStats(w.id) }, { count: 4, bytes: 6500 });
-  assert.deepEqual({ ...dbm.screenshotStats(99999) }, { count: 0, bytes: 0 });
-  assert.ok(dbm.screenshotUsage().count >= 4);
+test('statistiques : nombre et poids, par site et au total', async () => {
+  const w = await mk('Poids');
+  await addShots(w.id, 'scheduled', 3, 2000);
+  await addShots(w.id, 'manual', 1, 500);
+  assert.deepEqual({ ...(await dbm.screenshotStats(w.id)) }, { count: 4, bytes: 6500 });
+  assert.deepEqual({ ...(await dbm.screenshotStats(99999)) }, { count: 0, bytes: 0 });
+  assert.ok((await dbm.screenshotUsage()).count >= 4);
 });
 
 // ───────────── API et interface ─────────────
 
 test('API : limites et compteurs exposés ; abaisser la limite supprime aussitôt ; changer la limite ne recapture pas', async () => {
   const id = (await srv.post('/api/watches', { url: 'http://127.0.0.1:9/', name: 'Via API', interval: 15 })).json.id;
-  addShots(id, 'scheduled', 12, 1000);
+  await addShots(id, 'scheduled', 12, 1000);
   let r = (await srv.get(`/api/watches/${id}/screenshots`)).json;
   assert.deepEqual([r.keep, r.keepOther, r.count, r.bytes], [168, 100, 12, 12000], 'réglage général, compteurs');
 
   const cfg = (await srv.get(`/api/watches/${id}`)).json.config;
   const save = (screenshot) => srv.put(`/api/watches/${id}`, { url: 'http://127.0.0.1:9/', name: 'Via API', interval: 15, config: { ...cfg, screenshot: { ...cfg.screenshot, ...screenshot } } });
-  dbm.setShotState(id, { nextShot: 4242424242000 });
+  await dbm.setShotState(id, { nextShot: 4242424242000 });
 
   assert.equal((await save({ keep: 5 })).status, 200);
   r = (await srv.get(`/api/watches/${id}/screenshots`)).json;
@@ -127,7 +127,7 @@ test('API : limites et compteurs exposés ; abaisser la limite supprime aussitô
 
 test('API réglages : limite générale bornée, appliquée à tous les sites, usage exposé', async () => {
   const id = (await srv.post('/api/watches', { url: 'http://127.0.0.1:9/', name: 'Suit le général', interval: 15 })).json.id;
-  addShots(id, 'scheduled', 9);
+  await addShots(id, 'scheduled', 9);
   const s = (await srv.get('/api/settings')).json;
   assert.equal(s.retention.screenshots, 168);
   assert.ok(s.screenshots.usage.count >= 9 && s.screenshots.usage.bytes >= 9000);
@@ -145,8 +145,8 @@ test('API réglages : limite générale bornée, appliquée à tous les sites, u
 
 test('interface : champ « Captures à conserver », durée couverte, compteur de l’onglet Captures', { skip: !findChrome() && 'Chrome/Chromium introuvable', timeout: 90000 }, async () => {
   const id = (await srv.post('/api/watches', { url: 'http://127.0.0.1:9/', name: 'Interface', interval: 15 })).json.id;
-  addShots(id, 'scheduled', 7, 100000);
-  addShots(id, 'manual', 2, 100000);
+  await addShots(id, 'scheduled', 7, 100000);
+  await addShots(id, 'manual', 2, 100000);
   const page = await openPage(`${srv.base}/`);
   const wait = (expr, ms = 8000) => page.run(`new Promise((res, rej) => { const t0 = Date.now(); const i = setInterval(() => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearInterval(i); res(true); } else if (Date.now() - t0 > ${ms}) { clearInterval(i); rej(new Error('délai : ' + ${JSON.stringify(expr)})); } }, 80); })`);
   try {

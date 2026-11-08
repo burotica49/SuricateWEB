@@ -50,23 +50,34 @@ export const isRunning = (id) => running.has(id);
 
 export function startScheduler() {
   if (DEMO) return null;
-  const tick = () => {
-    for (const id of dueWatchIds(Date.now(), 100)) {
-      if (!running.has(id)) enqueue(id);
-    }
-    // Relevés CMS : fréquence propre (souvent 12 h), deux à la fois pour ne pas ouvrir toutes les boutiques d'un coup.
-    let cmsSlots = 2;
-    for (const { id, config: cfg } of dueCmsWatches(Date.now())) {
-      if (cmsSlots <= 0) break;
-      if (cfg.mode === 'domain' || (cfg.cms.type !== 'wordpress' && cfg.cms.type !== 'prestashop')) continue;
-      cmsSlots--;
-      pollCms(id).catch((e) => console.error(`[cms ${id}]`, e));
-    }
-    // Captures d'écran : planifiées à part, selon leur propre fréquence (la file interne limite la charge de Chrome).
-    if (!engine.available()) return;
-    for (const { id, config: cfg } of dueShotWatches(Date.now())) {
-      if (cfg.mode === 'domain' || !cfg.screenshot.enabled || isCapturing(id)) continue;
-      captureWatch(id); // ne lève jamais : l'erreur est enregistrée sur le site
+  // Un passage qui dure plus de 5 s (base lente) ne doit pas être doublé par le suivant : il lancerait deux fois les mêmes contrôles.
+  let ticking = false;
+  const tick = async () => {
+    if (ticking) return;
+    ticking = true;
+    try {
+      for (const id of await dueWatchIds(Date.now(), 100)) {
+        if (!running.has(id)) enqueue(id);
+      }
+      // Relevés CMS : fréquence propre (souvent 12 h), deux à la fois pour ne pas ouvrir toutes les boutiques d'un coup.
+      let cmsSlots = 2;
+      for (const { id, config: cfg } of await dueCmsWatches(Date.now())) {
+        if (cmsSlots <= 0) break;
+        if (cfg.mode === 'domain' || (cfg.cms.type !== 'wordpress' && cfg.cms.type !== 'prestashop')) continue;
+        cmsSlots--;
+        pollCms(id).catch((e) => console.error(`[cms ${id}]`, e));
+      }
+      // Captures d'écran : planifiées à part, selon leur propre fréquence (la file interne limite la charge de Chrome).
+      if (!engine.available()) return;
+      for (const { id, config: cfg } of await dueShotWatches(Date.now())) {
+        if (cfg.mode === 'domain' || !cfg.screenshot.enabled || isCapturing(id)) continue;
+        captureWatch(id); // ne lève jamais : l'erreur est enregistrée sur le site
+      }
+    } catch (e) {
+      // Une erreur de base ne doit pas arrêter la surveillance : le passage suivant réessaie.
+      console.error('[planificateur]', e);
+    } finally {
+      ticking = false;
     }
   };
   tick();

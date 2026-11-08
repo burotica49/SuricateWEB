@@ -14,10 +14,12 @@
 //   insert(sql, params) → identifiant créé. Le SQL est un INSERT ordinaire : PostgreSQL y ajoute « RETURNING id »,
 //                         donc seulement pour les tables qui ont une colonne « id » (sinon, run).
 //   exec(sql)           → exécute du SQL sans paramètres, plusieurs instructions admises (schéma, migrations)
-//   transaction(fn)     → fn(tx) : validée si elle réussit, annulée si elle lève. `tx` est à utiliser pour tout
-//                         ce qui doit être atomique (PostgreSQL y réserve une connexion). fn ne doit attendre
-//                         que des requêtes de base : sous SQLite, une autre attente laisserait une requête
-//                         concurrente s'intercaler dans la transaction.
+//   transaction(fn)     → fn(tx), toujours asynchrone : validée si elle réussit, annulée si elle lève. `tx` est à
+//                         utiliser pour tout ce qui doit être atomique (PostgreSQL y réserve une connexion).
+//                         fn ne doit attendre que des requêtes de base. Sous SQLite (une seule connexion), les
+//                         transactions passent l'une après l'autre, mais une requête hors transaction peut
+//                         s'intercaler pendant les attentes : n'y mettre que ce qui ne s'annule pas pour une raison
+//                         métier (valider AVANT d'ouvrir la transaction).
 //   close()
 import { DatabaseSync } from 'node:sqlite';
 
@@ -39,6 +41,8 @@ export function openSqlite(path) {
     return s;
   };
 
+  let txTail = Promise.resolve();
+
   const adapter = {
     dialect: 'sqlite',
     all: (sql, params = []) => stmt(sql).all(...params),
@@ -46,32 +50,23 @@ export function openSqlite(path) {
     run: (sql, params = []) => ({ changes: Number(stmt(sql).run(...params).changes) }),
     insert: (sql, params = []) => Number(stmt(sql).run(...params).lastInsertRowid),
     exec: (sql) => raw.exec(sql),
+    // Une transaction à la fois : la fonction attend ses requêtes, et un second BEGIN lancé pendant ces attentes échouerait.
     transaction(fn) {
-      raw.exec('BEGIN');
-      let out;
-      try {
-        out = fn(adapter);
-      } catch (e) {
-        raw.exec('ROLLBACK');
-        throw e;
-      }
-      // fn asynchrone : la transaction se ferme quand sa promesse est réglée.
-      if (out && typeof out.then === 'function') {
-        return out.then(
-          (v) => (raw.exec('COMMIT'), v),
-          (e) => (raw.exec('ROLLBACK'), Promise.reject(e)),
-        );
-      }
-      raw.exec('COMMIT');
-      return out;
+      const run = txTail.then(async () => {
+        raw.exec('BEGIN');
+        try {
+          const out = await fn(adapter);
+          raw.exec('COMMIT');
+          return out;
+        } catch (e) {
+          raw.exec('ROLLBACK');
+          throw e;
+        }
+      });
+      txTail = run.then(() => {}, () => {}); // l'échec d'une transaction ne bloque pas la suivante
+      return run;
     },
     close: () => raw.close(),
-
-    /**
-     * Ancienne écriture `db.prepare(sql).get/all/run(...)`, gardée seulement pour les tests et scripts existants.
-     * À ne pas utiliser dans le code de l'application ; retirée à l'étape du passage en asynchrone.
-     */
-    prepare: (sql) => stmt(sql),
   };
   return adapter;
 }

@@ -342,7 +342,7 @@ const isDownCode = (code) => code >= 400 && ![401, 403, 429].includes(code);
 const RISKY_STATUS = /pending transfer|hold|redemption|pending delete|pending restore/;
 
 export async function runCheck(id) {
-  const w = getWatch(id);
+  const w = await getWatch(id);
   if (!w) return null;
   const settings = getSettings();
   const cfg = w.config;
@@ -355,7 +355,7 @@ export async function runCheck(id) {
   const host = url.hostname;
   const domain = registrable(host);
   // Fenêtre de maintenance en cours : les alertes sont retenues et aucune panne n'est comptée (voir plus bas).
-  const maint = activeMaintenance(w.id, now);
+  const maint = await activeMaintenance(w.id, now);
 
   // Pages supplémentaires (panier, contact, connexion) : récupérées en parallèle du reste du passage.
   const extra = domainOnly ? [] : (cfg.pages || []).map((p) => ({ p, href: resolvePage(w.url, p) })).filter((x) => x.href);
@@ -413,9 +413,9 @@ export async function runCheck(id) {
       state.failSince = null;
     }
     const confirmed = down && !maint && state.fails >= cfg.failThreshold;
-    if (confirmed && !state.outageId) state.outageId = openOutage(w.id, state.failSince, error, code);
+    if (confirmed && !state.outageId) state.outageId = await openOutage(w.id, state.failSince, error, code);
     if (!down && state.outageId) {
-      closedOutage = closeOutage(state.outageId, now);
+      closedOutage = await closeOutage(state.outageId, now);
       state.outageId = null;
     }
 
@@ -509,12 +509,12 @@ export async function runCheck(id) {
 
     // Contenu : snapshot + diff
     if (code < 400) {
-      const prev = latestSnapshot(w.id);
+      const prev = await latestSnapshot(w.id);
       if (!prev || prev.hash !== a.hash) {
         const prevLines = prev ? snapshotLines(prev) : [];
         const d = prev ? diffLines(prevLines, a.lines) : null;
         const pct = d ? ((d.added + d.removed) / Math.max(1, prevLines.length + a.lines.length)) * 100 : 0;
-        snapshotId = insertSnapshot(w.id, {
+        snapshotId = await insertSnapshot(w.id, {
           hash: a.hash, lines: a.lines, title: a.title, size,
           meta: d ? { added: d.added, removed: d.removed, similarity: +d.similarity.toFixed(3), pct: +pct.toFixed(2) } : { baseline: true },
         });
@@ -761,7 +761,7 @@ export async function runCheck(id) {
   if (maint) {
     for (const a of alerts) a.maintenance = true;
   } else {
-    const held = pendingMaintenanceAlerts(w.id);
+    const held = await pendingMaintenanceAlerts(w.id);
     if (held.length) {
       const notable = held.filter((a) => a.severity === 'critical' || a.severity === 'warning');
       if (notable.length) {
@@ -770,19 +770,19 @@ export async function runCheck(id) {
           `Fin de la maintenance : ${notable.length} alerte${notable.length > 1 ? 's' : ''} retenue${notable.length > 1 ? 's' : ''} pendant la fenêtre`,
           [...new Set(notable.map((a) => `• ${a.title}`))].slice(0, 10).join('\n'));
       }
-      markMaintenanceSummarized(w.id);
+      await markMaintenanceSummarized(w.id);
     }
   }
 
   // ── Persistance + notification ──
   const up = domainOnly ? true : !down;
-  insertCheck({ watchId: w.id, ok: up, code, ms, size, hash, snapshotId, error, alerts: alerts.length });
-  if (!domainOnly && !(maint && down)) upsertDaily(w.id, now, up, ms);
-  for (const a of alerts) a.id = insertAlert({ watchId: w.id, ...a });
+  await insertCheck({ watchId: w.id, ok: up, code, ms, size, hash, snapshotId, error, alerts: alerts.length });
+  if (!domainOnly && !(maint && down)) await upsertDaily(w.id, now, up, ms);
+  for (const a of alerts) a.id = await insertAlert({ watchId: w.id, ...a });
   // À la fin d'une maintenance, un contrôle suit de près : les alertes retenues sont reprises sans attendre l'intervalle normal.
   const nextRun = maint && maint.end + 30e3 < now + w.interval * 60e3 ? maint.end + 30e3 : now + w.interval * 60e3;
-  saveRun(w.id, { state, nextRun, code, ms, error });
-  prune(w.id);
+  await saveRun(w.id, { state, nextRun, code, ms, error });
+  await prune(w.id);
 
   const { photo } = await notify(w, alerts.filter((a) => !a.maintenance), settings);
   bus.emit('event', { type: 'check', watchId: w.id, alerts: alerts.length });
@@ -802,10 +802,10 @@ async function notify(w, alerts, settings) {
   const ids = eligible.map((a) => a.id);
   try {
     await sendAlert(t.token, t.chatId, w, eligible, settings);
-    markNotified(ids);
+    await markNotified(ids);
   } catch (e) {
     console.error(`[telegram] ${w.name}: ${e.message}`);
-    markNotified(ids, e.message);
+    await markNotified(ids, e.message);
     return {};
   }
 

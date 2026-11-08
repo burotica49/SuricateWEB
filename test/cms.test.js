@@ -124,7 +124,7 @@ test('relevé : jeton accepté, redirection vers un autre domaine refusée, JSON
   await new Promise((r) => plugin.listen(0, '127.0.0.1', r));
   const port = plugin.address().port;
   try {
-    const ok = createWatch({
+    const ok = await createWatch({
       name: 'Blog', url: `http://127.0.0.1:${port}/`, interval: 15,
       config: { cms: { type: 'wordpress', token: TOKEN, path: '', intervalMin: 720 }, checks: { dns: false, rdap: false, tls: false } },
     });
@@ -132,20 +132,20 @@ test('relevé : jeton accepté, redirection vers un autre domaine refusée, JSON
     assert.equal(r.ok, true);
     assert.equal(r.cms.php, '8.3.1');
     assert.equal(r.cms.extensions[0].available, '1.1');
-    const saved = getWatch(ok.id);
+    const saved = await getWatch(ok.id);
     assert.equal(saved.state.cms.ok, true);
     assert.ok(saved.nextCms > Date.now());
 
-    const refused = createWatch({
+    const refused = await createWatch({
       name: 'Mauvais jeton', url: `http://127.0.0.1:${port}/`, interval: 15,
       config: { cms: { type: 'wordpress', token: 'autre-jeton-tres-long', path: '', intervalMin: 720 } },
     });
     const bad = await pollCms(refused.id);
     assert.equal(bad.ok, false);
     assert.match(bad.error, /refusé/);
-    assert.equal(getWatch(refused.id).state.cms.ok, false);
+    assert.equal((await getWatch(refused.id)).state.cms.ok, false);
 
-    const hop = createWatch({
+    const hop = await createWatch({
       name: 'Redirect', url: `http://127.0.0.1:${port}/hop`, interval: 15,
       config: { cms: { type: 'wordpress', token: TOKEN, path: 'hop', intervalMin: 60 } },
     });
@@ -155,7 +155,7 @@ test('relevé : jeton accepté, redirection vers un autre domaine refusée, JSON
     assert.match(hopResult.error, /autre domaine/);
     assert.equal(evilHits, 0);
 
-    const broken = createWatch({
+    const broken = await createWatch({
       name: 'JSON', url: `http://127.0.0.1:${port}/bad`, interval: 15,
       config: { cms: { type: 'wordpress', token: TOKEN, path: 'bad', intervalMin: 60 } },
     });

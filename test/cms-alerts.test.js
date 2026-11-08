@@ -130,8 +130,8 @@ const site = http.createServer((req, res) => {
 });
 await new Promise((r) => site.listen(0, '127.0.0.1', r));
 const siteUrl = `http://127.0.0.1:${site.address().port}/`;
-dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
-const watch = dbm.createWatch({ name: 'Cabinet', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, cms: { type: 'wordpress', token: 'a'.repeat(32), intervalMin: 720 } } });
+await dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
+const watch = await dbm.createWatch({ name: 'Cabinet', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, cms: { type: 'wordpress', token: 'a'.repeat(32), intervalMin: 720 } } });
 const types = (r) => r.alerts.map((a) => a.type);
 const report = (over = {}) => ({
   php: '8.3.14', cms: 'wordpress', cmsVersion: '6.7.1', ok: true, error: null, checkedAt: Date.now(),
@@ -141,7 +141,7 @@ const report = (over = {}) => ({
 });
 
 test('moteur : le 1er passage pose la référence, puis les mises à jour en retard alertent une seule fois', async () => {
-  dbm.setCmsReport(watch.id, report(), Date.now() + 1e6);
+  await dbm.setCmsReport(watch.id, report(), Date.now() + 1e6);
   // Comme un certificat qui expire : un état anormal s'annonce dès qu'il est vu, même au 1er passage.
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), ['cms_core', 'cms_updates']);
@@ -149,18 +149,18 @@ test('moteur : le 1er passage pose la référence, puis les mises à jour en ret
   assert.equal(sent.length, 1, 'un seul message Telegram pour les deux alertes');
   assert.match(sent[0].text, /WordPress 6\.8\.3 est disponible depuis 12 jours/);
   assert.match(sent[0].text, /Yoast SEO/);
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents).sort(), ['cms_core', 'cms_updates']);
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents).sort(), ['cms_core', 'cms_updates']);
 });
 
 test('moteur : pas de répétition, puis « rétabli » quand tout est à jour', async () => {
   const before = sent.length;
   assert.deepEqual(types(await runCheck(watch.id)), [], 'deuxième passage : silence, l’incident est déjà connu');
   assert.equal(sent.length, before);
-  dbm.setCmsReport(watch.id, report({ core: { current: '6.8.3', available: null, known: true }, extensions: [{ name: 'Yoast SEO', slug: 'wordpress-seo', current: '25.4', available: null, active: true, known: true }] }), Date.now() + 1e6);
+  await dbm.setCmsReport(watch.id, report({ core: { current: '6.8.3', available: null, known: true }, extensions: [{ name: 'Yoast SEO', slug: 'wordpress-seo', current: '25.4', available: null, active: true, known: true }] }), Date.now() + 1e6);
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), ['recovery', 'recovery']);
   assert.match(sent.at(-1).text, /Rétabli|RÉTABLI/);
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents), []);
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents), []);
 });
 
 test.after(() => {
@@ -170,7 +170,7 @@ test.after(() => {
 });
 
 test('moteur : PHP en fin de support, puis alertes coupées pour ce site sans message « rétabli »', async () => {
-  dbm.setCmsReport(watch.id, report({ php: '7.4.33', core: { current: '6.8.3', available: null, known: true }, extensions: [] }), Date.now() + 1e6);
+  await dbm.setCmsReport(watch.id, report({ php: '7.4.33', core: { current: '6.8.3', available: null, known: true }, extensions: [] }), Date.now() + 1e6);
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), ['php_eol']);
   assert.equal(r.alerts[0].severity, 'critical');
@@ -178,22 +178,22 @@ test('moteur : PHP en fin de support, puis alertes coupées pour ce site sans me
   assert.deepEqual(types(await runCheck(watch.id)), [], 'pas de répétition');
 
   const count = sent.length;
-  const cur = dbm.getWatch(watch.id);
-  dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, alerts: false } } });
+  const cur = await dbm.getWatch(watch.id);
+  await dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, alerts: false } } });
   assert.deepEqual(types(await runCheck(watch.id)), [], 'alertes coupées : l’incident disparaît en silence');
   assert.equal(sent.length, count, 'aucun message, surtout pas un « rétabli » trompeur');
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents), []);
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents), []);
 });
 
 test('moteur : une version de PHP trop récente pour le tableau ne déclenche rien', async () => {
-  const cur = dbm.getWatch(watch.id);
-  dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, alerts: true } } });
-  dbm.setCmsReport(watch.id, report({ php: '9.9.1', core: { current: '6.8.3', available: null, known: true }, extensions: [] }), Date.now() + 1e6);
+  const cur = await dbm.getWatch(watch.id);
+  await dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, alerts: true } } });
+  await dbm.setCmsReport(watch.id, report({ php: '9.9.1', core: { current: '6.8.3', available: null, known: true }, extensions: [] }), Date.now() + 1e6);
   assert.deepEqual(types(await runCheck(watch.id)), []);
 });
 
 test('moteur : sans CMS configuré, un relevé enregistré n’alerte pas', async () => {
-  const w2 = dbm.createWatch({ name: 'Sans CMS', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false } } });
-  dbm.setCmsReport(w2.id, report({ php: '5.6.40' }), 0);
+  const w2 = await dbm.createWatch({ name: 'Sans CMS', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false } } });
+  await dbm.setCmsReport(w2.id, report({ php: '5.6.40' }), 0);
   assert.deepEqual(types(await runCheck(w2.id)), []);
 });

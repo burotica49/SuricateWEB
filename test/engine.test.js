@@ -100,9 +100,9 @@ const home = (extra = '', title = 'Boutique Dupont') => `<!doctype html><html><h
   <p>Nos produits</p><p>Notre histoire</p><p>Mentions légales</p>${extra}
   <script src="/static/app.js"></script></body></html>`;
 
-dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
+await dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
 page.html = home();
-const w = dbm.createWatch({ name: 'Boutique', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, failThreshold: 2 } });
+const w = await dbm.createWatch({ name: 'Boutique', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, failThreshold: 2 } });
 const types = (r) => r.alerts.map((a) => a.type);
 
 test('1er passage = référence, aucune alerte', async () => {
@@ -167,17 +167,17 @@ test('site injoignable : alerte seulement après 2 échecs, puis rétabli', asyn
 });
 
 test('faux positif « spécialisées » : aucun incident ; vrai spam : incident', async () => {
-  const w2 = dbm.createWatch({ name: 'Faux positif', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false } } });
+  const w2 = await dbm.createWatch({ name: 'Faux positif', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false } } });
   page.html = home('<p>Des équipes spécialisées. Nos techniciens sont spécialisés.</p>');
   assert.deepEqual(types(await runCheck(w2.id)), []);
-  assert.deepEqual(Object.keys(dbm.getWatch(w2.id).state.incidents), []);
+  assert.deepEqual(Object.keys((await dbm.getWatch(w2.id)).state.incidents), []);
   page.html = home('<p>Buy Cialis online</p>');
   assert.ok(types(await runCheck(w2.id)).includes('forbidden'));
   page.html = home('<p>Nouvelle promotion</p>');
 });
 
 test('texte requis absent', async () => {
-  dbm.updateWatch(w.id, { config: { ...dbm.getWatch(w.id).config, required: ['Artisan depuis 1987'] } });
+  await dbm.updateWatch(w.id, { config: { ...(await dbm.getWatch(w.id)).config, required: ['Artisan depuis 1987'] } });
   assert.deepEqual(types(await runCheck(w.id)), []);
   page.html = home().replace('Artisan depuis 1987.', 'Page en maintenance');
   assert.ok(types(await runCheck(w.id)).includes('required'));

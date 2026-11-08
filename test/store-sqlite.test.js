@@ -43,3 +43,24 @@ test('adaptateur sqlite : le cache d\'instructions ne grossit pas sans fin (SQL 
   for (let i = 0; i < 1000; i++) assert.equal(db.get(`SELECT ${i} AS v FROM t UNION ALL SELECT ${i}`).v, i);
   db.close();
 });
+
+test('adaptateur sqlite : deux transactions simultanées passent l\'une après l\'autre (pas de BEGIN imbriqué)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'vigie-store-'));
+  dirs.push(dir);
+  const db = openSqlite(join(dir, 'tx.db'));
+  db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)');
+  const pause = () => new Promise((resolve) => setImmediate(resolve));
+  const work = (tag) => db.transaction(async (tx) => {
+    await tx.run('INSERT INTO t(v) VALUES(?)', [`${tag}1`]);
+    await pause(); // l'autre transaction essaie de démarrer ici
+    await tx.run('INSERT INTO t(v) VALUES(?)', [`${tag}2`]);
+  });
+  await Promise.all([work('a'), work('b')]);
+  assert.deepEqual(db.all('SELECT v FROM t ORDER BY id').map((r) => r.v), ['a1', 'a2', 'b1', 'b2'], 'pas d\'entrelacement');
+
+  // Une transaction qui échoue est annulée et ne bloque pas la suivante.
+  await assert.rejects(db.transaction(async (tx) => { await tx.run('INSERT INTO t(v) VALUES(?)', ['perdue']); throw new Error('boum'); }), /boum/);
+  await db.transaction(async (tx) => { await tx.run('INSERT INTO t(v) VALUES(?)', ['c1']); });
+  assert.deepEqual(db.all('SELECT v FROM t ORDER BY id').map((r) => r.v), ['a1', 'a2', 'b1', 'b2', 'c1']);
+  db.close();
+});

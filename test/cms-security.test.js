@@ -212,8 +212,8 @@ const plugin = http.createServer((req, res) => {
 });
 await new Promise((r) => plugin.listen(0, '127.0.0.1', r));
 const siteUrl = `http://127.0.0.1:${plugin.address().port}/`;
-dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
-const watch = dbm.createWatch({ name: 'Blog', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, cms: { type: 'wordpress', token: TOKEN, intervalMin: 720 } } });
+await dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true } });
+const watch = await dbm.createWatch({ name: 'Blog', url: siteUrl, interval: 5, config: { checks: { dns: false, tls: false, rdap: false }, cms: { type: 'wordpress', token: TOKEN, intervalMin: 720 } } });
 const types = (r) => r.alerts.map((a) => a.type);
 
 test('relevé : plugin ancien (sans route d’intégrité) → versions relevées, erreur d’intégrité signalée sans alerte', async () => {
@@ -225,7 +225,7 @@ test('relevé : plugin ancien (sans route d’intégrité) → versions relevée
   assert.equal(r.cms.admins.baseCount, 2, 'référence des administrateurs fixée');
   const c = await runCheck(watch.id);
   assert.deepEqual(types(c), [], 'aucune alerte inventée');
-  assert.equal(dbm.getWatch(watch.id).nextRun > 0, true);
+  assert.equal((await dbm.getWatch(watch.id)).nextRun > 0, true);
 });
 
 test('moteur : fichiers modifiés et PHP dans uploads alertent une fois, puis « rétabli » quand tout est conforme', async () => {
@@ -233,7 +233,7 @@ test('moteur : fichiers modifiés et PHP dans uploads alertent une fois, puis «
   const before = sent.length;
   const r = await pollCms(watch.id, { refresh: true });
   assert.equal(r.cms.integrity.ok, true);
-  assert.equal(dbm.getWatch(watch.id).nextRun, 0, 'le contrôle du site est relancé sans attendre');
+  assert.equal((await dbm.getWatch(watch.id)).nextRun, 0, 'le contrôle du site est relancé sans attendre');
   const c = await runCheck(watch.id);
   assert.deepEqual(types(c).sort(), ['cms_integrity_plugins', 'cms_integrity_uploads']);
   assert.deepEqual(c.alerts.map((a) => a.severity), ['critical', 'critical']);
@@ -245,7 +245,7 @@ test('moteur : fichiers modifiés et PHP dans uploads alertent une fois, puis «
   await pollCms(watch.id, { refresh: true });
   const back = await runCheck(watch.id);
   assert.deepEqual(types(back), ['recovery', 'recovery']);
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents), []);
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents), []);
 });
 
 test('moteur : un nouvel administrateur alerte, ré-alerte s’ils sont plus nombreux, et « Je connais ces comptes » le fait taire sans « rétabli »', async () => {
@@ -264,13 +264,13 @@ test('moteur : un nouvel administrateur alerte, ré-alerte s’ils sont plus nom
   assert.match(more.alerts[0].title, /^2 nouveaux comptes administrateur \(2 → 4\)$/);
 
   const count = sent.length;
-  assert.ok(acceptCmsAdmins(watch.id));
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents), []);
+  assert.ok(await acceptCmsAdmins(watch.id));
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents), []);
   assert.deepEqual(types(await runCheck(watch.id)), [], 'accepté : silence, aucun message « rétabli »');
   assert.equal(sent.length, count);
   await pollCms(watch.id, { refresh: true });
   assert.deepEqual(types(await runCheck(watch.id)), [], 'et ils ne reviennent pas au relevé suivant');
-  assert.equal(acceptCmsAdmins(99999), null);
+  assert.equal(await acceptCmsAdmins(99999), null);
 });
 
 test('moteur : contrôle de sécurité coupé pour ce site → incidents effacés en silence, mises à jour toujours évaluées', async () => {
@@ -278,11 +278,11 @@ test('moteur : contrôle de sécurité coupé pour ce site → incidents effacé
   await pollCms(watch.id, { refresh: true });
   assert.deepEqual(types(await runCheck(watch.id)).sort(), ['cms_integrity_plugins', 'cms_integrity_uploads']);
   const count = sent.length;
-  const cur = dbm.getWatch(watch.id);
-  dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, security: false } } });
+  const cur = await dbm.getWatch(watch.id);
+  await dbm.updateWatch(watch.id, { config: { ...cur.config, cms: { ...cur.config.cms, security: false } } });
   assert.deepEqual(types(await runCheck(watch.id)), []);
   assert.equal(sent.length, count, 'aucun « rétabli » trompeur');
-  assert.deepEqual(Object.keys(dbm.getWatch(watch.id).state.incidents), []);
+  assert.deepEqual(Object.keys((await dbm.getWatch(watch.id)).state.incidents), []);
   const r = await pollCms(watch.id, { refresh: true });
   assert.equal('integrity' in r.cms, false, 'plus de contrôle d’intégrité demandé');
 });

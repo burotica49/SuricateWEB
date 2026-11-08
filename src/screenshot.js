@@ -350,7 +350,7 @@ export function captureWatch(id, { kind = 'scheduled' } = {}) {
 }
 
 async function doCapture(id, kind) {
-  const w = getWatch(id);
+  const w = await getWatch(id);
   if (!w) return { error: 'Site introuvable' };
   // Mode démo (voir scheduler.js) : on ne touche ni au réseau ni aux données de démonstration.
   if (process.env.VIGIE_DEMO === '1') return { error: 'Mode démo : les captures sont désactivées (données fictives).' };
@@ -369,8 +369,8 @@ async function doCapture(id, kind) {
     const thumb = r.thumb ? `${id}/${now}.t.jpg` : null;
     await writeFile(join(SHOTS_DIR, file), r.image);
     if (thumb) await writeFile(join(SHOTS_DIR, thumb), r.thumb);
-    const shotId = insertScreenshot({ watchId: id, ts: now, kind, file, thumb, size: r.image.length, width: r.width, height: r.height, finalUrl: r.finalUrl, title: r.title });
-    setShotState(id, { nextShot: now + sc.interval * 60e3, error: null });
+    const shotId = await insertScreenshot({ watchId: id, ts: now, kind, file, thumb, size: r.image.length, width: r.width, height: r.height, finalUrl: r.finalUrl, title: r.title });
+    await setShotState(id, { nextShot: now + sc.interval * 60e3, error: null });
     await pruneWatchShots(id);
     bus.emit('event', { type: 'shot', watchId: id });
     return { id: shotId, ts: now, image: r.image };
@@ -378,7 +378,7 @@ async function doCapture(id, kind) {
     const error = e.message || String(e);
     console.error(`[capture] ${w.name} : ${error}`);
     // Nouvelle tentative plus tôt qu'à l'intervalle normal, sans marteler un site en panne.
-    setShotState(id, { nextShot: now + Math.min(sc.interval, 30) * 60e3, error });
+    await setShotState(id, { nextShot: now + Math.min(sc.interval, 30) * 60e3, error });
     return { error };
   }
 }
@@ -394,10 +394,10 @@ export function shotLimits(watch) {
 
 /** Supprime les captures (lignes et fichiers) au-delà des limites du site. Retourne le nombre de captures supprimées. */
 export async function pruneWatchShots(id) {
-  const { keep, keepOther } = shotLimits(getWatch(id));
-  const rows = screenshotsToPrune(id, keep, keepOther);
+  const { keep, keepOther } = shotLimits(await getWatch(id));
+  const rows = await screenshotsToPrune(id, keep, keepOther);
   if (!rows.length) return 0;
-  deleteScreenshotRows(rows.map((r) => r.id));
+  await deleteScreenshotRows(rows.map((r) => r.id));
   for (const r of rows) for (const f of [r.file, r.thumb]) if (f) await unlink(join(SHOTS_DIR, f)).catch(() => {});
   return rows.length;
 }
@@ -405,7 +405,7 @@ export async function pruneWatchShots(id) {
 /** Applique les limites à tous les sites (après un changement du réglage général). */
 export async function pruneAllShots() {
   let n = 0;
-  for (const w of listWatches()) n += await pruneWatchShots(w.id);
+  for (const w of await listWatches()) n += await pruneWatchShots(w.id);
   return n;
 }
 

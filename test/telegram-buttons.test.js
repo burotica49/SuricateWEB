@@ -121,18 +121,19 @@ test('envoi : boutons joints ; repli sans bouton lien, puis sans bouton, si Tele
   assert.equal(fake.sent[0].reply_markup, undefined, 'boutons désactivés : message identique à avant');
 });
 
-test('base : marquer comme lu jusqu’à une alerte, pour un seul site', () => {
-  const a = dbm.createWatch({ name: 'A', url: 'http://a.example/', interval: 5 });
-  const b = dbm.createWatch({ name: 'B', url: 'http://b.example/', interval: 5 });
-  const ids = [1, 2, 3].map((i) => dbm.insertAlert({ watchId: a.id, severity: 'warning', type: i === 2 ? 'rdap_expiring' : 'content_changed', title: `a${i}` }));
-  const other = dbm.insertAlert({ watchId: b.id, severity: 'warning', type: 'content_changed', title: 'b1' });
-  const rows = dbm.markAlertsReadUpTo(a.id, ids[1]);
+test('base : marquer comme lu jusqu’à une alerte, pour un seul site', async () => {
+  const a = await dbm.createWatch({ name: 'A', url: 'http://a.example/', interval: 5 });
+  const b = await dbm.createWatch({ name: 'B', url: 'http://b.example/', interval: 5 });
+  const ids = [];
+  for (const i of [1, 2, 3]) ids.push(await dbm.insertAlert({ watchId: a.id, severity: 'warning', type: i === 2 ? 'rdap_expiring' : 'content_changed', title: `a${i}` }));
+  const other = await dbm.insertAlert({ watchId: b.id, severity: 'warning', type: 'content_changed', title: 'b1' });
+  const rows = await dbm.markAlertsReadUpTo(a.id, ids[1]);
   assert.deepEqual(rows.map((r) => r.id), [ids[0], ids[1]], 'jusqu’à l’alerte indiquée, pas au-delà');
   assert.ok(rows.some((r) => r.type === 'rdap_expiring'));
-  const read = (id) => dbm.db.prepare('SELECT read FROM alerts WHERE id = ?').get(id).read;
-  assert.deepEqual([ids[0], ids[1], ids[2], other].map(read), [1, 1, 0, 0]);
-  assert.deepEqual(dbm.markAlertsReadUpTo(a.id, ids[1]), [], 'déjà lues : rien');
-  assert.deepEqual(dbm.markAlertsReadUpTo(99999, 5), []);
+  const read = async (id) => (await dbm.db.get('SELECT read FROM alerts WHERE id = ?', [id])).read;
+  assert.deepEqual(await Promise.all([ids[0], ids[1], ids[2], other].map(read)), [1, 1, 0, 0]);
+  assert.deepEqual(await dbm.markAlertsReadUpTo(a.id, ids[1]), [], 'déjà lues : rien');
+  assert.deepEqual(await dbm.markAlertsReadUpTo(99999, 5), []);
 });
 
 const click = (data, over = {}) => ({ update_id: over.update_id ?? 10, callback_query: { id: `cq${over.update_id ?? 10}`, data, message: { message_id: 7, chat: { id: over.chat ?? 42 }, reply_markup: { inline_keyboard: [[{ text: '✓ Marquer comme lu', callback_data: 'lu:5:42' }, { text: 'Ouvrir', url: 'https://x.example/' }]] } } } });

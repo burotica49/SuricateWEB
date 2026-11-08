@@ -193,18 +193,18 @@ function cmsIncidentAcked(w, key, i) {
 }
 
 /** Mémorise l'acquittement sur le site : il survit aux contrôles suivants, même sans alerte non lue. */
-function rememberDomainAck(id) {
-  const w = getWatch(id);
+async function rememberDomainAck(id) {
+  const w = await getWatch(id);
   if (!w) return;
   const state = { ...w.state };
   const inc = state.incidents?.rdap_expiring;
   if (inc) state.domainAck = { ...(state.domainAck || {}), rdap_expiring: { severity: inc.severity, expires: state.rdap?.expires ?? null } };
   const cms = Object.entries(state.incidents || {}).filter(([k]) => isCmsIncident(k));
   if (cms.length) state.incidentAck = { ...(state.incidentAck || {}), ...Object.fromEntries(cms.map(([k, i]) => [k, { severity: i.severity, count: i.count ?? 0 }])) };
-  if (inc || cms.length) updateWatch(id, { state });
+  if (inc || cms.length) await updateWatch(id, { state });
 }
 
-function summarize(w, ctx) {
+async function summarize(w, ctx) {
   const quietDomain = domainExpiryAcked(w, ctx);
   const incidents = Object.entries(w.state.incidents || {}).map(([key, i]) => ({ key, ...i, ...((key === 'rdap_expiring' && quietDomain) || (isCmsIncident(key) && cmsIncidentAcked(w, key, i)) ? { acked: true } : {}) }));
   const open = incidents.filter((i) => !i.acked);
@@ -226,18 +226,18 @@ function summarize(w, ctx) {
     title: w.state.title || '', finalUrl: w.state.finalUrl || '',
     incidents,
     unread, avgMs: stats.avgMs ?? null, spark: stats.spark || [],
-    uptime: domainOnly ? null : uptimeBetween(w, now - DAY_MS, now, now).uptime,
-    uptime30: domainOnly ? null : uptimeBetween(w, now - 30 * DAY_MS, now, now).uptime,
+    uptime: domainOnly ? null : (await uptimeBetween(w, now - DAY_MS, now, now)).uptime,
+    uptime30: domainOnly ? null : (await uptimeBetween(w, now - 30 * DAY_MS, now, now)).uptime,
     tlsExpires: w.state.tls?.expires || null, domainExpires: w.state.rdap?.expires || null,
     maintenanceUntil: ctx.maint?.get(w.id)?.end ?? null,
   };
 }
 
-function buildCtx() {
+async function buildCtx() {
   // Dernière alerte d'échéance déjà émise (domainExpiry) : sert à la retirer de l'accueil une fois lue.
-  const stats = checkStatsSince(Date.now() - 864e5);
-  for (const [id, spark] of Object.entries(sparklines(40))) (stats[id] ||= {}).spark = spark;
-  return { unread: unreadAlertCounts(), stats, shots: latestScreenshots(), domainExpiry: domainExpiryAlertState(), maint: activeMaintenanceMap() };
+  const stats = await checkStatsSince(Date.now() - 864e5);
+  for (const [id, spark] of Object.entries(await sparklines(40))) (stats[id] ||= {}).spark = spark;
+  return { unread: await unreadAlertCounts(), stats, shots: await latestScreenshots(), domainExpiry: await domainExpiryAlertState(), maint: await activeMaintenanceMap() };
 }
 
 const alertRow = (r) => ({
@@ -247,18 +247,18 @@ const alertRow = (r) => ({
 
 const maskToken = (t) => (t ? t.slice(0, 4) + '••••••••' + t.slice(-4) : '');
 
-function publicSettings() {
+async function publicSettings() {
   const s = getSettings();
   return {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: CREDS.user, defaultKeywords: DEFAULT_KEYWORDS,
-    screenshots: { available: engine.available(), browser: chromePath(), usage: screenshotUsage() },
+    screenshots: { available: engine.available(), browser: chromePath(), usage: await screenshotUsage() },
     app: APP_INFO,
   };
 }
 
-function watchInput(body, existing) {
+async function watchInput(body, existing) {
   const s = getSettings();
   const cfg = normalizeConfig({ ...(existing?.config || defaultConfig()), ...(body.config || {}), checks: { ...(existing?.config.checks || {}), ...(body.config?.checks || {}) } });
   if (cfg.cms.type && !cfg.cms.token) cfg.cms.token = randomBytes(32).toString('base64url');
@@ -267,13 +267,13 @@ function watchInput(body, existing) {
   // Adresse de la page de statut : un jeton aléatoire, propre à ce site (jamais deux sites avec le même).
   const st = cfg.statusPage;
   if (st.enabled && !st.token) st.token = randomBytes(18).toString('base64url');
-  if (st.token && listWatches().some((o) => o.id !== existing?.id && o.config.statusPage.token === st.token)) st.token = randomBytes(18).toString('base64url');
+  if (st.token && (await listWatches()).some((o) => o.id !== existing?.id && o.config.statusPage.token === st.token)) st.token = randomBytes(18).toString('base64url');
   const tags = Array.isArray(body.tags) ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10) : existing?.tags || [];
   // Groupe : absent = inchangé ; null / '' = « Sans groupe » ; sinon il doit exister.
   let groupId = existing?.groupId ?? null;
   if (body.groupId !== undefined) {
     if (body.groupId === null || body.groupId === '') groupId = null;
-    else if (getGroup(Number(body.groupId))) groupId = Number(body.groupId);
+    else if (await getGroup(Number(body.groupId))) groupId = Number(body.groupId);
     else throw new HttpError(400, 'Groupe inconnu');
   }
   return {
@@ -314,27 +314,29 @@ route('POST', '/api/logout', (ctx) => {
 
 // ───────────── Routes : tableau de bord / sites ─────────────
 
-route('GET', '/api/watches', () => {
-  const ctx = buildCtx();
-  return listWatches().map((w) => summarize(w, ctx));
+route('GET', '/api/watches', async () => {
+  const ctx = await buildCtx();
+  const out = [];
+  for (const w of await listWatches()) out.push(await summarize(w, ctx));
+  return out;
 });
 
 route('POST', '/api/watches', async (ctx) => {
-  const { data, cfg } = watchInput(ctx.body);
+  const { data, cfg } = await watchInput(ctx.body);
   await SELECTOR_CHECK(cfg);
-  let w = createWatch(data);
-  if (w.config.cms.type) w = updateWatch(w.id, { nextCms: Date.now() });
+  let w = await createWatch(data);
+  if (w.config.cms.type) w = await updateWatch(w.id, { nextCms: Date.now() });
   enqueue(w.id);
-  return summarize(w, buildCtx());
+  return await summarize(w, await buildCtx());
 });
 
-route('GET', '/api/watches/:id', (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+route('GET', '/api/watches/:id', async (ctx) => {
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
-  const checks = recentChecks(w.id, 200);
+  const checks = await recentChecks(w.id, 200);
   const { state } = w;
   return {
-    ...summarize(w, buildCtx()),
+    ...(await summarize(w, await buildCtx())),
     config: w.config,
     createdAt: w.createdAt,
     checks,
@@ -349,14 +351,14 @@ route('GET', '/api/watches/:id', (ctx) => {
       const st = href ? state.pages?.[href] : null;
       return { url: p.url, label: p.label, href, state: st ? { code: st.code ?? null, ms: st.ms ?? null, title: st.title ?? '', error: st.error ?? null, checkedAt: st.checkedAt ?? null, fails: st.fails || 0, baseline: !!st.baseline } : null };
     }),
-    maintenance: listMaintenance(w.id),
+    maintenance: await listMaintenance(w.id),
   };
 });
 
 route('PUT', '/api/watches/:id', async (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
-  const { data, cfg } = watchInput(ctx.body, w);
+  const { data, cfg } = await watchInput(ctx.body, w);
   await SELECTOR_CHECK(cfg);
   const state = { ...w.state };
   if (data.url !== w.url || RESET_KEYS.some((k) => JSON.stringify(cfg[k]) !== JSON.stringify(w.config[k]))) state.baseline = false;
@@ -367,14 +369,14 @@ route('PUT', '/api/watches/:id', async (ctx) => {
   const cmsOn = cfg.mode !== 'domain' && !!cfg.cms.type;
   const cmsChanged = JSON.stringify(cfg.cms) !== JSON.stringify(w.config.cms) || data.url !== w.url;
   const nextCms = cmsOn ? (cmsChanged || !(w.nextCms > 0) ? Date.now() : w.nextCms) : 0;
-  const u = updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}), nextCms });
+  const u = await updateWatch(w.id, { ...data, state, nextRun: data.enabled ? 0 : w.nextRun, ...(reshoot ? { nextShot: 0 } : {}), nextCms });
   await pruneWatchShots(u.id); // une limite abaissée s'applique tout de suite
-  return summarize(u, buildCtx());
+  return await summarize(u, await buildCtx());
 });
 
 route('DELETE', '/api/watches/:id', async (ctx) => {
   const id = Number(ctx.params.id);
-  if (!deleteWatch(id)) throw new HttpError(404, 'Site introuvable');
+  if (!await deleteWatch(id)) throw new HttpError(404, 'Site introuvable');
   await removeWatchShots(id);
   return { ok: true };
 });
@@ -383,54 +385,54 @@ route('DELETE', '/api/watches/:id', async (ctx) => {
 
 const layoutChanged = () => bus.emit('event', { type: 'layout' });
 
-route('GET', '/api/groups', () => listGroups());
+route('GET', '/api/groups', async () => listGroups());
 
-route('POST', '/api/groups', (ctx) => {
-  const g = createGroup(ctx.body);
+route('POST', '/api/groups', async (ctx) => {
+  const g = await createGroup(ctx.body);
   layoutChanged();
   return g;
 });
 
-route('PUT', '/api/groups/:id', (ctx) => {
-  const g = updateGroup(Number(ctx.params.id), ctx.body);
+route('PUT', '/api/groups/:id', async (ctx) => {
+  const g = await updateGroup(Number(ctx.params.id), ctx.body);
   if (!g) throw new HttpError(404, 'Groupe introuvable');
   layoutChanged();
   return g;
 });
 
 // Les sites du groupe ne sont jamais supprimés : ils passent dans « Sans groupe ».
-route('DELETE', '/api/groups/:id', (ctx) => {
-  if (!deleteGroup(Number(ctx.params.id))) throw new HttpError(404, 'Groupe introuvable');
+route('DELETE', '/api/groups/:id', async (ctx) => {
+  if (!await deleteGroup(Number(ctx.params.id))) throw new HttpError(404, 'Groupe introuvable');
   layoutChanged();
   return { ok: true };
 });
 
 // Organisation complète issue d'un glisser-déposer, appliquée en une seule transaction.
-route('PUT', '/api/layout', (ctx) => {
-  applyLayout(ctx.body);
+route('PUT', '/api/layout', async (ctx) => {
+  await applyLayout(ctx.body);
   layoutChanged();
-  return { ok: true, groups: listGroups() };
+  return { ok: true, groups: await listGroups() };
 });
 
 // ───────────── Routes : captures d'écran ─────────────
 
-route('GET', '/api/watches/:id/screenshots', (ctx) => {
-  const w = loadWatch(ctx);
+route('GET', '/api/watches/:id/screenshots', async (ctx) => {
+  const w = await loadWatch(ctx);
   return {
     available: engine.available(),
     enabled: w.config.screenshot.enabled && w.config.mode !== 'domain',
     interval: w.config.screenshot.interval,
     ...shotLimits(w),
-    ...screenshotStats(w.id),
+    ...(await screenshotStats(w.id)),
     nextShot: w.nextShot,
     error: w.shotError,
     capturing: isCapturing(w.id),
-    items: listScreenshots(w.id, clamp(ctx.query.get('limit'), 1, 500, 200)),
+    items: await listScreenshots(w.id, clamp(ctx.query.get('limit'), 1, 500, 200)),
   };
 });
 
 route('POST', '/api/watches/:id/screenshot', async (ctx) => {
-  const w = loadWatch(ctx);
+  const w = await loadWatch(ctx);
   if (w.config.mode === 'domain') throw new HttpError(400, "Un domaine seul n'a pas de page à capturer");
   if (!engine.available()) throw new HttpError(503, NO_CHROME);
   const r = await captureWatch(w.id, { kind: 'manual' });
@@ -440,7 +442,7 @@ route('POST', '/api/watches/:id/screenshot', async (ctx) => {
 
 // L'image passe par l'API pour rester derrière la connexion : un lien de capture n'est jamais public.
 route('GET', '/api/screenshots/:id/image', async (ctx) => {
-  const s = getScreenshot(Number(ctx.params.id));
+  const s = await getScreenshot(Number(ctx.params.id));
   if (!s) throw new HttpError(404, 'Capture introuvable (supprimée par la rétention ?)');
   const buf = await readFile(join(SHOTS_DIR, ctx.query.get('thumb') && s.thumb ? s.thumb : s.file)).catch(() => null);
   if (!buf) throw new HttpError(404, 'Fichier de capture introuvable');
@@ -468,17 +470,17 @@ route('GET', '/api/plugins/:file', (ctx) => {
 });
 
 route('POST', '/api/watches/:id/cms', async (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
   if (w.config.mode === 'domain' || !w.config.cms.type) throw new HttpError(400, 'Aucun CMS configuré pour ce site');
   return pollCms(w.id, { refresh: true });
 });
 
 // « Je connais ces comptes » : les administrateurs actuels deviennent la référence.
-route('POST', '/api/watches/:id/cms/admins/accept', (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+route('POST', '/api/watches/:id/cms/admins/accept', async (ctx) => {
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
-  if (!acceptCmsAdmins(w.id)) throw new HttpError(400, 'Aucun relevé des administrateurs pour ce site');
+  if (!await acceptCmsAdmins(w.id)) throw new HttpError(400, 'Aucun relevé des administrateurs pour ce site');
   bus.emit('event', { type: 'ack', watchId: w.id });
   return { ok: true };
 });
@@ -505,26 +507,26 @@ function reportRange(ctx) {
 }
 
 // Un site : /api/watches/12/report?month=2026-10&tz=60 — ouvert dans un onglet, imprimable ou enregistrable en PDF.
-route('GET', '/api/watches/:id/report', (ctx) => {
-  const w = loadWatch(ctx);
+route('GET', '/api/watches/:id/report', async (ctx) => {
+  const w = await loadWatch(ctx);
   const range = reportRange(ctx);
-  return sendHtml(ctx.res, renderReport({ title: `${w.name} · ${new URL(w.url).hostname.replace(/^www\./, '')}`, sites: [siteReport(w, range)], range, nav: { base: `/api/watches/${w.id}/report` } }));
+  return sendHtml(ctx.res, renderReport({ title: `${w.name} · ${new URL(w.url).hostname.replace(/^www\./, '')}`, sites: [await siteReport(w, range)], range, nav: { base: `/api/watches/${w.id}/report` } }));
 });
 
 // Un groupe (un client) : tous ses sites dans un seul rapport.
-route('GET', '/api/groups/:id/report', (ctx) => {
-  const g = getGroup(Number(ctx.params.id));
+route('GET', '/api/groups/:id/report', async (ctx) => {
+  const g = await getGroup(Number(ctx.params.id));
   if (!g) throw new HttpError(404, 'Groupe introuvable');
-  const members = listWatches().filter((w) => w.groupId === g.id);
+  const members = (await listWatches()).filter((w) => w.groupId === g.id);
   if (!members.length) throw new HttpError(400, 'Ce groupe ne contient aucun site');
   const range = reportRange(ctx);
-  return sendHtml(ctx.res, renderReport({ title: g.name, sites: members.map((w) => siteReport(w, range)), range, nav: { base: `/api/groups/${g.id}/report` } }));
+  return sendHtml(ctx.res, renderReport({ title: g.name, sites: await Promise.all(members.map((w) => siteReport(w, range))), range, nav: { base: `/api/groups/${g.id}/report` } }));
 });
 
 // ───────────── Fenêtres de maintenance ─────────────
 
-route('POST', '/api/watches/:id/maintenance', (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+route('POST', '/api/watches/:id/maintenance', async (ctx) => {
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
   const now = Date.now();
   const minutes = Math.round(clamp(ctx.body.minutes, 5, 7 * 24 * 60, 60));
@@ -532,76 +534,76 @@ route('POST', '/api/watches/:id/maintenance', (ctx) => {
   // Un début absent ou déjà passé veut dire « maintenant » ; au plus 90 jours à l'avance.
   const start = Number.isFinite(asked) && asked > now ? Math.min(asked, now + 90 * DAY_MS) : now;
   const note = String(ctx.body.note ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 140);
-  addMaintenance({ watchId: w.id, start, end: start + minutes * 60e3, note });
-  return { ok: true, maintenance: listMaintenance(w.id) };
+  await addMaintenance({ watchId: w.id, start, end: start + minutes * 60e3, note });
+  return { ok: true, maintenance: await listMaintenance(w.id) };
 });
 
-route('DELETE', '/api/maintenance/:id', (ctx) => {
-  const r = endMaintenance(Number(ctx.params.id));
+route('DELETE', '/api/maintenance/:id', async (ctx) => {
+  const r = await endMaintenance(Number(ctx.params.id));
   if (!r) throw new HttpError(404, 'Fenêtre introuvable ou déjà terminée');
   // Fenêtre arrêtée avant son terme : la surveillance reprend aussitôt (le récapitulatif part sans attendre l'échéance prévue).
   if (r.start <= Date.now()) enqueue(r.watchId);
-  return { ok: true, maintenance: listMaintenance(r.watchId) };
+  return { ok: true, maintenance: await listMaintenance(r.watchId) };
 });
 
 route('POST', '/api/watches/:id/check', async (ctx) => {
   const id = Number(ctx.params.id);
-  if (!getWatch(id)) throw new HttpError(404, 'Site introuvable');
+  if (!await getWatch(id)) throw new HttpError(404, 'Site introuvable');
   const r = await enqueue(id, { wait: true });
   return { ok: true, result: r && { code: r.code, ms: r.ms, error: r.error, alerts: r.alerts?.length || 0 } };
 });
 
-route('POST', '/api/watches/:id/toggle', (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+route('POST', '/api/watches/:id/toggle', async (ctx) => {
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
   // Mettre en pause clôt une panne en cours : le temps en pause ne doit pas compter comme indisponibilité.
   const state = { ...w.state };
   if (w.enabled && state.outageId) {
-    closeOutage(state.outageId, Date.now());
+    await closeOutage(state.outageId, Date.now());
     Object.assign(state, { outageId: null, failSince: null, fails: 0 });
   }
-  const u = updateWatch(w.id, { enabled: !w.enabled, nextRun: 0, state });
-  return summarize(u, buildCtx());
+  const u = await updateWatch(w.id, { enabled: !w.enabled, nextRun: 0, state });
+  return await summarize(u, await buildCtx());
 });
 
 // ───────────── Routes : disponibilité (type UptimeRobot) ─────────────
 
-const loadWatch = (ctx) => {
-  const w = getWatch(Number(ctx.params.id));
+const loadWatch = async (ctx) => {
+  const w = await getWatch(Number(ctx.params.id));
   if (!w) throw new HttpError(404, 'Site introuvable');
   return w;
 };
 
-route('GET', '/api/watches/:id/uptime', (ctx) => {
-  const w = loadWatch(ctx);
+route('GET', '/api/watches/:id/uptime', async (ctx) => {
+  const w = await loadWatch(ctx);
   const now = Date.now();
-  const open = currentOutage(w.id);
-  const lastEnd = lastOutageEnd(w.id);
+  const open = await currentOutage(w.id);
+  const lastEnd = await lastOutageEnd(w.id);
   const current = !w.enabled ? { state: 'paused' } : open ? { state: 'down', since: open.start, reason: open.reason } : { state: 'up', since: lastEnd || w.createdAt };
   return {
     current,
-    periods: uptimeSummary(w, now),
+    periods: await uptimeSummary(w, now),
     // Jours calendaires du navigateur : il transmet son décalage UTC en minutes (ex. +60 pour Paris en hiver).
-    bars: uptimeBars(w, clamp(ctx.query.get('tz'), -840, 840, 0), now),
-    outages: outageList(w.id, 50, now),
-    response: Object.fromEntries(Object.entries(UPTIME_PERIODS).map(([k, d]) => [k, responseStats(w.id, d, now)])),
+    bars: await uptimeBars(w, clamp(ctx.query.get('tz'), -840, 840, 0), now),
+    outages: await outageList(w.id, 50, now),
+    response: Object.fromEntries(await Promise.all(Object.entries(UPTIME_PERIODS).map(async ([k, d]) => [k, await responseStats(w.id, d, now)]))),
     since: w.createdAt,
   };
 });
 
-route('GET', '/api/watches/:id/series', (ctx) => {
-  const w = loadWatch(ctx);
+route('GET', '/api/watches/:id/series', async (ctx) => {
+  const w = await loadWatch(ctx);
   const range = ['24h', '7d', '30d', '90d'].includes(ctx.query.get('range')) ? ctx.query.get('range') : '24h';
-  return { range, points: responseSeries(w.id, range) };
+  return { range, points: await responseSeries(w.id, range) };
 });
 
 // ───────────── Routes : domaine & DNS ─────────────
 
-route('GET', '/api/watches/:id/domain', (ctx) => {
-  const w = loadWatch(ctx);
+route('GET', '/api/watches/:id/domain', async (ctx) => {
+  const w = await loadWatch(ctx);
   const s = w.state;
   const host = new URL(w.url).hostname;
-  const events = domainAlerts(w.id, 100);
+  const events = await domainAlerts(w.id, 100);
   const incidents = Object.entries(s.incidents || {}).filter(([k]) => /^(dns|rdap)/.test(k)).map(([key, i]) => ({ key, ...i }));
   return {
     host, domain: registrable(host), zone: s.dns?.zone || '', mode: w.config.mode,
@@ -610,25 +612,25 @@ route('GET', '/api/watches/:id/domain', (ctx) => {
   };
 });
 
-route('POST', '/api/watches/:id/ack', (ctx) => {
+route('POST', '/api/watches/:id/ack', async (ctx) => {
   const id = Number(ctx.params.id);
-  markWatchAlertsRead(id);
-  rememberDomainAck(id);
+  await markWatchAlertsRead(id);
+  await rememberDomainAck(id);
   bus.emit('event', { type: 'ack', watchId: id });
   return { ok: true };
 });
 
-route('GET', '/api/watches/:id/history', (ctx) => {
+route('GET', '/api/watches/:id/history', async (ctx) => {
   const id = Number(ctx.params.id);
-  const rows = snapshotHistory(id, 100);
+  const rows = await snapshotHistory(id, 100);
   return rows.map((r) => ({ id: r.id, ts: r.ts, title: r.title, size: r.size, meta: JSON.parse(r.meta || '{}') }));
 });
 
-route('GET', '/api/snapshots/:id/diff', (ctx) => {
-  const cur = getSnapshot(Number(ctx.params.id));
+route('GET', '/api/snapshots/:id/diff', async (ctx) => {
+  const cur = await getSnapshot(Number(ctx.params.id));
   if (!cur) throw new HttpError(404, 'Version introuvable (supprimée par la rétention ?)');
   const against = ctx.query.get('against');
-  const prev = against ? getSnapshot(Number(against)) : previousSnapshot(cur.watch_id, cur.id);
+  const prev = against ? await getSnapshot(Number(against)) : await previousSnapshot(cur.watch_id, cur.id);
   const a = snapshotLines(prev);
   const b = snapshotLines(cur);
   const d = diffLines(a, b);
@@ -638,8 +640,8 @@ route('GET', '/api/snapshots/:id/diff', (ctx) => {
   };
 });
 
-route('GET', '/api/snapshots/:id/text', (ctx) => {
-  const s = getSnapshot(Number(ctx.params.id));
+route('GET', '/api/snapshots/:id/text', async (ctx) => {
+  const s = await getSnapshot(Number(ctx.params.id));
   if (!s) throw new HttpError(404, 'Version introuvable');
   return { id: s.id, ts: s.ts, lines: snapshotLines(s) };
 });
@@ -659,9 +661,9 @@ route('POST', '/api/test-url', async (ctx) => {
 
 // ───────────── Routes : alertes ─────────────
 
-route('GET', '/api/alerts', (ctx) => {
+route('GET', '/api/alerts', async (ctx) => {
   const q = ctx.query;
-  const rows = queryAlerts({
+  const rows = await queryAlerts({
     watchId: q.get('watch') ? Number(q.get('watch')) : null,
     severity: q.get('severity') || '',
     unread: q.get('unread') === '1',
@@ -671,14 +673,14 @@ route('GET', '/api/alerts', (ctx) => {
   return rows.map(alertRow);
 });
 
-route('POST', '/api/alerts/read', (ctx) => {
+route('POST', '/api/alerts/read', async (ctx) => {
   const { ids, all } = ctx.body;
   if (all) {
-    markEveryAlertRead();
-    for (const w of listWatches()) rememberDomainAck(w.id);
+    await markEveryAlertRead();
+    for (const w of await listWatches()) await rememberDomainAck(w.id);
   } else if (Array.isArray(ids) && ids.length) {
     const nums = ids.map(Number).filter((n) => Number.isFinite(n));
-    for (const watchId of markAlertsRead(nums)) rememberDomainAck(watchId);
+    for (const watchId of await markAlertsRead(nums)) await rememberDomainAck(watchId);
   }
   bus.emit('event', { type: 'ack' });
   return { ok: true };
@@ -686,7 +688,7 @@ route('POST', '/api/alerts/read', (ctx) => {
 
 // ───────────── Routes : réglages / Telegram ─────────────
 
-route('GET', '/api/settings', () => publicSettings());
+route('GET', '/api/settings', async () => publicSettings());
 
 route('PUT', '/api/settings', async (ctx) => {
   const b = ctx.body;
@@ -713,9 +715,9 @@ route('PUT', '/api/settings', async (ctx) => {
   if (b.cmsAfterDays !== undefined) patch.cmsAfterDays = Math.round(clamp(b.cmsAfterDays, 1, 90, 7));
   if (b.userAgent !== undefined) patch.userAgent = String(b.userAgent).trim() || cur.userAgent;
   if (Array.isArray(b.builtinKeywords)) patch.builtinKeywords = b.builtinKeywords.map((s) => String(s).trim()).filter(Boolean).slice(0, 300);
-  saveSettings(patch);
+  await saveSettings(patch);
   if (keepAll !== null && keepAll !== cur.retention.screenshots) await pruneAllShots(); // limite abaissée : appliquée à tous les sites
-  return publicSettings();
+  return await publicSettings();
 });
 
 const tokenFrom = (body) => String(body.token || '').trim() || getSettings().telegram.token;
@@ -744,30 +746,30 @@ route('POST', '/api/telegram/detect', async (ctx) => {
 
 // ───────────── Routes : export / import / temps réel ─────────────
 
-route('GET', '/api/export', (ctx) => {
+route('GET', '/api/export', async (ctx) => {
   ctx.headers['content-disposition'] = 'attachment; filename="vigie-sites.json"';
-  const groups = listGroups();
+  const groups = await listGroups();
   const nameOf = new Map(groups.map((g) => [g.id, g.name]));
   return {
     version: 2,
     groups: groups.map((g) => ({ name: g.name, color: g.color, collapsed: g.collapsed })),
     // Les identifiants de groupe sont propres à chaque installation : on exporte le NOM du groupe.
-    watches: listWatches().map((w) => ({ name: w.name, url: w.url, interval: w.interval, tags: w.tags, enabled: w.enabled, config: w.config, group: nameOf.get(w.groupId) ?? null })),
+    watches: (await listWatches()).map((w) => ({ name: w.name, url: w.url, interval: w.interval, tags: w.tags, enabled: w.enabled, config: w.config, group: nameOf.get(w.groupId) ?? null })),
   };
 });
 
 route('POST', '/api/import', async (ctx) => {
   const list = Array.isArray(ctx.body.watches) ? ctx.body.watches : [];
-  const have = new Set(listWatches().map((w) => w.url));
+  const have = new Set((await listWatches()).map((w) => w.url));
   // Groupes retrouvés par leur nom (sans tenir compte de la casse) ou créés à la volée.
-  const byName = new Map(listGroups().map((g) => [g.name.toLowerCase(), g.id]));
+  const byName = new Map((await listGroups()).map((g) => [g.name.toLowerCase(), g.id]));
   const colors = new Map((Array.isArray(ctx.body.groups) ? ctx.body.groups : []).map((g) => [String(g?.name ?? '').toLowerCase(), g.color]));
-  const groupFor = (name) => {
+  const groupFor = async (name) => {
     const n = String(name ?? '').trim();
     if (!n) return null;
     if (!byName.has(n.toLowerCase())) {
       try {
-        byName.set(n.toLowerCase(), createGroup({ name: n, color: colors.get(n.toLowerCase()) }).id);
+        byName.set(n.toLowerCase(), (await createGroup({ name: n, color: colors.get(n.toLowerCase()) })).id);
       } catch {
         return null; // nom invalide : le site est importé sans groupe
       }
@@ -777,10 +779,10 @@ route('POST', '/api/import', async (ctx) => {
   let added = 0;
   for (const it of list.slice(0, 500)) {
     try {
-      const { data } = watchInput({ ...it, groupId: undefined });
-      data.groupId = groupFor(it.group);
+      const { data } = await watchInput({ ...it, groupId: undefined });
+      data.groupId = await groupFor(it.group);
       if (have.has(data.url)) continue;
-      enqueue(createWatch(data).id);
+      enqueue((await createWatch(data)).id);
       have.add(data.url);
       added++;
     } catch {
@@ -839,7 +841,7 @@ async function serveStatic(req, res, pathname) {
 const statusHits = new Map();
 const NOT_FOUND_PAGE = '<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><title>Page introuvable</title><p style="font:16px system-ui;margin:40px">Page introuvable.</p>';
 
-function serveStatusPage(req, res, token, query) {
+async function serveStatusPage(req, res, token, query) {
   const ip = clientIp(req);
   const hit = statusHits.get(ip) || { n: 0, t: Date.now() };
   if (Date.now() - hit.t > 60e3) Object.assign(hit, { n: 0, t: Date.now() });
@@ -848,13 +850,13 @@ function serveStatusPage(req, res, token, query) {
     res.writeHead(429, { 'content-type': 'text/plain; charset=utf-8', 'retry-after': '60' });
     return res.end('Trop de requêtes');
   }
-  const w = getWatchByStatusToken(token);
+  const w = await getWatchByStatusToken(token);
   if (!w) {
     res.writeHead(404, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow', 'content-security-policy': REPORT_CSP });
     return res.end(NOT_FOUND_PAGE);
   }
   const tz = Math.round(clamp(query.get('tz'), -840, 840, serverTz()));
-  sendHtml(res, renderStatusPage({ title: w.config.statusPage.title || w.name, host: new URL(w.url).hostname.replace(/^www\./, ''), data: statusData(w, tz), tz }));
+  sendHtml(res, renderStatusPage({ title: w.config.statusPage.title || w.name, host: new URL(w.url).hostname.replace(/^www\./, ''), data: await statusData(w, tz), tz }));
 }
 
 // ───────────── Serveur ─────────────
@@ -863,7 +865,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     const status = req.method === 'GET' && /^\/status\/([A-Za-z0-9_-]{1,80})\/?$/.exec(url.pathname);
-    if (status) return serveStatusPage(req, res, status[1], url.searchParams);
+    if (status) return await serveStatusPage(req, res, status[1], url.searchParams);
     if (!url.pathname.startsWith('/api/')) return await serveStatic(req, res, url.pathname);
     const r = routes.find((r) => r.method === req.method && r.re.test(url.pathname));
     if (!r) return send(res, 404, { error: 'Route inconnue' });
@@ -904,9 +906,9 @@ server.listen(PORT, HOST, () => {
   if (process.env.VIGIE_DEMO !== '1' && process.env.TELEGRAM_POLL !== '0') {
     poller = startTelegramPoller({
       settings: () => getSettings().telegram,
-      onRead: (watchId, upTo) => {
-        const rows = markAlertsReadUpTo(watchId, upTo);
-        if (rows.some((r) => r.type === 'rdap_expiring')) rememberDomainAck(watchId); // comme « Tout est normal »
+      onRead: async (watchId, upTo) => {
+        const rows = await markAlertsReadUpTo(watchId, upTo);
+        if (rows.some((r) => r.type === 'rdap_expiring')) await rememberDomainAck(watchId); // comme « Tout est normal »
         if (rows.length) bus.emit('event', { type: 'ack', watchId });
         return rows.length;
       },

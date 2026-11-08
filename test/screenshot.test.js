@@ -126,47 +126,47 @@ engine.capture = async () => {
 };
 
 test('capture : fichiers + ligne + prochaine échéance ; dédoublonnage des captures simultanées', async () => {
-  const w = dbm.createWatch({ name: 'Cap', url: 'https://cap.test/', interval: 5, config: { ...noNet, screenshot: { interval: 30 } } });
+  const w = await dbm.createWatch({ name: 'Cap', url: 'https://cap.test/', interval: 5, config: { ...noNet, screenshot: { interval: 30 } } });
   calls = 0;
   const [a, b] = await Promise.all([shots.captureWatch(w.id), shots.captureWatch(w.id)]);
   assert.equal(calls, 1, 'une seule capture réelle pour deux demandes simultanées');
   assert.equal(a.id, b.id);
   assert.equal((await shots.shotFiles(w.id)).length, 2, 'image + miniature');
-  const [row] = dbm.listScreenshots(w.id);
+  const [row] = await dbm.listScreenshots(w.id);
   assert.equal(row.kind, 'scheduled');
   assert.equal(row.finalUrl, 'https://autre.example/accueil', 'adresse réellement capturée conservée');
   assert.equal(row.title, 'Page de l’hébergeur');
-  const after = dbm.getWatch(w.id);
+  const after = await dbm.getWatch(w.id);
   assert.ok(Math.abs(after.nextShot - (a.ts + 30 * 60e3)) < 1000, 'prochaine capture dans 30 min');
   assert.equal(after.shotError, null);
-  assert.equal(dbm.latestScreenshots()[w.id].id, a.id);
+  assert.equal((await dbm.latestScreenshots())[w.id].id, a.id);
 });
 
 test('capture : échec enregistré sur le site, nouvelle tentative plus tôt, aucune ligne créée', async () => {
-  const w = dbm.createWatch({ name: 'Echec', url: 'https://echec.test/', interval: 5, config: { ...noNet, screenshot: { interval: 360 } } });
+  const w = await dbm.createWatch({ name: 'Echec', url: 'https://echec.test/', interval: 5, config: { ...noNet, screenshot: { interval: 360 } } });
   failWith = 'Connexion refusée par le serveur';
   const r = await shots.captureWatch(w.id);
   failWith = null;
   assert.equal(r.error, 'Connexion refusée par le serveur');
-  assert.equal(dbm.listScreenshots(w.id).length, 0);
-  const after = dbm.getWatch(w.id);
+  assert.equal((await dbm.listScreenshots(w.id)).length, 0);
+  const after = await dbm.getWatch(w.id);
   assert.equal(after.shotError, 'Connexion refusée par le serveur');
   assert.ok(after.nextShot - Date.now() <= 30 * 60e3 + 1000, 'nouvelle tentative sous 30 min, pas dans 6 h');
   const ok = await shots.captureWatch(w.id);
   assert.ok(ok.id);
-  assert.equal(dbm.getWatch(w.id).shotError, null, "l'erreur disparaît au succès");
+  assert.equal((await dbm.getWatch(w.id)).shotError, null, "l'erreur disparaît au succès");
 });
 
 test('rétention : planifiées limitées, manuelles et d\'alerte conservées à part, fichiers supprimés', async () => {
-  dbm.saveSettings({ retention: { screenshots: 3 } });
-  const w = dbm.createWatch({ name: 'Ret', url: 'https://ret.test/', interval: 5, config: noNet });
+  await dbm.saveSettings({ retention: { screenshots: 3 } });
+  const w = await dbm.createWatch({ name: 'Ret', url: 'https://ret.test/', interval: 5, config: noNet });
   const ids = [];
   for (let i = 0; i < 6; i++) {
     ids.push((await shots.captureWatch(w.id)).id);
     await new Promise((r) => setTimeout(r, 3)); // horodatages (et noms de fichiers) distincts
   }
   const manual = (await shots.captureWatch(w.id, { kind: 'manual' })).id;
-  const rows = dbm.listScreenshots(w.id);
+  const rows = await dbm.listScreenshots(w.id);
   assert.equal(rows.filter((r) => r.kind === 'scheduled').length, 3, '3 planifiées conservées');
   assert.deepEqual(rows.filter((r) => r.kind === 'scheduled').map((r) => r.id), ids.slice(-3).reverse(), 'les plus récentes');
   assert.ok(rows.some((r) => r.id === manual), 'la capture manuelle est conservée');
@@ -178,7 +178,7 @@ test('rétention : planifiées limitées, manuelles et d\'alerte conservées à 
 
 // ───────────── Photo Telegram sur alerte critique ─────────────
 
-dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true } });
+await dbm.saveSettings({ telegram: { token: '123:ABC', chatId: '42', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true } });
 let page = '<html><head><title>Site</title></head><body><h1>Bienvenue</h1><p>Artisan depuis 1987 à Dijon</p><p>Fromages affinés</p><p>Contact et horaires</p><p>Mentions légales</p></body></html>';
 hooks.fetchPage = async () => ({
   status: 200, finalUrl: 'https://photo.test/', chain: [], ms: 30, ttfb: 10, size: 400, contentType: 'text/html', server: '', buf: Buffer.from('x'), body: page,
@@ -186,7 +186,7 @@ hooks.fetchPage = async () => ({
 const hacked = '<html><head><title>X</title></head><body><h1>Hacked by Evil Crew</h1></body></html>';
 
 test('alerte critique visuelle : le texte part d\'abord, puis la capture de la page en photo', async () => {
-  const w = dbm.createWatch({ name: 'Photo', url: 'https://photo.test/', interval: 5, config: noNet });
+  const w = await dbm.createWatch({ name: 'Photo', url: 'https://photo.test/', interval: 5, config: noNet });
   await runCheck(w.id); // référence
   sent.length = 0;
   calls = 0;
@@ -200,13 +200,13 @@ test('alerte critique visuelle : le texte part d\'abord, puis la capture de la p
   assert.match(sent[1].body, /filename="capture\.jpg"/);
   assert.match(sent[1].body, /Photo/, 'légende avec le nom du site');
   assert.equal(calls, 1);
-  assert.equal(dbm.listScreenshots(w.id)[0].kind, 'alert', 'la capture est aussi conservée dans l\'historique');
+  assert.equal((await dbm.listScreenshots(w.id))[0].kind, 'alert', 'la capture est aussi conservée dans l\'historique');
 });
 
 test('pas de photo : site en panne, alerte non visuelle, option coupée, captures désactivées pour le site', async () => {
   const run = async (cfg, mutate) => {
     page = '<html><head><title>Site</title></head><body><h1>Bienvenue</h1><p>Artisan depuis 1987 à Dijon</p><p>Fromages affinés</p><p>Contact et horaires</p><p>Mentions légales</p></body></html>';
-    const w = dbm.createWatch({ name: 'NoPhoto' + Math.random(), url: 'https://photo.test/', interval: 5, config: { ...noNet, ...cfg } });
+    const w = await dbm.createWatch({ name: 'NoPhoto' + Math.random(), url: 'https://photo.test/', interval: 5, config: { ...noNet, ...cfg } });
     await runCheck(w.id);
     sent.length = 0;
     await mutate();
@@ -216,11 +216,11 @@ test('pas de photo : site en panne, alerte non visuelle, option coupée, capture
   };
 
   // 1. Option Telegram désactivée
-  dbm.saveSettings({ telegram: { sendScreenshot: false } });
+  await dbm.saveSettings({ telegram: { sendScreenshot: false } });
   let o = await run({}, () => { page = hacked; });
   assert.ok(o.r.alerts.some((a) => a.type === 'forbidden'));
   assert.deepEqual(o.kinds, ['sendMessage']);
-  dbm.saveSettings({ telegram: { sendScreenshot: true } });
+  await dbm.saveSettings({ telegram: { sendScreenshot: true } });
 
   // 2. Capture désactivée sur ce site
   o = await run({ screenshot: { enabled: false } }, () => { page = hacked; });
@@ -244,7 +244,7 @@ test('pas de photo : site en panne, alerte non visuelle, option coupée, capture
 });
 
 test('domaine seul : aucune capture', async () => {
-  const w = dbm.createWatch({ name: 'Dom', url: 'https://dom.test/', interval: 5, config: { mode: 'domain', checks: { dns: false, rdap: false } } });
+  const w = await dbm.createWatch({ name: 'Dom', url: 'https://dom.test/', interval: 5, config: { mode: 'domain', checks: { dns: false, rdap: false } } });
   calls = 0;
   await runCheck(w.id);
   assert.equal(calls, 0);

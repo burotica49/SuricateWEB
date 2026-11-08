@@ -55,18 +55,18 @@ const site = http.createServer((req, res) => {
 await new Promise((r) => site.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${site.address().port}`;
 
-const watch = dbm.createWatch({
+const watch = await dbm.createWatch({
   name: 'Boutique', url: `${base}/`, interval: 5,
   config: { checks: { dns: false, tls: false, rdap: false }, failThreshold: 2, pages: [{ url: '/panier', label: 'Panier' }, { url: '/contact', label: 'Contact' }, { url: '/connexion', label: 'Connexion' }] },
 });
 const types = (r) => r.alerts.map((a) => a.type);
-const state = () => dbm.getWatch(watch.id).state;
+const state = async () => (await dbm.getWatch(watch.id)).state;
 
 test('moteur : les pages sont lues, la référence est posée sans alerte', async () => {
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), []);
   for (const p of ['/panier', '/contact', '/connexion']) assert.ok(hits.includes(p), `${p} a été contrôlée`);
-  const st = state().pages;
+  const st = (await state()).pages;
   assert.deepEqual(Object.keys(st).sort(), [`${base}/connexion`, `${base}/contact`, `${base}/panier`]);
   assert.equal(st[`${base}/panier`].baseline, true);
   assert.equal(st[`${base}/panier`].title, 'Panier');
@@ -100,27 +100,27 @@ test('moteur : texte suspect sur une page → incident, puis « rétabli » quan
   assert.equal(r.alerts[0].severity, 'critical');
   assert.match(r.alerts[0].title, /Texte suspect détecté : « hacked by » — page « Contact »/);
   assert.deepEqual(types(await runCheck(watch.id)), []);
-  assert.ok(Object.keys(state().incidents).some((k) => k.startsWith('page_forbidden:')));
+  assert.ok(Object.keys((await state()).incidents).some((k) => k.startsWith('page_forbidden:')));
   pages['/contact'] = pages['/contact'].replace('<h1>Hacked by Evil Crew</h1>', '<h1>Contact</h1>');
   const back = await runCheck(watch.id);
   assert.deepEqual(types(back), ['recovery']);
   assert.match(back.alerts[0].title, /^Rétabli : Texte suspect détecté/);
-  assert.deepEqual(Object.keys(state().incidents), []);
+  assert.deepEqual(Object.keys((await state()).incidents), []);
 });
 
 test('moteur : une page en erreur n’alerte qu’après plusieurs échecs, sans compter dans la disponibilité du site', async () => {
   status500 = true;
   assert.deepEqual(types(await runCheck(watch.id)), [], '1er échec : pas encore');
-  assert.equal(state().pages[`${base}/contact`].fails, 1);
+  assert.equal((await state()).pages[`${base}/contact`].fails, 1);
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), ['page_down']);
   assert.equal(r.alerts[0].severity, 'warning');
   assert.match(r.alerts[0].title, /Page inaccessible — page « Contact »/);
   assert.match(r.alerts[0].detail, /Erreur HTTP 500/);
   assert.deepEqual(types(await runCheck(watch.id)), []);
-  assert.equal(state().outageId ?? null, null, 'le site lui-même n’est pas en panne');
-  assert.equal(dbm.outageList(watch.id).length, 0);
-  assert.equal(dbm.getWatch(watch.id).lastCode, 200);
+  assert.equal((await state()).outageId ?? null, null, 'le site lui-même n’est pas en panne');
+  assert.equal((await dbm.outageList(watch.id)).length, 0);
+  assert.equal((await dbm.getWatch(watch.id)).lastCode, 200);
 
   status500 = false;
   const back = await runCheck(watch.id);
@@ -133,7 +133,7 @@ test('moteur : un échec isolé ne fait pas « rétablir » un texte suspect dé
   assert.deepEqual(types(await runCheck(watch.id)), ['page_forbidden']);
   status500 = true;
   assert.deepEqual(types(await runCheck(watch.id)), [], 'page muette une fois : l’incident est conservé');
-  assert.ok(Object.keys(state().incidents).some((k) => k.startsWith('page_forbidden:')));
+  assert.ok(Object.keys((await state()).incidents).some((k) => k.startsWith('page_forbidden:')));
   status500 = false;
   assert.deepEqual(types(await runCheck(watch.id)), [], 'toujours le même texte : toujours silence');
   pages['/contact'] = pages['/contact'].replace('<h1>Hacked by Evil Crew</h1>', '<h1>Contact</h1>');
@@ -143,26 +143,26 @@ test('moteur : un échec isolé ne fait pas « rétablir » un texte suspect dé
 test('moteur : page retirée de la liste → ses incidents disparaissent sans message, nouvelle page = nouvelle référence', async () => {
   pages['/contact'] = pages['/contact'].replace('<h1>Contact</h1>', '<h1>Hacked by Evil Crew</h1>');
   await runCheck(watch.id);
-  assert.ok(Object.keys(state().incidents).some((k) => k.startsWith('page_forbidden:')));
-  const cur = dbm.getWatch(watch.id);
-  dbm.updateWatch(watch.id, { config: { ...cur.config, pages: [{ url: '/panier', label: 'Panier' }, { url: '/nouvelle', label: '' }] } });
+  assert.ok(Object.keys((await state()).incidents).some((k) => k.startsWith('page_forbidden:')));
+  const cur = await dbm.getWatch(watch.id);
+  await dbm.updateWatch(watch.id, { config: { ...cur.config, pages: [{ url: '/panier', label: 'Panier' }, { url: '/nouvelle', label: '' }] } });
   pages['/nouvelle'] = '<html><head><title>Nouvelle</title></head><body><p>Hacked by quelqu’un</p></body></html>';
   const r = await runCheck(watch.id);
   assert.deepEqual(types(r), ['page_forbidden'], 'la nouvelle page est contrôlée aussitôt (texte suspect), mais pas de « rétabli » pour la page retirée');
-  assert.deepEqual(Object.keys(state().pages).sort(), [`${base}/nouvelle`, `${base}/panier`]);
-  const cur2 = dbm.getWatch(watch.id);
-  dbm.updateWatch(watch.id, { config: { ...cur2.config, pages: [] } });
+  assert.deepEqual(Object.keys((await state()).pages).sort(), [`${base}/nouvelle`, `${base}/panier`]);
+  const cur2 = await dbm.getWatch(watch.id);
+  await dbm.updateWatch(watch.id, { config: { ...cur2.config, pages: [] } });
   assert.deepEqual(types(await runCheck(watch.id)), [], 'plus aucune page : tout s’efface en silence');
-  assert.equal(state().pages, undefined);
-  assert.deepEqual(Object.keys(state().incidents), []);
+  assert.equal((await state()).pages, undefined);
+  assert.deepEqual(Object.keys((await state()).incidents), []);
 });
 
 test('moteur : un script ajouté sur une page ne se déclenche pas au 1er passage de cette page', async () => {
-  const cur = dbm.getWatch(watch.id);
+  const cur = await dbm.getWatch(watch.id);
   pages['/inscription'] = '<html><head><title>Inscription</title><script src="https://cdn.legitime.example/a.js"></script></head><body><p>Créer un compte</p></body></html>';
-  dbm.updateWatch(watch.id, { config: { ...cur.config, pages: [{ url: '/inscription', label: '' }] } });
+  await dbm.updateWatch(watch.id, { config: { ...cur.config, pages: [{ url: '/inscription', label: '' }] } });
   assert.deepEqual(types(await runCheck(watch.id)), [], 'référence posée');
-  assert.equal(state().pages[`${base}/inscription`].baseline, true);
+  assert.equal((await state()).pages[`${base}/inscription`].baseline, true);
 });
 
 test.after(() => {

@@ -60,7 +60,7 @@ export function monthRange(month, tz = 0, now = Date.now()) {
 const overlap = (aStart, aEnd, bStart, bEnd) => Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
 
 /** Toutes les données d'un site pour une période [from, to[. */
-export function siteReport(w, range, now = Date.now()) {
+export async function siteReport(w, range, now = Date.now()) {
   const { from, to } = range;
   const end = Math.min(to, now);
   const domainOnly = w.config.mode === 'domain';
@@ -68,25 +68,25 @@ export function siteReport(w, range, now = Date.now()) {
   if (domainOnly) {
     out.uptime = null;
   } else {
-    const u = uptimeBetween(w, from, end, now);
+    const u = await uptimeBetween(w, from, end, now);
     out.uptime = u.uptime;
     out.downtime = u.downtime;
     out.outageCount = u.outages;
-    out.outages = outagesBetween(w.id, from, to, now).map((o) => ({ start: o.start, end: o.ongoing ? null : o.end, duration: o.duration, ongoing: o.ongoing, startedBefore: o.startedBefore }));
+    out.outages = (await outagesBetween(w.id, from, to, now)).map((o) => ({ start: o.start, end: o.ongoing ? null : o.end, duration: o.duration, ongoing: o.ongoing, startedBefore: o.startedBefore }));
     out.longest = out.outages.reduce((m, o) => Math.max(m, o.duration), 0);
-    out.response = responseBetween(w.id, from, to);
+    out.response = await responseBetween(w.id, from, to);
     out.days = [];
     for (let t = from; t < end; t += DAY_MS) {
-      const d = t + DAY_MS <= w.createdAt ? { uptime: null } : uptimeBetween(w, t, Math.min(t + DAY_MS, end), now);
+      const d = t + DAY_MS <= w.createdAt ? { uptime: null } : await uptimeBetween(w, t, Math.min(t + DAY_MS, end), now);
       out.days.push({ from: t, uptime: d.uptime, outages: d.outages ?? 0, downtime: d.downtime ?? 0 });
     }
   }
-  const maint = maintenanceBetween(w.id, from, to);
+  const maint = await maintenanceBetween(w.id, from, to);
   out.maintenance = maint.map((m) => ({ start: m.start, end: m.end, note: m.note }));
   out.maintenanceMs = maint.reduce((s, m) => s + overlap(m.start, m.end, from, end), 0);
 
   // Alertes de la période (hors rétablissements et récapitulatifs de maintenance) : titres seulement, jamais le détail technique.
-  const rows = alertsBetween(w.id, from, to);
+  const rows = await alertsBetween(w.id, from, to);
   out.alerts = { critical: rows.filter((r) => r.severity === 'critical').length, warning: rows.filter((r) => r.severity === 'warning').length, items: rows.slice(0, 15) };
   out.alerts.total = rows.length;
 
@@ -258,9 +258,9 @@ export function renderReport({ title, sites, range, nav, generatedAt = Date.now(
 // ───────────── Page de statut publique ─────────────
 
 /** Ce que la page publique montre : disponibilité, pannes, maintenances. Jamais d'alerte de sécurité ni de détail technique. */
-export function statusData(w, tz = 0, now = Date.now()) {
-  const open = currentOutage(w.id);
-  const maint = listMaintenance(w.id, now);
+export async function statusData(w, tz = 0, now = Date.now()) {
+  const open = await currentOutage(w.id);
+  const maint = await listMaintenance(w.id, now);
   const active = maint.find((m) => m.start <= now) || null;
   let state = 'up';
   if (!w.enabled) state = 'paused';
@@ -268,8 +268,8 @@ export function statusData(w, tz = 0, now = Date.now()) {
   else if (open) state = 'down';
   return {
     state, since: open?.start ?? null, maintenance: maint.slice(0, 5), active,
-    periods: uptimeSummary(w, now), bars: uptimeBars(w, tz, now, 90),
-    outages: outageList(w.id, 90, now).filter((o) => (o.end ?? now) > now - 90 * DAY_MS).slice(0, 15),
+    periods: await uptimeSummary(w, now), bars: await uptimeBars(w, tz, now, 90),
+    outages: (await outageList(w.id, 90, now)).filter((o) => (o.end ?? now) > now - 90 * DAY_MS).slice(0, 15),
     checkedAt: w.lastCheck,
   };
 }

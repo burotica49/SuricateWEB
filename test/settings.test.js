@@ -24,7 +24,7 @@ process.env.DATA_DIR = dir;
 
 const dbm = await import('../src/db.js');
 
-test('migration des réglages d\'une ancienne base (v2 → v5)', () => {
+test('migration des réglages d\'une ancienne base (v2 → v5)', async () => {
   const s = dbm.getSettings();
   assert.equal(s.settingsVersion, 5);
   assert.deepEqual(s.builtinKeywords, ['hacked by', 'cialis', 'mon-mot-perso'], 'v2 : expressions ambiguës retirées, mots personnalisés conservés');
@@ -34,7 +34,7 @@ test('migration des réglages d\'une ancienne base (v2 → v5)', () => {
   assert.equal(s.sessionSecret, 'secret-existant', 'le secret de session (donc les connexions ouvertes) est conservé');
   assert.deepEqual([s.telegram.token, s.telegram.chatId], ['123:ABC', '42'], 'la configuration Telegram est conservée');
   assert.equal(s.telegram.sendScreenshot, true, 'nouvelles options : valeur par défaut');
-  const stored = JSON.parse(dbm.db.prepare("SELECT value FROM settings WHERE key = 'app'").get().value);
+  const stored = JSON.parse((await dbm.db.get("SELECT value FROM settings WHERE key = 'app'")).value);
   assert.equal(stored.settingsVersion, 5, 'la migration est persistée : elle ne rejoue pas');
 });
 

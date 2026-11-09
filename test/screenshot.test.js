@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-shot-'));
 // Dossier temporaire propre à ce test : les profils Chrome y sont créés, ce qui permet de vérifier qu'aucun ne traîne
-// SANS être trompé par un autre SuricateWEB qui capturerait au même moment sur la machine.
+// SANS être trompé par un autre SuricateWeb qui capturerait au même moment sur la machine.
 const TEST_TMP = mkdtempSync(join(tmpdir(), 'suricate-tmp-'));
 process.env.TMPDIR = TEST_TMP;
 

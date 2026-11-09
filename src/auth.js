@@ -7,7 +7,7 @@ const digest = (s) => createHash('sha256').update(String(s)).digest();
 export const MIN_PASSWORD = 8;
 
 export const MISSING_HELP = `
-  ✖  SuricateWEB est protégé par identifiant et mot de passe, mais ils ne sont pas définis.
+  ✖  SuricateWeb est protégé par identifiant et mot de passe, mais ils ne sont pas définis.
 
      Créez un fichier .env à la racine du projet (modèle : .env.example) :
 

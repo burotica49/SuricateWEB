@@ -10,12 +10,12 @@ class Suricateweb extends Module
         $this->name = 'suricateweb';
         $this->tab = 'administration';
         $this->version = '1.2.0';
-        $this->author = 'SuricateWEB';
+        $this->author = 'SuricateWeb';
         $this->need_instance = 0;
         $this->bootstrap = true;
         parent::__construct();
-        $this->displayName = $this->l('SuricateWEB');
-        $this->description = $this->l('Indique à SuricateWEB la version de PHP, les mises à jour disponibles, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers d’images et de téléversements. SuricateWEB interroge la boutique ; le module n’envoie rien de lui-même.');
+        $this->displayName = $this->l('SuricateWeb');
+        $this->description = $this->l('Indique à SuricateWeb la version de PHP, les mises à jour disponibles, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers d’images et de téléversements. SuricateWeb interroge la boutique ; le module n’envoie rien de lui-même.');
         $this->ps_versions_compliancy = array('min' => '1.7.6.0', 'max' => _PS_VERSION_);
     }
 
@@ -44,19 +44,19 @@ class Suricateweb extends Module
                 $out .= $this->displayError($this->l('Le jeton doit contenir au moins 16 caractères.'));
             } else {
                 Configuration::updateValue('SURICATEWEB_TOKEN', $token);
-                $out .= $this->displayConfirmation($this->l('Jeton enregistré. SuricateWEB peut maintenant lire les versions.'));
+                $out .= $this->displayConfirmation($this->l('Jeton enregistré. SuricateWeb peut maintenant lire les versions.'));
             }
         }
         $token = htmlspecialchars((string) Configuration::get('SURICATEWEB_TOKEN'), ENT_QUOTES, 'UTF-8');
         $action = htmlspecialchars((string) $_SERVER['REQUEST_URI'], ENT_QUOTES, 'UTF-8');
         return $out . '<form method="post" action="' . $action . '" class="defaultForm form-horizontal">
             <div class="panel">
-                <div class="panel-heading">' . $this->l('SuricateWEB') . '</div>
+                <div class="panel-heading">' . $this->l('SuricateWeb') . '</div>
                 <div class="form-group">
                     <label class="control-label col-lg-3">' . $this->l('Jeton') . '</label>
                     <div class="col-lg-6">
                         <input type="text" name="SURICATEWEB_TOKEN" value="' . $token . '" class="form-control" autocomplete="off" spellcheck="false">
-                        <p class="help-block">' . $this->l('Collez le jeton affiché dans SuricateWEB, sur la fiche du site.') . '</p>
+                        <p class="help-block">' . $this->l('Collez le jeton affiché dans SuricateWeb, sur la fiche du site.') . '</p>
                     </div>
                 </div>
                 <div class="panel-footer">
@@ -139,7 +139,7 @@ class Suricateweb extends Module
 
     /**
      * Administrateurs actifs (profil SuperAdmin) : un compteur seulement. La table des employés ne date pas
-     * leur création : SuricateWEB détecte donc un nouvel administrateur à l'augmentation du compteur.
+     * leur création : SuricateWeb détecte donc un nouvel administrateur à l'augmentation du compteur.
      */
     private function adminReport()
     {
@@ -267,13 +267,13 @@ class Suricateweb extends Module
                 CURLOPT_TIMEOUT => 8,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_MAXREDIRS => 3,
-                CURLOPT_USERAGENT => 'SuricateWEB',
+                CURLOPT_USERAGENT => 'SuricateWeb',
             ));
             $body = curl_exec($ch);
             curl_close($ch);
             return is_string($body) && $body !== '' ? $body : null;
         }
-        $ctx = stream_context_create(array('http' => array('timeout' => 8, 'header' => "User-Agent: SuricateWEB\r\n")));
+        $ctx = stream_context_create(array('http' => array('timeout' => 8, 'header' => "User-Agent: SuricateWeb\r\n")));
         $body = @file_get_contents($url, false, $ctx);
         return is_string($body) && $body !== '' ? $body : null;
     }

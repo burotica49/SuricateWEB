@@ -1,4 +1,4 @@
-// Garde réseau (src/net-guard.js) : SuricateWEB ne doit pas servir à atteindre le réseau interne de son serveur.
+// Garde réseau (src/net-guard.js) : SuricateWeb ne doit pas servir à atteindre le réseau interne de son serveur.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';

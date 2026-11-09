@@ -30,7 +30,7 @@ test('manifest : lié dans le head et servi comme manifeste web', async () => {
   assert.equal(man.status, 200);
   assert.match(man.headers.get('content-type'), /^application\/manifest\+json/);
   const json = JSON.parse(man.text);
-  assert.equal(json.short_name, 'SuricateWEB');
+  assert.equal(json.short_name, 'SuricateWeb');
   assert.equal(json.start_url, '/');
   assert.equal(json.display, 'standalone');
   assert.equal(json.lang, 'fr');

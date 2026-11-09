@@ -1,4 +1,4 @@
-// Migration 1 : le schéma de SuricateWEB 1.3.x, tel qu'il existait avant les migrations numérotées.
+// Migration 1 : le schéma de SuricateWeb 1.3.x, tel qu'il existait avant les migrations numérotées.
 //
 // SQLite : les installations existantes ont déjà (presque) toutes ces tables. On rejoue donc l'ancien chemin à
 // l'identique — CREATE TABLE IF NOT EXISTS puis ajout conditionnel des colonnes apparues au fil des versions — et la

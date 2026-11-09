@@ -1,4 +1,4 @@
-// SuricateWEB — coque de l'application installable.
+// SuricateWeb — coque de l'application installable.
 // Le réseau prime : le cache ne sert que hors ligne, et jamais pour l'API, le flux d'événements ni les pages de statut.
 
 const CACHE = 'suricateweb-coque-2';

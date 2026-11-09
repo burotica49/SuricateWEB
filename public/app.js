@@ -1,4 +1,4 @@
-// SuricateWEB — interface. SPA sans framework ni étape de build. Tout texte dynamique passe par textContent (pas d'innerHTML sur des données).
+// SuricateWeb — interface. SPA sans framework ni étape de build. Tout texte dynamique passe par textContent (pas d'innerHTML sur des données).
 
 import { buildModel, moveSite, moveGroup, stepSite, stepGroup, sameModel, toPayload, applyModel, describeMove } from './layout.js';
 
@@ -246,7 +246,7 @@ function maintenanceDialog(w) {
     const ov = h('div', { class: 'overlay', onclick: () => close(false) });
     const md = h('div', { class: 'modal', role: 'dialog', 'aria-label': 'Planifier une maintenance' },
       h('h2', {}, `Maintenance de « ${w.name} »`),
-      h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'Pendant la fenêtre, SuricateWEB continue de contrôler le site mais retient ses alertes et ne compte aucune panne. Si quelque chose a été détecté, un seul message récapitulatif part à la fin. La surveillance reprend d\'elle-même.'),
+      h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'Pendant la fenêtre, SuricateWeb continue de contrôler le site mais retient ses alertes et ne compte aucune panne. Si quelque chose a été détecté, un seul message récapitulatif part à la fin. La surveillance reprend d\'elle-même.'),
       h('div', { class: 'field' }, h('label', {}, 'Commencer'), whenSel), startField,
       h('div', { class: 'field' }, h('label', {}, 'Durée'), dur),
       h('div', { class: 'field' }, h('label', {}, 'Note (facultatif)'), note),
@@ -295,7 +295,7 @@ function mountShell() {
     h('div', { class: 'shell' },
       h('aside', { class: 'sidebar' },
         h('div', { class: 'brand' }, h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 34, height: 34 })),
-          h('div', {}, h('div', { class: 'brand-name' }, 'SuricateWEB', app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
+          h('div', {}, h('div', { class: 'brand-name' }, 'SuricateWeb', app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
         h('nav', { class: 'nav' }, nav('#/', 'dashboard', 'Sites', 'sites'), nav('#/alertes', 'bell', 'Alertes', 'alertes'), nav('#/reglages', 'settings', 'Réglages', 'reglages')),
         h('div', { class: 'side-foot' },
           h('a', { class: 'tg-state', href: '#/reglages' }, h('span', { class: `dot ${tgOk ? 'ok' : ''}` }), tgOk ? 'Telegram actif' : 'Telegram non configuré'),
@@ -426,7 +426,7 @@ async function viewDashboard() {
     const input = h('input', { class: 'input', placeholder: 'https://www.monsite.fr', 'aria-label': 'Adresse du site', onkeydown: (e) => e.key === 'Enter' && go.click() });
     const go = h('button', { class: 'btn primary', onclick: () => openSiteForm(null, input.value) }, ic('plus'), 'Surveiller');
     root.append(empty('shield', 'Aucun site surveillé pour le moment',
-      "Ajoutez votre premier site : SuricateWEB détecte les défigurations, les scripts injectés, les redirections suspectes, les changements de DNS ou de certificat, et vous prévient sur Telegram.",
+      "Ajoutez votre premier site : SuricateWeb détecte les défigurations, les scripts injectés, les redirections suspectes, les changements de DNS ou de certificat, et vous prévient sur Telegram.",
       h('div', { class: 'quick-add' }, input, go)));
     return root;
   }
@@ -872,7 +872,7 @@ async function viewDetail(id, tab, tok, openSnap) {
     root.append(h('div', { class: 'incident info', 'data-maintenance': m.id }, ic('wrench'),
       h('div', {}, h('b', {}, active ? `Maintenance en cours jusqu'à ${dt(m.end)}` : `Maintenance prévue du ${dt(m.start)} au ${dt(m.end)}`),
         h('p', {}, m.note ? `${m.note}. ` : '', active
-          ? 'SuricateWEB continue de contrôler le site, mais retient ses alertes et ne compte aucune panne. S\'il s\'est passé quelque chose, un seul message récapitulatif est envoyé à la fin.'
+          ? 'SuricateWeb continue de contrôler le site, mais retient ses alertes et ne compte aucune panne. S\'il s\'est passé quelque chose, un seul message récapitulatif est envoyé à la fin.'
           : `Durée : ${fmtDur(m.end - m.start)}. Les alertes de ce site seront retenues pendant la fenêtre.`)),
       h('button', { class: 'btn sm', style: { marginLeft: 'auto', alignSelf: 'center', flex: 'none' }, onclick: guard(async () => {
         await api(`/maintenance/${m.id}`, { method: 'DELETE' });
@@ -934,7 +934,7 @@ async function overviewTab(w) {
   const c = w.config.checks;
 
   if (w.mode === 'domain') {
-    root.append(h('div', { class: 'callout' }, ic('globe'), h('div', {}, h('b', {}, 'Surveillance du domaine seul. '), 'Aucune requête n\'est envoyée à un site web : SuricateWEB suit les enregistrements DNS et la fiche du domaine au registre (transfert, registrar, serveurs de noms, verrou, DNSSEC, expiration).'),
+    root.append(h('div', { class: 'callout' }, ic('globe'), h('div', {}, h('b', {}, 'Surveillance du domaine seul. '), 'Aucune requête n\'est envoyée à un site web : SuricateWeb suit les enregistrements DNS et la fiche du domaine au registre (transfert, registrar, serveurs de noms, verrou, DNSSEC, expiration).'),
       h('a', { class: 'btn sm', href: `#/sites/${w.id}/domaine` }, 'Voir le détail')));
     root.append(h('div', { class: 'signals' }, dnsSignal(s, c), domainSignal(s, c)));
     return root;
@@ -1270,7 +1270,7 @@ function cmsTable(title, items) {
       h('tbody', {}, ...rows.map((r) => h('tr', {},
         h('td', {}, r.name, r.active === false ? h('span', { class: 'muted' }, ' · inactif') : null),
         h('td', { class: 'mono' }, r.current || '—'),
-        h('td', { class: 'mono' }, r.available || '—', r.available && r.since ? h('span', { class: 'muted', title: 'Depuis le premier relevé de SuricateWEB qui voit cette version disponible' }, ` · ${fmtDur(Date.now() - r.since)}`) : null),
+        h('td', { class: 'mono' }, r.available || '—', r.available && r.since ? h('span', { class: 'muted', title: 'Depuis le premier relevé de SuricateWeb qui voit cette version disponible' }, ` · ${fmtDur(Date.now() - r.since)}`) : null),
         h('td', {}, cmsRowState(r)),
       )))))
       : h('div', { class: 'empty', style: { padding: '22px' } }, h('p', { style: { margin: 0 } }, 'Rien à afficher pour le moment.')));
@@ -1318,7 +1318,7 @@ function updatesTab(w) {
   if (report.history?.length) {
     const KIND = { core: 'noyau', ext: w.config.cms.type === 'prestashop' ? 'module' : 'extension', theme: 'thème' };
     root.append(h('div', { class: 'card', style: { marginBottom: '16px' } },
-      h('div', { class: 'card-head' }, h('h2', {}, 'Mises à jour effectuées'), h('span', { class: 'muted' }, 'vues par SuricateWEB d’un relevé à l’autre')),
+      h('div', { class: 'card-head' }, h('h2', {}, 'Mises à jour effectuées'), h('span', { class: 'muted' }, 'vues par SuricateWeb d’un relevé à l’autre')),
       h('div', { class: 'table-wrap' }, h('table', { class: 'table' },
         h('thead', {}, h('tr', {}, h('th', {}, 'Date'), h('th', {}, 'Élément'), h('th', {}, 'Version'))),
         h('tbody', {}, ...[...report.history].reverse().slice(0, 15).map((e) => h('tr', {},
@@ -1409,8 +1409,8 @@ function securityTab(w) {
       !admins ? h('p', { class: 'muted', style: { margin: 0 } }, 'Le plugin n’a pas encore transmis le nombre d’administrateurs. Mettez-le à jour (version 1.1 ou plus) puis actualisez.')
         : h('div', {},
           h('p', { class: 'muted', style: { margin: '0 0 8px' } }, shop
-            ? 'Le module ne renvoie que le nombre d’administrateurs actifs, sans identité ni mot de passe. SuricateWEB alerte quand ce nombre augmente.'
-            : `Le plugin ne renvoie que le nombre d’administrateurs et ceux créés ces ${admins.windowDays || 30} derniers jours (identifiant de connexion et date), sans mot de passe ni e-mail. SuricateWEB alerte à chaque nouveau compte.`),
+            ? 'Le module ne renvoie que le nombre d’administrateurs actifs, sans identité ni mot de passe. SuricateWeb alerte quand ce nombre augmente.'
+            : `Le plugin ne renvoie que le nombre d’administrateurs et ceux créés ces ${admins.windowDays || 30} derniers jours (identifiant de connexion et date), sans mot de passe ni e-mail. SuricateWeb alerte à chaque nouveau compte.`),
           admins.recent?.length ? h('ul', { class: 'plain', style: { margin: '0 0 8px', paddingLeft: '18px' } }, ...admins.recent.map((u) => {
             const isNew = admins.added?.some((a) => a.id === u.id);
             return h('li', {}, h('b', {}, u.login || `compte n° ${u.id}`), u.registered ? h('span', { class: 'muted' }, ` · créé le ${dday(u.registered)}`) : null, isNew ? h('span', { class: 'pill crit', style: { marginLeft: '8px' } }, 'Nouveau') : null);
@@ -1541,7 +1541,7 @@ async function viewAlerts() {
   S.watches = list;
   const root = h('div', {});
   const unread = alerts.filter((a) => !a.read).length;
-  root.append(h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Alertes'), h('p', {}, 'Tout ce que SuricateWEB a détecté, du plus récent au plus ancien.')),
+  root.append(h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Alertes'), h('p', {}, 'Tout ce que SuricateWeb a détecté, du plus récent au plus ancien.')),
     h('div', { class: 'actions' }, h('button', { class: 'btn', disabled: !list.some((w) => w.unread.critical + w.unread.warning + w.unread.info || w.incidents.some((i) => (i.key === 'rdap_expiring' || /^(cms_|php_eol)/.test(i.key)) && !i.acked)), onclick: guard(async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); toast('Toutes les alertes sont marquées comme lues'); route(); }) }, ic('check'), 'Tout marquer comme lu'))));
   root.append(h('div', { class: 'toolbar' }, h('div', { class: 'seg' }, ...[['', 'Toutes'], ['critical', 'Critiques'], ['warning', 'Attention'], ['info', 'Infos'], ['recovery', 'Rétablis']].map(([k, l]) =>
     h('button', { class: S.alertSev === k ? 'on' : '', onclick: () => { S.alertSev = k; route(); } }, l)))));
@@ -1729,12 +1729,12 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     h('div', { class: 'field' }, h('label', {}, 'Groupe'), f.group, h('span', { class: 'hint' }, 'Pour classer vos sites dans la liste (par client, par projet…). Vous pouvez aussi les glisser-déposer.')),
     h('div', { class: 'field' }, h('label', {}, 'Étiquettes'), f.tags, h('span', { class: 'hint' }, 'Séparées par des virgules — pratique pour regrouper par client.')),
     siteOnly(details('WordPress / PrestaShop', [
-      h('div', { class: 'field' }, h('label', {}, 'CMS'), f.cmsType, h('span', { class: 'hint' }, 'SuricateWEB interroge un plugin installé sur le site pour lire la version de PHP et les mises à jour. Le plugin n’envoie rien de lui-même.')),
+      h('div', { class: 'field' }, h('label', {}, 'CMS'), f.cmsType, h('span', { class: 'hint' }, 'SuricateWeb interroge un plugin installé sur le site pour lire la version de PHP et les mises à jour. Le plugin n’envoie rien de lui-même.')),
       cmsBox,
     ], !!(c.cms?.type))),
     siteOnly(details('Pages supplémentaires', [
       h('div', { class: 'field' }, h('label', {}, 'Autres pages à surveiller'), f.pages,
-        h('span', { class: 'hint' }, 'Une par ligne : un chemin (/panier) ou une adresse du même site, puis « | » et un nom facultatif. 10 pages au plus. Panier, paiement, connexion et contact sont les cibles favorites des pirates : SuricateWEB y vérifie la disponibilité, les textes suspects, les nouveaux scripts, iframes et formulaires détournés. Ces pages ne comptent pas dans la disponibilité du site.')),
+        h('span', { class: 'hint' }, 'Une par ligne : un chemin (/panier) ou une adresse du même site, puis « | » et un nom facultatif. 10 pages au plus. Panier, paiement, connexion et contact sont les cibles favorites des pirates : SuricateWeb y vérifie la disponibilité, les textes suspects, les nouveaux scripts, iframes et formulaires détournés. Ces pages ne comptent pas dans la disponibilité du site.')),
     ], !!(c.pages && c.pages.length))),
     siteOnly(details('Page de statut publique', [
       toggle(f.statusOn, 'Publier une page de statut en lecture seule', 'Une adresse à donner à votre client : disponibilité sur 90 jours, pannes et maintenances. Aucune alerte de sécurité ni détail technique n’y figure. Toute personne qui connaît l’adresse peut la consulter.'),
@@ -1878,7 +1878,7 @@ async function viewSettings() {
   }) });
 
   return h('div', {},
-    h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Réglages'), h('p', {}, 'Notifications, détection et sécurité de SuricateWEB.')), h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: save }, ic('check'), 'Enregistrer'))),
+    h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Réglages'), h('p', {}, 'Notifications, détection et sécurité de SuricateWeb.')), h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: save }, ic('check'), 'Enregistrer'))),
     h('div', { class: 'settings' },
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '4px' } }, 'Notifications Telegram'),
@@ -1893,9 +1893,9 @@ async function viewSettings() {
         toggle(f.recovery, 'Prévenir du rétablissement', 'Message « ✅ Rétabli » quand un incident disparaît.'),
         toggle(f.diff, 'Joindre un extrait des changements', 'Les premières lignes ajoutées / supprimées dans le message.'),
         toggle(f.photo, 'Joindre une capture d\'écran aux alertes critiques', s.screenshots.available ? 'Une photo de la page au moment d\'une défiguration, d\'un script injecté ou d\'une redirection : on voit tout de suite ce que voient les visiteurs.' : 'Indisponible : aucun navigateur (Chrome / Chromium) détecté sur le serveur.'),
-        toggle(f.buttons, 'Boutons « Marquer comme lu » et « Ouvrir dans SuricateWEB »', 'Sous chaque alerte Telegram. « Marquer comme lu » est reçu par SuricateWEB en interrogeant Telegram : aucune adresse publique n’est nécessaire. « Ouvrir dans SuricateWEB » apparaît si l’adresse publique de SuricateWEB, plus bas, est utilisable.'),
+        toggle(f.buttons, 'Boutons « Marquer comme lu » et « Ouvrir dans SuricateWeb »', 'Sous chaque alerte Telegram. « Marquer comme lu » est reçu par SuricateWeb en interrogeant Telegram : aucune adresse publique n’est nécessaire. « Ouvrir dans SuricateWeb » apparaît si l’adresse publique de SuricateWeb, plus bas, est utilisable.'),
         h('div', { class: 'field', style: { marginTop: '14px' } }, h('label', {}, 'Niveau minimal des notifications'), f.minSev),
-        h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Adresse de SuricateWEB (optionnel)'), f.base, h('span', { class: 'hint' }, 'Donne son adresse au bouton « Ouvrir dans SuricateWEB » sous chaque message. Elle doit être joignable depuis un téléphone : pas de localhost ni de réseau local.'))),
+        h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Adresse de SuricateWeb (optionnel)'), f.base, h('span', { class: 'hint' }, 'Donne son adresse au bouton « Ouvrir dans SuricateWeb » sous chaque message. Elle doit être joignable depuis un téléphone : pas de localhost ni de réseau local.'))),
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '14px' } }, 'Détection'),
         h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Fréquence par défaut'), f.interval), h('div', { class: 'field' }, h('label', {}, 'User-Agent par défaut'), f.ua)),
@@ -1911,9 +1911,9 @@ async function viewSettings() {
           h('div', {}, h('button', { class: 'btn sm', style: { marginTop: '6px' }, onclick: () => { f.kw.value = s.defaultKeywords.join('\n'); } }, 'Rétablir la liste par défaut')))),
       S.auth?.accountApi ? accountSecurityCard() : h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '4px' } }, 'Sécurité'),
-        h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'L\'accès à SuricateWEB est protégé par un identifiant et un mot de passe définis hors de l\'application.'),
+        h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'L\'accès à SuricateWeb est protégé par un identifiant et un mot de passe définis hors de l\'application.'),
         h('div', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, 'Identifiant de connexion'), h('span', {}, 'Variable SURICATE_USER')), h('span', { class: 'chip' }, ic('lock'), s.authUser)),
-        h('p', { class: 'hint muted', style: { marginTop: '12px' } }, 'Pour changer l\'identifiant ou le mot de passe, modifiez SURICATE_USER et SURICATE_PASSWORD dans le fichier .env (ou dans les variables d\'environnement de votre hébergement), puis redémarrez SuricateWEB. Toutes les sessions ouvertes seront alors déconnectées.')),
+        h('p', { class: 'hint muted', style: { marginTop: '12px' } }, 'Pour changer l\'identifiant ou le mot de passe, modifiez SURICATE_USER et SURICATE_PASSWORD dans le fichier .env (ou dans les variables d\'environnement de votre hébergement), puis redémarrez SuricateWeb. Toutes les sessions ouvertes seront alors déconnectées.')),
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '4px' } }, 'Données'),
         h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'Exportez la liste de vos sites et leur configuration, ou importez-en une.'),
@@ -2064,7 +2064,7 @@ function viewLogin() {
   };
   const links = [[localHref(S.auth.links?.forgot), 'Mot de passe oublié ?'], [localHref(S.auth.links?.signup), 'Créer un compte']].filter(([href]) => href);
   $('#app').replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
-    h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 84, height: 84 })), h('h1', {}, 'SuricateWEB'), h('p', { class: 'muted' }, 'Connectez-vous pour accéder à la surveillance.'),
+    h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 84, height: 84 })), h('h1', {}, 'SuricateWeb'), h('p', { class: 'muted' }, 'Connectez-vous pour accéder à la surveillance.'),
     h('form', { onsubmit: submit },
       h('div', { class: 'field' }, h('label', {}, label), user),
       h('div', { class: 'field' }, h('label', {}, 'Mot de passe'), pw),
@@ -2081,7 +2081,7 @@ async function boot() {
   try {
     S.auth = await fetch('/api/auth').then((r) => r.json());
   } catch {
-    $('#app').replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' }, h('h2', {}, 'Serveur injoignable'), h('p', { class: 'muted' }, 'SuricateWEB ne répond pas. Vérifiez que le serveur est démarré.'))));
+    $('#app').replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' }, h('h2', {}, 'Serveur injoignable'), h('p', { class: 'muted' }, 'SuricateWeb ne répond pas. Vérifiez que le serveur est démarré.'))));
     return;
   }
   if (S.auth.required && !S.auth.authenticated) return viewLogin();

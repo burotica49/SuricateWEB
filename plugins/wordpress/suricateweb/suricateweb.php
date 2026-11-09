@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: SuricateWEB
- * Description: Indique à SuricateWEB la version de PHP, les mises à jour, le nombre d'administrateurs et l'intégrité des fichiers (sommes de contrôle de wordpress.org). SuricateWEB interroge ce site ; le plugin n'envoie rien de lui-même.
+ * Plugin Name: SuricateWeb
+ * Description: Indique à SuricateWeb la version de PHP, les mises à jour, le nombre d'administrateurs et l'intégrité des fichiers (sommes de contrôle de wordpress.org). SuricateWeb interroge ce site ; le plugin n'envoie rien de lui-même.
  * Version: 1.2.0
- * Author: SuricateWEB
+ * Author: SuricateWeb
  * Requires at least: 5.6
  * Requires PHP: 7.2
  * License: MIT
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
 }
 
 add_action('admin_menu', function () {
-    add_options_page('SuricateWEB', 'SuricateWEB', 'manage_options', 'suricateweb', 'suricateweb_options_page');
+    add_options_page('SuricateWeb', 'SuricateWeb', 'manage_options', 'suricateweb', 'suricateweb_options_page');
 });
 
 add_filter('plugin_action_links_' . plugin_basename(__FILE__), function ($links) {
@@ -46,8 +46,8 @@ function suricateweb_options_page()
     if (!current_user_can('manage_options')) {
         return;
     }
-    echo '<div class="wrap"><h1>SuricateWEB</h1>';
-    echo '<p>Collez le jeton affiché dans SuricateWEB, sur la fiche du site. Rien n’est envoyé : SuricateWEB vient lire les versions.</p>';
+    echo '<div class="wrap"><h1>SuricateWeb</h1>';
+    echo '<p>Collez le jeton affiché dans SuricateWeb, sur la fiche du site. Rien n’est envoyé : SuricateWeb vient lire les versions.</p>';
     echo '<form action="options.php" method="post">';
     settings_fields('suricateweb');
     echo '<table class="form-table"><tr><th scope="row"><label for="suricateweb_token">Jeton</label></th><td>';
@@ -383,7 +383,7 @@ function suricateweb_section($known, $checked, $modified, $added, $missing)
 
 function suricateweb_remote_json($url)
 {
-    $res = wp_remote_get($url, array('timeout' => 12, 'redirection' => 2, 'user-agent' => 'SuricateWEB; ' . home_url('/')));
+    $res = wp_remote_get($url, array('timeout' => 12, 'redirection' => 2, 'user-agent' => 'SuricateWeb; ' . home_url('/')));
     if (is_wp_error($res) || (int) wp_remote_retrieve_response_code($res) !== 200) {
         return null;
     }

@@ -69,13 +69,13 @@ test('lecture : un compte sans réglages a les valeurs par défaut ; l\'écritur
   const a = (await call('alice', 'GET', '/api/settings')).json;
   assert.deepEqual([a.userAgent, a.defaultInterval, a.cmsAfterDays, a.builtinKeywords, a.telegram.chatId, a.telegram.tokenSet], ['AgentA/1', 45, 3, ['motalice'], '111', true]);
   const b = (await call('bob', 'GET', '/api/settings')).json;
-  assert.deepEqual([b.userAgent, b.defaultInterval, b.cmsAfterDays, b.telegram.chatId, b.telegram.tokenSet], ['Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)', 15, 7, '', false], 'le compte B n\'hérite de rien');
+  assert.deepEqual([b.userAgent, b.defaultInterval, b.cmsAfterDays, b.telegram.chatId, b.telegram.tokenSet], ['Mozilla/5.0 (compatible; SuricateWeb/1.0; surveillance de site)', 15, 7, '', false], 'le compte B n\'hérite de rien');
   assert.ok(b.builtinKeywords.includes('hacked by'), 'mots-clés par défaut');
   assert.equal(a.authUser, 'alice');
   assert.ok(!JSON.stringify(a).includes('A:tok'), 'le jeton Telegram n\'est jamais renvoyé');
   // le compte implicite (1) n'est pas touché
   assert.equal(dbm.getSettings().telegram.token, '');
-  assert.equal(dbm.getSettings().userAgent, 'Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)');
+  assert.equal(dbm.getSettings().userAgent, 'Mozilla/5.0 (compatible; SuricateWeb/1.0; surveillance de site)');
   await call('bob', 'PUT', '/api/settings', { userAgent: 'AgentB/1', telegram: { token: 'B:tok', chatId: '222', enabled: true, minSeverity: 'info', sendScreenshot: false } });
 });
 

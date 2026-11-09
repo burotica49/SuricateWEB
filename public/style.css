@@ -1,4 +1,4 @@
-/* Charte SuricateWEB : Bleu Nuit #07172F, Bleu Tech #159BFA, Orange Alerte #FF791F, Clair #EAF2FF.
+/* Charte SuricateWeb : Bleu Nuit #07172F, Bleu Tech #159BFA, Orange Alerte #FF791F, Clair #EAF2FF.
    --accent sert aux aplats (boutons, interrupteurs, barres) avec du texte Bleu Nuit dessus : le blanc sur #159BFA ne fait que 3:1.
    --accent-ink sert au TEXTE coloré (liens, onglet actif) : un bleu plus foncé en thème clair (≥ 5:1 sur blanc), plus clair en sombre. */
 :root {

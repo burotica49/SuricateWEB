@@ -30,7 +30,7 @@ test('migration des réglages d\'une ancienne base (v2 → v7)', async () => {
   assert.deepEqual(s.builtinKeywords, ['hacked by', 'cialis', 'mon-mot-perso'], 'v2 : expressions ambiguës retirées, mots personnalisés conservés');
   assert.equal(s.retention.checks, 10000, 'v3 : rétention des contrôles relevée');
   assert.equal('passwordHash' in s, false, 'v4 : l\'ancien hash est effacé');
-  assert.equal(s.userAgent, 'Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)', 'v5 puis v7 : User-Agent par défaut aligné sur le nom actuel du produit');
+  assert.equal(s.userAgent, 'Mozilla/5.0 (compatible; SuricateWeb/1.0; surveillance de site)', 'v5 puis v7 : User-Agent par défaut aligné sur le nom actuel du produit');
   assert.equal(s.sessionSecret, 'secret-existant', 'le secret de session (donc les connexions ouvertes) est conservé');
   assert.deepEqual([s.telegram.token, s.telegram.chatId], ['123:ABC', '42'], 'la configuration Telegram est conservée');
   assert.equal(s.telegram.sendScreenshot, true, 'nouvelles options : valeur par défaut');
@@ -101,7 +101,7 @@ test('v7 : le User-Agent par défaut de l\'ancien nom suit le renommage, un User
       new URL('../src/db.js', import.meta.url).href], { env: { ...process.env, DATA_DIR: d } }).toString().trim();
     return JSON.parse(out);
   };
-  assert.equal(read(oldDefault), 'Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)');
+  assert.equal(read(oldDefault), 'Mozilla/5.0 (compatible; SuricateWeb/1.0; surveillance de site)');
   assert.equal(read('Mon-Agent-Maison/2.0 (WAF autorisé)'), 'Mon-Agent-Maison/2.0 (WAF autorisé)');
 });
 

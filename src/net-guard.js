@@ -1,8 +1,8 @@
-// Garde réseau : empêche SuricateWEB d'être utilisé pour atteindre le réseau INTERNE du serveur qui l'héberge (SSRF).
+// Garde réseau : empêche SuricateWeb d'être utilisé pour atteindre le réseau INTERNE du serveur qui l'héberge (SSRF).
 //
-// Le problème. SuricateWEB va chercher des adresses saisies par ses utilisateurs : contrôles, relevé CMS, certificat TLS, captures
+// Le problème. SuricateWeb va chercher des adresses saisies par ses utilisateurs : contrôles, relevé CMS, certificat TLS, captures
 // d'écran. Sans garde, quelqu'un peut déclarer « http://169.254.169.254/ » (service de métadonnées d'un hébergeur cloud, qui livre
-// des identifiants), « http://localhost:5432/ » ou un nom de domaine qui pointe vers 10.0.0.12, et lire ce que SuricateWEB y trouve
+// des identifiants), « http://localhost:5432/ » ou un nom de domaine qui pointe vers 10.0.0.12, et lire ce que SuricateWeb y trouve
 // (statut, titre, message d'erreur, capture d'écran). Dans une installation personnelle ce n'est pas un risque (l'utilisateur
 // est le propriétaire, et surveiller un site interne est légitime) : la garde est donc DÉSACTIVÉE par défaut. Une installation
 // ouverte à des inconnus (la version hébergée) l'active.

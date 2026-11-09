@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "SuricateWEB — Surveillance de sites",
-  "short_name": "SuricateWEB",
+  "name": "SuricateWeb — Surveillance de sites",
+  "short_name": "SuricateWeb",
   "description": "Surveillance de sites web : défiguration, disponibilité, domaine et mises à jour.",
   "start_url": "/",
   "scope": "/",

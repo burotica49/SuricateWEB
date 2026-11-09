@@ -1,4 +1,4 @@
-// npm run demo : lance SuricateWEB avec des données FICTIVES (mode démo : aucun contrôle ni capture réels).
+// npm run demo : lance SuricateWeb avec des données FICTIVES (mode démo : aucun contrôle ni capture réels).
 // Aucune donnée n'est écrite dans ./data : tout vit dans un dossier temporaire, supprimé à l'arrêt.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';

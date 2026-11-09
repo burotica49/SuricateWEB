@@ -1,4 +1,4 @@
-// SuricateWEB — l'application : serveur HTTP + API, assemblés par createApp().
+// SuricateWeb — l'application : serveur HTTP + API, assemblés par createApp().
 //
 // Le cœur open source l'appelle avec les valeurs par défaut (un compte, identifiants du .env, aucune limite).
 // La version hébergée l'appelle avec ses propres extensions : comptes, droits, quotas, routes, canaux de notification.

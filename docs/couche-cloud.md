@@ -1,4 +1,4 @@
-# Construire une couche hébergée sur SuricateWEB
+# Construire une couche hébergée sur SuricateWeb
 
 Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, quotas, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
@@ -98,7 +98,7 @@ Renvoie un booléen (ou une promesse). Défaut : tout est permis. Il est appelé
 - automatiquement, avec la `perm` de la route, **avant** la lecture du corps de la requête (un refus ne consomme rien et ne modifie rien) ;
 - par `ctx.can(action, resource)` (booléen) et `ctx.require(action, resource)` (lève 403 « Accès refusé »), pour les contrôles propres à une route, avec la ressource concernée.
 
-Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de SuricateWEB, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
+Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de SuricateWeb, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
 
 C'est ici que vit le partage d'accès : un invité « rapport » n'a que `report:read` (et `site:read` limité à ce qui lui est partagé) ; un invité « complet » a les actions de lecture et d'acquittement. `authorize` reçoit `ctx.user`, `ctx.account` et, pour les contrôles par ressource, la ressource.
 

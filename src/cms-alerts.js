@@ -48,7 +48,7 @@ const itemKey = (kind, it) => `${kind}:${it.slug || it.name}`;
 
 /**
  * Date à laquelle chaque mise à jour a été vue pour la première fois : `since` sur le noyau et sur chaque élément.
- * Elle repart de zéro si une version encore plus récente sort (l'ancienneté est celle de SuricateWEB : le premier relevé
+ * Elle repart de zéro si une version encore plus récente sort (l'ancienneté est celle de SuricateWeb : le premier relevé
  * qui voit la mise à jour, pas sa date de publication, que les CMS ne communiquent pas).
  */
 export function carrySince(prev, report, now = Date.now()) {
@@ -99,7 +99,7 @@ export function carryHistory(prev, report, now = Date.now()) {
 
 /**
  * Comptes administrateurs : un nouvel administrateur est un classique après une intrusion.
- * Le relevé donne un compteur et les créations récentes ; SuricateWEB garde la référence (`known`, `baseCount`) jusqu'à ce
+ * Le relevé donne un compteur et les créations récentes ; SuricateWeb garde la référence (`known`, `baseCount`) jusqu'à ce
  * que l'utilisateur déclare connaître les comptes. Le premier relevé fixe la référence sans alerter.
  *   added : créations récentes absentes de la référence · extra : comptes en plus sans création récente (compte promu ?).
  */

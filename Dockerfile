@@ -1,6 +1,6 @@
 FROM node:24-alpine
 
-LABEL org.opencontainers.image.title="SuricateWEB" \
+LABEL org.opencontainers.image.title="SuricateWeb" \
       org.opencontainers.image.description="Surveillance de sites web avec alertes Telegram"
 
 # Chromium : captures d'écran des sites. Polices : accents, emojis et caractères non latins s'affichent correctement.

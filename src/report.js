@@ -242,7 +242,7 @@ function siteSection(s, range, { multi = false } = {}) {
  * Rapport HTML : un site, ou plusieurs (un groupe) avec un tableau de synthèse.
  * `nav` : { base } adresse de la page sans le paramètre « month », pour les liens mois précédent / suivant.
  */
-export function renderReport({ title, sites, range, nav, generatedAt = Date.now(), appName = 'SuricateWEB' }) {
+export function renderReport({ title, sites, range, nav, generatedAt = Date.now(), appName = 'SuricateWeb' }) {
   const tz = range.tz;
   const multi = sites.length > 1;
   const link = (month, text, cls = '') => (month ? `<a class="btn ${cls}" href="${esc(`${nav.base}${nav.base.includes('?') ? '&' : '?'}month=${month}&tz=${tz}`)}">${text}</a>` : `<a class="btn" aria-disabled="true">${text}</a>`);

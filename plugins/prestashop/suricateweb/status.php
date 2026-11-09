@@ -1,6 +1,6 @@
 <?php
 /**
- * Point d'accès lu par SuricateWEB. Hors du contrôleur front : le mode maintenance
+ * Point d'accès lu par SuricateWeb. Hors du contrôleur front : le mode maintenance
  * de PrestaShop ne le bloque pas, et les URL réécrites ne sont pas nécessaires.
  * Ne renvoie rien sans le jeton configuré dans le module.
  */

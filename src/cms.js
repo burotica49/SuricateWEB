@@ -1,4 +1,4 @@
-// Relevé des versions PHP / CMS. SuricateWEB appelle le plugin du site (le plugin n'appelle jamais SuricateWEB).
+// Relevé des versions PHP / CMS. SuricateWeb appelle le plugin du site (le plugin n'appelle jamais SuricateWeb).
 import { getWatch, settingsFor, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
 import { getExtensions } from './extensions.js';

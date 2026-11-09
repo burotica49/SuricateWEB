@@ -1,4 +1,4 @@
-// SuricateWEB — point d'entrée : lit l'environnement, assemble l'application (src/app.js) avec ses réglages par défaut,
+// SuricateWeb — point d'entrée : lit l'environnement, assemble l'application (src/app.js) avec ses réglages par défaut,
 // l'écoute, puis lance les tâches de fond. Aucune dépendance externe.
 import './src/env.js'; // doit rester le 1er import : charge le .env avant l'ouverture de la base
 import { createApp } from './src/app.js';
@@ -20,7 +20,7 @@ const app = createApp({ env: process.env });
 await app.listen(PORT, HOST);
 
 const s = getSettings();
-console.log(`\n  SuricateWEB →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+console.log(`\n  SuricateWeb →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 console.log(`  Connexion : identifiant « ${CREDS.user} » (SURICATE_USER)`);
 console.log(`  Captures d'écran : ${engine.available() ? `navigateur ${chromePath()}` : 'inactives (aucun Chrome / Chromium détecté — voir CHROME_PATH)'}`);
 if (CREDS.defaultedUser) console.log("  ⚠  SURICATE_USER n'est pas défini : l'identifiant par défaut « admin » est utilisé. Définissez SURICATE_USER pour le personnaliser.");

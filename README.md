@@ -1,12 +1,12 @@
-# SuricateWEB
+# SuricateWeb
 
 Surveillance de sites web pour webmasters : **détecter un piratage, une défiguration, un remplacement ou un transfert de domaine sans ouvrir le site**, et être alerté sur **Telegram**.
 
-Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io), mais pensé pour la sécurité plutôt que pour le suivi de prix : en plus du contenu, SuricateWEB surveille ce qui change quand un site est compromis.
+Inspiré de [changedetection.io](https://github.com/dgtlmoon/changedetection.io), mais pensé pour la sécurité plutôt que pour le suivi de prix : en plus du contenu, SuricateWeb surveille ce qui change quand un site est compromis.
 
 **Node.js pur — zéro dépendance npm, pas de Python.** Serveur HTTP, `fetch`, `dns`, `tls` et SQLite (`node:sqlite`) sont natifs.
 
-![Tableau de bord SuricateWEB : sites regroupés par client, état, disponibilité et temps de réponse](docs/screenshots/tableau-de-bord.png)
+![Tableau de bord SuricateWeb : sites regroupés par client, état, disponibilité et temps de réponse](docs/screenshots/tableau-de-bord.png)
 
 > **Toutes les images de ce document utilisent des données fictives** (domaines en `.example`, adresses IP de documentation) : elles sont générées par le [mode démo](#essayer-sans-rien-configurer-mode-démo), jamais à partir de vrais sites.
 
@@ -24,7 +24,7 @@ Un coup d'œil suffit : l'**aperçu** de la page (dernière capture), l'état HT
 
 ### Détecter une défiguration
 
-Quand le contenu est remplacé, SuricateWEB le dit clairement (**similarité 0 %**), montre les lignes retirées et ajoutées, et garde chaque version : on peut toujours revenir voir ce qui a changé et quand.
+Quand le contenu est remplacé, SuricateWeb le dit clairement (**similarité 0 %**), montre les lignes retirées et ajoutées, et garde chaque version : on peut toujours revenir voir ce qui a changé et quand.
 
 ![Onglet Modifications : diff d'une page défigurée](docs/screenshots/modifications.png)
 
@@ -34,7 +34,7 @@ Les **captures d'écran** régulières montrent ce que voient réellement les vi
 
 ### Être alerté sur Telegram
 
-Un seul message par contrôle, avec la sévérité, le détail, un extrait des lignes modifiées, deux **boutons** (« Marquer comme lu » et « Ouvrir dans SuricateWEB ») et, pour les alertes critiques visibles sur la page, **une photo de la page au moment de l'alerte**. Le texte de cette image est celui que l'application génère ; seul l'habillage de la conversation est une reconstitution.
+Un seul message par contrôle, avec la sévérité, le détail, un extrait des lignes modifiées, deux **boutons** (« Marquer comme lu » et « Ouvrir dans SuricateWeb ») et, pour les alertes critiques visibles sur la page, **une photo de la page au moment de l'alerte**. Le texte de cette image est celui que l'application génère ; seul l'habillage de la conversation est une reconstitution.
 
 <img src="docs/screenshots/telegram.png" alt="Message Telegram d'alerte critique avec photo de la page défigurée" width="420">
 
@@ -68,7 +68,7 @@ L'interface suit le thème du système (bouton lune / soleil dans la barre laté
 
 ### Barre latérale
 
-Sous le nom **SuricateWEB**, la **version de l'application** (lue dans `package.json`). En bas, à côté du thème et de la déconnexion : un lien vers le **dépôt GitHub** et un lien vers la **documentation** (ce README). Ces liens s'ouvrent dans un nouvel onglet ; ils proviennent des champs `repository` et `homepage` de `package.json`, et disparaissent s'ils n'y sont pas renseignés.
+Sous le nom **SuricateWeb**, la **version de l'application** (lue dans `package.json`). En bas, à côté du thème et de la déconnexion : un lien vers le **dépôt GitHub** et un lien vers la **documentation** (ce README). Ces liens s'ouvrent dans un nouvel onglet ; ils proviennent des champs `repository` et `homepage` de `package.json`, et disparaissent s'ils n'y sont pas renseignés.
 
 ## Démarrage
 
@@ -87,7 +87,7 @@ Dans le formulaire, le bouton **Tester** vérifie l'adresse avant de l'enregistr
 
 ### Connexion : identifiant et mot de passe dans `.env`
 
-**L'application est toujours protégée.** Les identifiants se définissent uniquement dans le fichier `.env` (ou dans les variables d'environnement de l'hébergeur) ; rien n'est modifiable depuis l'interface, et **SuricateWEB refuse de démarrer** s'ils sont absents.
+**L'application est toujours protégée.** Les identifiants se définissent uniquement dans le fichier `.env` (ou dans les variables d'environnement de l'hébergeur) ; rien n'est modifiable depuis l'interface, et **SuricateWeb refuse de démarrer** s'ils sont absents.
 
 ```ini
 SURICATE_USER=admin
@@ -117,7 +117,7 @@ SURICATE_PASSWORD="un mot de passe solide"     # 8 caractères minimum ; guillem
 | `TELEGRAM_POLL` | — | `0` : n'écoute pas les clics sur les boutons Telegram (voir [Boutons sous les alertes](#boutons-sous-les-alertes)) |
 | `SURICATE_DEMO` | — | `1` : [mode démo](#essayer-sans-rien-configurer-mode-démo), contrôles et captures désactivés |
 
-> **Placez SuricateWEB derrière HTTPS** (reverse proxy) si vous l'exposez hors de votre machine : le mot de passe transite sinon en clair. Un utilisateur connecté peut faire requêter des adresses arbitraires par le serveur : ne partagez pas l'accès.
+> **Placez SuricateWeb derrière HTTPS** (reverse proxy) si vous l'exposez hors de votre machine : le mot de passe transite sinon en clair. Un utilisateur connecté peut faire requêter des adresses arbitraires par le serveur : ne partagez pas l'accès.
 
 Pour le laisser tourner en continu : `pm2 start server.js --name suricateweb --node-args="--disable-warning=ExperimentalWarning"`, ou un service systemd (`ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js`).
 
@@ -127,7 +127,7 @@ Pour le laisser tourner en continu : `pm2 start server.js --name suricateweb --n
 npm run demo
 ```
 
-Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : SuricateWEB démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. Les relevés de mises à jour de « Cabinet Martin » (WordPress) et « Nova Boutique » (PrestaShop) sont fictifs, et « Wiki technique » est en maintenance. En mode démo, les contrôles, les captures et les relevés sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
+Ouvrez <http://127.0.0.1:3100> (identifiant `demo`, mot de passe `demo-password`) : SuricateWeb démarre avec **des sites, des alertes, des pannes et des captures fictifs**, dans un dossier temporaire supprimé à l'arrêt. Aucune donnée de `./data` n'est touchée. Les relevés de mises à jour de « Cabinet Martin » (WordPress) et « Nova Boutique » (PrestaShop) sont fictifs, et « Wiki technique » est en maintenance. En mode démo, les contrôles, les captures et les relevés sont désactivés (un clic sur « Vérifier maintenant » l'indique), et aucune requête n'est envoyée vers l'extérieur ; Telegram n'est pas configuré.
 
 Les images de ce document sont produites par le même jeu de données :
 
@@ -177,7 +177,7 @@ docker run -d --name suricateweb -p 3000:3000 -v suricate-data:/data \
 
 ![Réglages : notifications Telegram](docs/screenshots/reglages.png)
 
-Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **boutons** sous les messages et **adresse de SuricateWEB** (celle du bouton « Ouvrir dans SuricateWEB »). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le nombre de captures d'écran conservées par site, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
+Les options : notifications actives (coupe tous les envois sans perdre la configuration), message de **rétablissement**, **extrait des changements**, **capture d'écran jointe aux alertes critiques**, **niveau minimal** des notifications (« Attention et critique » par défaut) et **boutons** sous les messages et **adresse de SuricateWeb** (celle du bouton « Ouvrir dans SuricateWeb »). Le jeton, une fois enregistré, n'est plus renvoyé au navigateur qu'abrégé (`1234••••0000`). La section *Détection* des Réglages fixe la fréquence et le User-Agent par défaut, le nombre de captures d'écran conservées par site, le délai d'alerte des mises à jour du CMS et la liste des mots-clés suspects ; *Données* exporte et importe la liste des sites.
 
 Un seul message est envoyé par contrôle, même si plusieurs anomalies sont détectées. Il contient la sévérité, le site, le détail et un extrait des lignes modifiées.
 
@@ -189,23 +189,23 @@ Chaque message d'alerte porte deux boutons :
 
 | Bouton | Effet |
 |---|---|
-| **✓ Marquer comme lu** | SuricateWEB marque comme lues les alertes **de ce site, jusqu'à la dernière de ce message** (comme « Tout est normal » dans l'application) : le badge et l'état du site se mettent à jour, sans ouvrir l'application. Le bouton devient « ✓ Lu ». |
-| **Ouvrir dans SuricateWEB** | Ouvre la page du site dans SuricateWEB (après connexion). |
+| **✓ Marquer comme lu** | SuricateWeb marque comme lues les alertes **de ce site, jusqu'à la dernière de ce message** (comme « Tout est normal » dans l'application) : le badge et l'état du site se mettent à jour, sans ouvrir l'application. Le bouton devient « ✓ Lu ». |
+| **Ouvrir dans SuricateWeb** | Ouvre la page du site dans SuricateWeb (après connexion). |
 
 - Un message « ✅ Rétabli » n'a que « Ouvrir » : ses alertes sont déjà lues.
-- **« Ouvrir » exige l'adresse publique de SuricateWEB** (*Réglages › Adresse de SuricateWEB*), joignable depuis un téléphone. Telegram refuse `localhost` et les réseaux privés : dans ce cas le bouton est omis et le lien reste dans le texte du message. Si Telegram refuse malgré tout un bouton, SuricateWEB réessaie sans lui, puis sans aucun bouton : une alerte ne se perd jamais à cause d'un bouton.
-- **Comment SuricateWEB reçoit le clic** : en interrogeant Telegram régulièrement (`getUpdates`, attente de 25 secondes). Il n'y a **aucune adresse publique à ouvrir ni route sans connexion** : l'application se comporte comme avant côté réseau, et cela marche aussi en local. Les réglages sont relus à chaque tour : activer ou couper les boutons n'exige aucun redémarrage (comptez quelques secondes).
+- **« Ouvrir » exige l'adresse publique de SuricateWeb** (*Réglages › Adresse de SuricateWeb*), joignable depuis un téléphone. Telegram refuse `localhost` et les réseaux privés : dans ce cas le bouton est omis et le lien reste dans le texte du message. Si Telegram refuse malgré tout un bouton, SuricateWeb réessaie sans lui, puis sans aucun bouton : une alerte ne se perd jamais à cause d'un bouton.
+- **Comment SuricateWeb reçoit le clic** : en interrogeant Telegram régulièrement (`getUpdates`, attente de 25 secondes). Il n'y a **aucune adresse publique à ouvrir ni route sans connexion** : l'application se comporte comme avant côté réseau, et cela marche aussi en local. Les réglages sont relus à chaque tour : activer ou couper les boutons n'exige aucun redémarrage (comptez quelques secondes).
 - **Seule la conversation configurée a le droit d'agir** : un clic venu d'une autre conversation est refusé (« Action non autorisée »). Si le bot est dans un **groupe**, tous les membres du groupe peuvent cliquer : c'est une limite de Telegram.
 - Un clic n'est jamais rejoué, et un bouton sur un très ancien message reste valable (il ne marque que ce qui est encore non lu).
 - Les boutons se coupent dans *Réglages › Telegram*, ou pour toute l'installation avec `TELEGRAM_POLL=0` (les messages gardent alors leur bouton « Ouvrir »). Sans boutons, le message est identique à avant.
 
-**Limites** : Telegram n'admet qu'**un seul lecteur** par bot. Si vous avez configuré un **webhook** pour ce bot (autre outil), SuricateWEB ne peut pas recevoir les clics et le signale une fois dans ses journaux : supprimez le webhook ou coupez les boutons. Le bouton **Détecter** des Réglages interroge le même flux : il prend la main un instant, puis la réception reprend d'elle-même ; si un clic arrive juste avant, il peut avoir effacé le `/start` attendu : renvoyez-le au bot.
+**Limites** : Telegram n'admet qu'**un seul lecteur** par bot. Si vous avez configuré un **webhook** pour ce bot (autre outil), SuricateWeb ne peut pas recevoir les clics et le signale une fois dans ses journaux : supprimez le webhook ou coupez les boutons. Le bouton **Détecter** des Réglages interroge le même flux : il prend la main un instant, puis la réception reprend d'elle-même ; si un clic arrive juste avant, il peut avoir effacé le `/start` attendu : renvoyez-le au bot.
 
 Dans l'application, l'onglet **Alertes** liste tout ce qui a été détecté (filtres Critiques / Attention / Infos / Rétablis, « Voir les changements » pour ouvrir le diff, badge « Envoyé sur Telegram »). **Tout marquer comme lu** efface le badge ; sur la page d'un site, **Tout est normal** marque ses alertes comme vérifiées.
 
 ## Captures d'écran
 
-SuricateWEB prend une photo de chaque site à intervalle régulier (**toutes les heures par défaut**, de 5 minutes à 7 jours) :
+SuricateWeb prend une photo de chaque site à intervalle régulier (**toutes les heures par défaut**, de 5 minutes à 7 jours) :
 
 - **Aperçu immédiat** : la dernière capture s'affiche dans un cadre de navigateur en haut de la page du site, et en vignette dans la liste.
 - **Onglet Captures** : l'historique en grille, une visionneuse (flèches ← →), et une **comparaison côte à côte avant / après** pour constater une défiguration.
@@ -213,7 +213,7 @@ SuricateWEB prend une photo de chaque site à intervalle régulier (**toutes les
 
 ![Onglet Captures : historique des captures d'un site, dont celle prise au moment de l'alerte](docs/screenshots/captures.png)
 
-**Avant de capturer, SuricateWEB se comporte comme un visiteur** : il attend que le réseau soit au repos, simule une interaction (souris, molette), descend la page par paliers pour déclencher le chargement différé des images et les animations « à l'apparition », la remonte, attend les polices, puis patiente (3 s par défaut). Cela évite les captures à moitié vides.
+**Avant de capturer, SuricateWeb se comporte comme un visiteur** : il attend que le réseau soit au repos, simule une interaction (souris, molette), descend la page par paliers pour déclencher le chargement différé des images et les animations « à l'apparition », la remonte, attend les polices, puis patiente (3 s par défaut). Cela évite les captures à moitié vides.
 
 > Pourquoi la simulation de visiteur ? Beaucoup de sites WordPress (WP Rocket « retarder l'exécution du JavaScript », NitroPack, Perfmatters…) **n'exécutent leurs scripts qu'à la première interaction réelle** d'un visiteur. Sans elle, jQuery, le slider d'accueil ou les menus ne démarrent jamais, et la capture montre des zones vides — y compris si on attend 6 secondes de plus, ce qui a été constaté sur un site réel. Contrepartie : ces scripts retardés incluent souvent vos **statistiques** (Google Analytics, Matomo, pixels) ; chaque capture peut donc compter une visite. Désactivez « Simuler un visiteur » pour un site dont ce n'est pas souhaitable, ou excluez l'IP du serveur de vos statistiques.
 
@@ -304,7 +304,7 @@ Le premier contrôle établit la référence et ne déclenche aucune alerte de c
 
 ## WordPress et PrestaShop (mises à jour)
 
-Pour un site WordPress ou PrestaShop, SuricateWEB ajoute l'onglet **Mises à jour** : la **version de PHP** du serveur et, pour le noyau, les extensions (les modules, sous PrestaShop) et les thèmes, la **version installée** et la **version disponible**. Une mise à jour qui tarde, ou une version de PHP qui n'est plus maintenue, déclenche une [alerte Telegram](#alertes-mises-à-jour-en-retard-et-fin-de-support-de-php).
+Pour un site WordPress ou PrestaShop, SuricateWeb ajoute l'onglet **Mises à jour** : la **version de PHP** du serveur et, pour le noyau, les extensions (les modules, sous PrestaShop) et les thèmes, la **version installée** et la **version disponible**. Une mise à jour qui tarde, ou une version de PHP qui n'est plus maintenue, déclenche une [alerte Telegram](#alertes-mises-à-jour-en-retard-et-fin-de-support-de-php).
 
 | WordPress | PrestaShop |
 |---|---|
@@ -319,34 +319,34 @@ Pour un site WordPress ou PrestaShop, SuricateWEB ajoute l'onglet **Mises à jou
   - **Inconnue** : le CMS ne sait pas dire si une version plus récente existe (module hors catalogue, thème sur mesure).
 - Un élément désactivé est marqué **inactif** : il reste pourtant installé sur le serveur, donc à tenir à jour ou à supprimer.
 - Une **pastille** sur l'onglet donne le nombre de mises à jour disponibles (noyau, extensions et thèmes réunis).
-- Si un relevé échoue (plugin désactivé, jeton refusé, site en panne…), le tableau reste celui du **dernier relevé réussi**, avec le message d'erreur, et SuricateWEB réessaie plus tôt que d'habitude (au plus 30 minutes plus tard).
+- Si un relevé échoue (plugin désactivé, jeton refusé, site en panne…), le tableau reste celui du **dernier relevé réussi**, avec le message d'erreur, et SuricateWeb réessaie plus tôt que d'habitude (au plus 30 minutes plus tard).
 
 ### Mise en place
 
-Le relevé se fait **depuis le site**, là où ces informations existent : un petit plugin, installé sur le site, ne répond qu'à SuricateWEB. Il n'envoie rien de lui-même.
+Le relevé se fait **depuis le site**, là où ces informations existent : un petit plugin, installé sur le site, ne répond qu'à SuricateWeb. Il n'envoie rien de lui-même.
 
 ![Formulaire d'un site : bloc WordPress / PrestaShop avec le jeton, le dossier, la fréquence du relevé et le lien de téléchargement du plugin](docs/screenshots/formulaire-cms.png)
 
 1. **Modifier** le site, bloc **WordPress / PrestaShop** : choisissez le CMS. Un **jeton** aléatoire est généré (boutons **Générer** et **Copier**), et l'**adresse interrogée** s'affiche. Renseignez le **Dossier** seulement si le CMS n'est pas à la racine du domaine (`blog` pour `exemple.fr/blog`) et la **fréquence du relevé** : 1 h, 6 h, **12 h (par défaut)**, 24 h ou 7 jours. Enregistrez.
 2. **Téléchargez le plugin** (liens dans le même bloc, ou dans l'onglet Mises à jour tant qu'aucun relevé n'a eu lieu), installez-le et activez-le.
-3. Collez le jeton dans les réglages du plugin (WordPress : *Réglages › SuricateWEB* ; PrestaShop : *Modules › Gestionnaire de modules › SuricateWEB › Configurer*).
+3. Collez le jeton dans les réglages du plugin (WordPress : *Réglages › SuricateWeb* ; PrestaShop : *Modules › Gestionnaire de modules › SuricateWeb › Configurer*).
 4. Ouvrez l'onglet **Mises à jour** et cliquez sur **Actualiser**.
 
 **Mise à jour du plugin** : un plugin installé avant la version 1.1 continue de fournir les versions, mais pas l'intégrité des fichiers ni les administrateurs ; l'onglet *Sécurité* indique alors « plugin trop ancien ». Remplacez le plugin par la nouvelle archive (le jeton est conservé).
 
-L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fixe : `/?rest_route=/suricateweb/v1/status` pour WordPress (avec ou sans permaliens), `/modules/suricateweb/status.php` pour PrestaShop. Le téléchargement du plugin n'est possible que connecté à SuricateWEB ; l'archive est fabriquée à la demande depuis le dossier `plugins/`.
+L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fixe : `/?rest_route=/suricateweb/v1/status` pour WordPress (avec ou sans permaliens), `/modules/suricateweb/status.php` pour PrestaShop. Le téléchargement du plugin n'est possible que connecté à SuricateWeb ; l'archive est fabriquée à la demande depuis le dossier `plugins/`.
 
 ### Ce qui circule, et les garde-fous
 
 - **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Depuis la version 1.1, il renvoie aussi le **nombre d'administrateurs** (avec, sous WordPress, l'identifiant de connexion et la date de création de ceux créés depuis 30 jours) et, pour le contrôle d'intégrité, des **chemins de fichiers** (jamais leur contenu). Ni e-mail, ni mot de passe, ni contenu, ni donnée client.
 - **Cette liste reste sensible** : elle indique à un attaquant quelles failles tenter. Sans jeton valide (comparé en temps constant), le plugin répond « non autorisé » et ne renvoie aucune donnée. Gardez le jeton secret et surveillez un site **en HTTPS** : en HTTP, le jeton transiterait en clair.
 - Le jeton est envoyé dans l'en-tête `Authorization`, jamais dans l'adresse.
-- SuricateWEB ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
+- SuricateWeb ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
 - **Actualiser** demande au plugin de recalculer ses données. Sous WordPress, le plugin vide alors le cache des mises à jour, au plus **une fois toutes les 15 minutes**, pour ne pas solliciter wordpress.org à chaque clic.
 
 ### Alertes : mises à jour en retard et fin de support de PHP
 
-SuricateWEB alerte comme pour un certificat qui expire : **une fois à l'apparition**, jamais en boucle, puis « ✅ Rétabli » quand la situation est réglée. Tant qu'elle dure, le site reste « À vérifier » (« Alerte » si elle est critique) sur le tableau de bord et l'alerte figure dans l'encadré en haut de sa page.
+SuricateWeb alerte comme pour un certificat qui expire : **une fois à l'apparition**, jamais en boucle, puis « ✅ Rétabli » quand la situation est réglée. Tant qu'elle dure, le site reste « À vérifier » (« Alerte » si elle est critique) sur le tableau de bord et l'alerte figure dans l'encadré en haut de sa page.
 
 | Alerte | Quand | Gravité |
 |---|---|---|
@@ -356,23 +356,23 @@ SuricateWEB alerte comme pour un certificat qui expire : **une fois à l'apparit
 | **PHP non maintenu** : « PHP 8.0 n'est plus maintenu » | la branche ne reçoit plus aucun correctif de sécurité | **critique** |
 
 - **Le délai** se règle dans *Réglages › Détection* : 1, 3, **7 (par défaut)**, 14 ou 30 jours.
-- **L'ancienneté** est comptée depuis le **premier relevé de SuricateWEB qui voit la mise à jour** : les CMS ne communiquent pas la date de publication. Elle continue tant que la version proposée reste la même, et repart de zéro si une version encore plus récente sort. Elle s'affiche à côté de la version disponible (« 6.8.3 · 12 j »).
+- **L'ancienneté** est comptée depuis le **premier relevé de SuricateWeb qui voit la mise à jour** : les CMS ne communiquent pas la date de publication. Elle continue tant que la version proposée reste la même, et repart de zéro si une version encore plus récente sort. Elle s'affiche à côté de la version disponible (« 6.8.3 · 12 j »).
 - **Une aggravation est annoncée de nouveau** : noyau qui passe à 30 jours, PHP dont le support se termine.
 - **Les dates de fin de support de PHP** viennent de [php.net/supported-versions](https://www.php.net/supported-versions.php) et sont écrites dans `src/cms-alerts.js` : à relire une fois par an et à compléter quand une nouvelle branche sort. Une branche absente de ce tableau parce que trop récente n'est jamais signalée.
 - **Site par site**, l'interrupteur « Alerter si des mises à jour tardent ou si PHP n'est plus maintenu » (bloc *WordPress / PrestaShop* du formulaire) coupe ces alertes sans message « rétabli ». Il convient quand vous ne maîtrisez pas ces versions (hébergement mutualisé, site d'un client).
-- Les alertes sont calculées à chaque contrôle à partir du **dernier relevé réussi**. Si le plugin devient injoignable, SuricateWEB conserve ce relevé et l'affiche avec l'erreur : il ne prévient pas encore que le relevé lui-même échoue.
+- Les alertes sont calculées à chaque contrôle à partir du **dernier relevé réussi**. Si le plugin devient injoignable, SuricateWeb conserve ce relevé et l'affiche avec l'erreur : il ne prévient pas encore que le relevé lui-même échoue.
 
 ### Ce que le relevé ne peut pas dire
 
 - Une mise à jour de **PHP** : seule la version installée est lue.
 - Une mise à jour d'une extension WordPress **premium**, sauf si son propre système de mise à jour la déclare à WordPress.
 - Une mise à jour d'un module PrestaShop **absent du catalogue Addons**, ou d'un thème sur mesure : la version actuelle est affichée, la version disponible reste « inconnue ».
-- Si une mise à jour **corrige une faille**, ou si une faille est exploitable sur votre site : SuricateWEB indique les versions, pas les vulnérabilités.
+- Si une mise à jour **corrige une faille**, ou si une faille est exploitable sur votre site : SuricateWeb indique les versions, pas les vulnérabilités.
 - En **mode démo**, aucun site n'est interrogé : les relevés affichés sont fictifs.
 
 ## Sécurité du CMS : intégrité des fichiers et administrateurs
 
-SuricateWEB voit le HTML d'un site, pas ses fichiers. Le plugin comble ce manque : il lit les fichiers **depuis le site**, là où ils sont. L'onglet **Sécurité** (sites WordPress et PrestaShop) en présente le résultat.
+SuricateWeb voit le HTML d'un site, pas ses fichiers. Le plugin comble ce manque : il lit les fichiers **depuis le site**, là où ils sont. L'onglet **Sécurité** (sites WordPress et PrestaShop) en présente le résultat.
 
 ### Intégrité des fichiers
 
@@ -395,7 +395,7 @@ Un nouvel administrateur est un classique après une intrusion. Le plugin ne ren
 - **WordPress** : le nombre d'administrateurs, et pour ceux créés ces 30 derniers jours leur identifiant de connexion et la date de création.
 - **PrestaShop** : le nombre d'administrateurs actifs seulement (la table des employés ne date pas leur création).
 
-Le **premier relevé fixe la référence**, sans alerte. Ensuite, SuricateWEB alerte (**critique**) quand un compte apparaît ou que le compteur augmente sans création récente (un compte existant promu administrateur). Le message reste actif, sans se répéter, jusqu'à ce que vous cliquiez sur **Je connais ces comptes** (onglet Sécurité) : c'est alors la nouvelle référence, sans message « rétabli ». Un compte supprimé fait disparaître l'alerte.
+Le **premier relevé fixe la référence**, sans alerte. Ensuite, SuricateWeb alerte (**critique**) quand un compte apparaît ou que le compteur augmente sans création récente (un compte existant promu administrateur). Le message reste actif, sans se répéter, jusqu'à ce que vous cliquiez sur **Je connais ces comptes** (onglet Sécurité) : c'est alors la nouvelle référence, sans message « rétabli ». Un compte supprimé fait disparaître l'alerte.
 
 ### Réglages et limites
 
@@ -446,11 +446,11 @@ Par défaut, c'est le **dernier mois entier** ; les boutons *Mois précédent* e
 - **Mises à jour et sécurité** (sites WordPress / PrestaShop) : mises à jour **effectuées** pendant le mois, mises à jour en attente, version de PHP et son support, état de l'intégrité des fichiers et des comptes administrateurs.
 - **Échéances** : certificat TLS et nom de domaine.
 
-Les mises à jour « effectuées » sont celles que SuricateWEB a **vues** d'un relevé à l'autre (version installée qui change) : à l'intervalle du relevé près, et seulement depuis l'activation du relevé CMS. Le rapport est calculé à l'ouverture, depuis les données conservées (pannes et statistiques 13 mois, fenêtres de maintenance 90 jours après leur fin, alertes selon la rétention) : un mois ancien peut donc être incomplet. Il exige d'être connecté.
+Les mises à jour « effectuées » sont celles que SuricateWeb a **vues** d'un relevé à l'autre (version installée qui change) : à l'intervalle du relevé près, et seulement depuis l'activation du relevé CMS. Le rapport est calculé à l'ouverture, depuis les données conservées (pannes et statistiques 13 mois, fenêtres de maintenance 90 jours après leur fin, alertes selon la rétention) : un mois ancien peut donc être incomplet. Il exige d'être connecté.
 
 ### Page de statut publique
 
-*Modifier › Page de statut publique* publie une page **en lecture seule**, à l'adresse `/status/<jeton>` (la base est l'adresse de SuricateWEB réglée dans *Réglages*, sinon celle du navigateur). Le jeton est aléatoire ; **Nouvelle adresse** en génère un autre et l'ancien cesse aussitôt de fonctionner.
+*Modifier › Page de statut publique* publie une page **en lecture seule**, à l'adresse `/status/<jeton>` (la base est l'adresse de SuricateWeb réglée dans *Réglages*, sinon celle du navigateur). Le jeton est aléatoire ; **Nouvelle adresse** en génère un autre et l'ancien cesse aussitôt de fonctionner.
 
 Elle montre l'état actuel (tout fonctionne, panne en cours, maintenance, en pause), la disponibilité sur 24 h, 7, 30 et 90 jours, la frise de 90 jours, les maintenances et les pannes des 90 derniers jours ; elle se rafraîchit toute seule. **Elle ne montre jamais** d'alerte de sécurité, de cause technique, de version ni de réglage. Pas de connexion requise : toute personne qui connaît l'adresse la voit. La page est exclue des moteurs de recherche, ses requêtes sont limitées par adresse (120 par minute) et un jeton inconnu ou une page coupée répondent de la même façon (404).
 
@@ -481,14 +481,14 @@ Une fenêtre en cours ou prévue s'affiche en bandeau bleu en haut de la page du
 
 ### Ce qui se passe pendant la fenêtre
 
-- **SuricateWEB continue de contrôler le site** : les mesures et les captures restent enregistrées, rien n'est perdu.
+- **SuricateWeb continue de contrôler le site** : les mesures et les captures restent enregistrées, rien n'est perdu.
 - **Les alertes sont retenues** : elles apparaissent dans le journal avec la mention *Retenue (maintenance)*, déjà lues, et **ne partent pas sur Telegram**.
 - **Aucune panne n'est comptée** : un site coupé pendant l'intervention n'ouvre pas de panne et ne baisse pas la disponibilité. Les échecs de la fenêtre ne s'accumulent pas : si le site est encore coupé à la reprise, la panne est datée du premier échec **après** la fenêtre.
 - **Un état anormal apparu pendant la fenêtre** (texte de piratage, certificat invalide…) est annoncé à la reprise s'il est toujours là. S'il a disparu entre-temps, il n'y a pas de message « rétabli » : personne n'avait été prévenu.
 
 ### À la reprise : un seul récapitulatif
 
-Si des alertes d'avertissement ou critiques ont été retenues, SuricateWEB envoie **un seul message** « Fin de la maintenance : N alertes retenues pendant la fenêtre », qui les liste et prend la gravité la plus haute. Les simples informations n'en déclenchent pas. Quand un contrôle a eu lieu pendant la fenêtre, le suivant est programmé juste après sa fin, pour que ce message n'attende pas l'intervalle normal.
+Si des alertes d'avertissement ou critiques ont été retenues, SuricateWeb envoie **un seul message** « Fin de la maintenance : N alertes retenues pendant la fenêtre », qui les liste et prend la gravité la plus haute. Les simples informations n'en déclenchent pas. Quand un contrôle a eu lieu pendant la fenêtre, le suivant est programmé juste après sa fin, pour que ce message n'attende pas l'intervalle normal.
 
 **Maintenance ou pause ?** La pause arrête tout contrôle, donc toute alerte, jusqu'à ce que vous la leviez : si vous l'oubliez, le site n'est plus surveillé. La maintenance continue de mesurer, garde la trace de ce qui s'est passé, et se termine à l'heure prévue.
 
@@ -499,13 +499,13 @@ Si des alertes d'avertissement ou critiques ont été retenues, SuricateWEB envo
 - **La comparaison de contenu lit le HTML tel que le serveur le renvoie**, sans l'exécuter. Le contenu généré uniquement par JavaScript (SPA) n'est pas comparé (la capture d'écran, elle, l'affiche), mais DNS, TLS, RDAP, redirections et scripts restent surveillés.
 - **Le cloaking** (un site piraté qui montre une page saine aux robots) peut passer entre les mailles ; changez le User-Agent par site si vous le suspectez.
 - **RDAP** dépend du registre de l'extension ; certains (dont `.fr`) n'exposent pas le verrou de transfert : l'interface l'indique plutôt que d'afficher « absent ».
-- **La disponibilité est mesurée depuis votre serveur SuricateWEB.** Une panne réseau de ce serveur peut apparaître comme une panne du site, et un site injoignable seulement depuis certains pays n'est pas vu. Pour plus de fiabilité, hébergez SuricateWEB ailleurs que les sites surveillés.
+- **La disponibilité est mesurée depuis votre serveur SuricateWeb.** Une panne réseau de ce serveur peut apparaître comme une panne du site, et un site injoignable seulement depuis certains pays n'est pas vu. Pour plus de fiabilité, hébergez SuricateWeb ailleurs que les sites surveillés.
 - **Pas de rétroactivité** : la disponibilité n'est calculée qu'à partir de l'installation de cette fonction ; avant, les sites sont considérés disponibles.
 - Les résolveurs publics (1.1.1.1, 8.8.8.8, 9.9.9.9) doivent être joignables en UDP/53 depuis le serveur ; sinon la cohérence entre résolveurs est simplement ignorée.
 - **Le relevé des mises à jour n'est pas un scanner de vulnérabilités** : il compare des numéros de version fournis par le CMS (voir [ce qu'il ne peut pas dire](#ce-que-le-relevé-ne-peut-pas-dire)).
-- **Un plugin devenu injoignable n'est pas signalé** : SuricateWEB garde le dernier relevé et affiche l'erreur dans l'onglet *Mises à jour*, sans alerter. C'est aussi ce qui arrive si un pirate désactive le plugin : voir [les limites du contrôle d'intégrité](#réglages-et-limites).
+- **Un plugin devenu injoignable n'est pas signalé** : SuricateWeb garde le dernier relevé et affiche l'erreur dans l'onglet *Mises à jour*, sans alerter. C'est aussi ce qui arrive si un pirate désactive le plugin : voir [les limites du contrôle d'intégrité](#réglages-et-limites).
 - **Les pages supplémentaires ne sont pas comparées en texte**, et ne comptent ni dans la disponibilité ni dans les captures d'écran.
-- Les adresses IP derrière un CDN tournent : SuricateWEB ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
+- Les adresses IP derrière un CDN tournent : SuricateWeb ne signale un changement d'IP que si **aucune** plage déjà vue n'est reconnue.
 
 ## Architecture
 
@@ -556,11 +556,11 @@ Les tests lancent un faux site qu'ils « piratent » en direct et un faux serveu
 
 Scripts disponibles : `npm start`, `npm run dev` (rechargement automatique), `npm test`, `npm run demo`, `npm run docs:screenshots`.
 
-### Étendre SuricateWEB (version hébergée, intégrations)
+### Étendre SuricateWeb (version hébergée, intégrations)
 
-> Référence complète, à l'usage de qui construit une couche hébergée sur SuricateWEB : **[docs/couche-cloud.md](docs/couche-cloud.md)** (assemblage, chaque point d'extension, données et comptes, base PostgreSQL, sécurité, limites connues, travail restant).
+> Référence complète, à l'usage de qui construit une couche hébergée sur SuricateWeb : **[docs/couche-cloud.md](docs/couche-cloud.md)** (assemblage, chaque point d'extension, données et comptes, base PostgreSQL, sécurité, limites connues, travail restant).
 
-Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'est l'installation classique : un compte, les identifiants du `.env`, aucune limite. Une version qui embarque SuricateWEB (comptes multiples, forfaits…) fournit ses propres extensions :
+Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'est l'installation classique : un compte, les identifiants du `.env`, aucune limite. Une version qui embarque SuricateWeb (comptes multiples, forfaits…) fournit ses propres extensions :
 
 | Option | Rôle |
 |---|---|
@@ -577,13 +577,13 @@ Le serveur s'assemble avec `createApp(options)` (`src/app.js`). Sans option, c'e
 
 **Réglages à deux niveaux.** Ceux de l'**installation** (secret de session, adresse publique, rétention des contrôles et des versions) et ceux du **compte** (Telegram, mots-clés, User-Agent, intervalle par défaut, seuil des mises à jour CMS, conservation des captures). Chaque contrôle, message et relevé CMS utilise les réglages du compte propriétaire du site (`settingsFor(compte)`). Modifier l'adresse publique demande le droit `instance:write`, accordé par défaut. Le flux temps réel (`/api/events`) ne transmet à chaque utilisateur que les événements de son compte. Tests : `test/account-settings.test.js` et `test/account-isolation.test.js`.
 
-**Garde réseau (SSRF).** SuricateWEB va chercher des adresses saisies par ses utilisateurs ; sans garde, l'une d'elles peut viser le réseau interne du serveur (service de métadonnées d'un hébergeur, base de données, panneau d'administration) et en révéler le contenu. `createApp({ netGuard })` ou `SURICATE_NET_GUARD=1` l'active : seules les adresses http(s) sur les ports autorisés (80, 443, 8080, 8443 par défaut), vers des adresses IP publiques, sont permises — pour les contrôles, chaque étape d'une redirection, le relevé CMS, le certificat TLS et les captures. L'adresse IP est vérifiée au moment même de la connexion (pas de « DNS rebinding »). Des exceptions explicites existent (`SURICATE_NET_ALLOW_HOSTS`). Elle est **inactive par défaut** : sur une installation personnelle, surveiller son propre réseau est légitime. Limite : Chrome résout les adresses lui-même ; ses requêtes sont interceptées une à une, mais pour une garantie complète il faut l'isoler dans un conteneur ou un réseau sans accès à l'interne. Voir `src/net-guard.js` et `test/net-guard.test.js`.
+**Garde réseau (SSRF).** SuricateWeb va chercher des adresses saisies par ses utilisateurs ; sans garde, l'une d'elles peut viser le réseau interne du serveur (service de métadonnées d'un hébergeur, base de données, panneau d'administration) et en révéler le contenu. `createApp({ netGuard })` ou `SURICATE_NET_GUARD=1` l'active : seules les adresses http(s) sur les ports autorisés (80, 443, 8080, 8443 par défaut), vers des adresses IP publiques, sont permises — pour les contrôles, chaque étape d'une redirection, le relevé CMS, le certificat TLS et les captures. L'adresse IP est vérifiée au moment même de la connexion (pas de « DNS rebinding »). Des exceptions explicites existent (`SURICATE_NET_ALLOW_HOSTS`). Elle est **inactive par défaut** : sur une installation personnelle, surveiller son propre réseau est légitime. Limite : Chrome résout les adresses lui-même ; ses requêtes sont interceptées une à une, mais pour une garantie complète il faut l'isoler dans un conteneur ou un réseau sans accès à l'interne. Voir `src/net-guard.js` et `test/net-guard.test.js`.
 
 Le moteur de base se remplace avant le premier import de `src/db.js` (`configureStore` dans `src/store/registry.js`) : un adaptateur qui respecte le contrat de `src/store/sqlite.js`, vérifiable avec `test-support/adapter-contract.js`, et ses propres migrations. Les tests `test/app-extensions.test.js` illustrent chaque point d'extension.
 
 ## Nom du produit et migration depuis VigieWeb
 
-Le produit s'appelle **SuricateWEB** ; il s'appelait VigieWeb. Les identifiants techniques ont été renommés avec lui. Une installation existante se met à jour en changeant ces noms, une seule fois :
+Le produit s'appelle **SuricateWeb** ; il s'appelait VigieWeb. Les identifiants techniques ont été renommés avec lui. Une installation existante se met à jour en changeant ces noms, une seule fois :
 
 | Avant | Maintenant | À faire |
 |---|---|---|
@@ -593,12 +593,12 @@ Le produit s'appelle **SuricateWEB** ; il s'appelait VigieWeb. Les identifiants 
 | cookie `vigie_session`, clé `vigie-theme`, `vigie-view` | `suricate_session`, `suricate-theme`, `suricate-view` | Rien : chacun se reconnecte une fois et retrouve le thème par défaut |
 | export `vigie-sites.json` | `suricate-sites.json` | Rien : seul le nom du fichier téléchargé change |
 
-Les noms d'un volume Docker, d'un conteneur ou d'une image (`vigie-data`…) sont libres : gardez ceux que vous avez déjà. Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est « SuricateWEB » ; le User-Agent par défaut enregistré en base est migré automatiquement (migration v7), un User-Agent personnalisé n'est jamais modifié. Le dépôt GitHub est devenu `burotica49/SuricateWEB` ; les anciennes adresses (`burotica49/VigieWeb`) redirigent.
+Les noms d'un volume Docker, d'un conteneur ou d'une image (`vigie-data`…) sont libres : gardez ceux que vous avez déjà. Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est « SuricateWeb » ; le User-Agent par défaut enregistré en base est migré automatiquement (migration v7), un User-Agent personnalisé n'est jamais modifié. Le dépôt GitHub est devenu `burotica49/SuricateWeb` ; les anciennes adresses (`burotica49/VigieWeb`) redirigent.
 
 ## Sécurité
 
-Une faille dans SuricateWEB touche potentiellement tous les sites qu'il surveille. Pour en signaler une, utilisez le signalement privé de GitHub (voir [SECURITY.md](SECURITY.md)) et non une issue publique.
+Une faille dans SuricateWeb touche potentiellement tous les sites qu'il surveille. Pour en signaler une, utilisez le signalement privé de GitHub (voir [SECURITY.md](SECURITY.md)) et non une issue publique.
 
 ## Licence
 
-SuricateWEB est distribué sous licence **[Apache 2.0](LICENSE)** : usage, modification et redistribution libres, y compris commerciaux, à condition de conserver la licence et l'avis de copyright ([NOTICE](NOTICE)) ; la licence comprend aussi une concession de brevets et exclut toute garantie. Le projet n'a aucune dépendance npm : aucun code tiers n'est embarqué.
+SuricateWeb est distribué sous licence **[Apache 2.0](LICENSE)** : usage, modification et redistribution libres, y compris commerciaux, à condition de conserver la licence et l'avis de copyright ([NOTICE](NOTICE)) ; la licence comprend aussi une concession de brevets et exclut toute garantie. Le projet n'a aucune dépendance npm : aucun code tiers n'est embarqué.

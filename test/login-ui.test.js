@@ -45,7 +45,7 @@ function fakeAuth(state) {
         return { ok: true };
       });
       route('POST', '/api/account/sessions/revoke-others', () => { const revoked = state.sessions - 1; state.sessions = 1; return { revoked }; });
-      route('POST', '/api/account/2fa/begin', () => ({ secret: 'JBSWY3DPEHPK3PXP', otpauth: 'otpauth://totp/SuricateWEB:marie?secret=JBSWY3DPEHPK3PXP' }));
+      route('POST', '/api/account/2fa/begin', () => ({ secret: 'JBSWY3DPEHPK3PXP', otpauth: 'otpauth://totp/SuricateWeb:marie?secret=JBSWY3DPEHPK3PXP' }));
       route('POST', '/api/account/2fa/enable', (ctx) => {
         if (ctx.body.code !== '123456') return refuse(ctx, 400, 'Code incorrect', 'invalid_2fa');
         state.twofa = true;

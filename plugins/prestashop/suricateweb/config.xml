@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <module>
     <name>suricateweb</name>
-    <displayName><![CDATA[SuricateWEB]]></displayName>
+    <displayName><![CDATA[SuricateWeb]]></displayName>
     <version><![CDATA[1.2.0]]></version>
-    <description><![CDATA[Indique à SuricateWEB la version de PHP, les mises à jour, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers de médias.]]></description>
-    <author><![CDATA[SuricateWEB]]></author>
+    <description><![CDATA[Indique à SuricateWeb la version de PHP, les mises à jour, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers de médias.]]></description>
+    <author><![CDATA[SuricateWeb]]></author>
     <tab><![CDATA[administration]]></tab>
     <is_configurable>1</is_configurable>
     <need_instance>0</need_instance>

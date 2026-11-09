@@ -69,13 +69,13 @@ test('adresse du bouton : publique seulement, jamais localhost ni réseau privé
 
 test('clavier : « Marquer comme lu » + « Ouvrir », sans doublon du lien dans le texte', () => {
   const kb = tg.buildKeyboard(watch, [alert(10), alert(12, 'critical'), alert(11)], settings());
-  assert.deepEqual(kb.row.map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWEB']);
+  assert.deepEqual(kb.row.map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWeb']);
   assert.equal(kb.row[0].callback_data, 'lu:5:12', 'jusqu’à la plus récente alerte du message');
   assert.ok(Buffer.byteLength(kb.row[0].callback_data) <= 64);
   assert.equal(kb.row[1].url, 'https://suricateweb.exemple-societe.com/#/sites/5');
   assert.equal(kb.link, true);
-  assert.doesNotMatch(tg.buildMessage(watch, [alert(10)], settings(), { link: !kb.link }), /Ouvrir dans SuricateWEB/);
-  assert.match(tg.buildMessage(watch, [alert(10)], settings()), /Ouvrir dans SuricateWEB/, 'comportement historique conservé sans boutons');
+  assert.doesNotMatch(tg.buildMessage(watch, [alert(10)], settings(), { link: !kb.link }), /Ouvrir dans SuricateWeb/);
+  assert.match(tg.buildMessage(watch, [alert(10)], settings()), /Ouvrir dans SuricateWeb/, 'comportement historique conservé sans boutons');
 
   assert.deepEqual(parseCallback(kb.row[0].callback_data), { watchId: 5, upTo: 12 });
   assert.deepEqual(readKeyboard([kb.row]), [[{ text: '✓ Lu', callback_data: 'ok' }, kb.row[1]]], 'le bouton de lecture devient « ✓ Lu », l’autre reste');
@@ -86,7 +86,7 @@ test('clavier : adresse locale = bouton de lecture seul ; rétablissement = lien
   assert.deepEqual(local.row.map((b) => b.text), ['✓ Marquer comme lu']);
   assert.equal(local.link, false, 'le lien reste dans le texte');
   const recovery = tg.buildKeyboard(watch, [alert(10, 'recovery')], settings());
-  assert.deepEqual(recovery.row.map((b) => b.text), ['Ouvrir dans SuricateWEB'], 'un « rétabli » est déjà lu');
+  assert.deepEqual(recovery.row.map((b) => b.text), ['Ouvrir dans SuricateWeb'], 'un « rétabli » est déjà lu');
   assert.deepEqual(tg.buildKeyboard(watch, [alert(10)], settings({}, { buttons: false })), { row: [], link: false });
   assert.deepEqual(tg.buildKeyboard(watch, [{ severity: 'warning' }], settings({ baseUrl: '' })).row, [], 'alerte sans identifiant : rien à marquer');
 });
@@ -94,22 +94,22 @@ test('clavier : adresse locale = bouton de lecture seul ; rétablissement = lien
 test('envoi : boutons joints ; repli sans bouton lien, puis sans bouton, si Telegram refuse', async () => {
   reset();
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
-  assert.deepEqual(buttons(fake.sent[0]).map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWEB']);
-  assert.doesNotMatch(fake.sent[0].text, /Ouvrir dans SuricateWEB/);
+  assert.deepEqual(buttons(fake.sent[0]).map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWeb']);
+  assert.doesNotMatch(fake.sent[0].text, /Ouvrir dans SuricateWeb/);
 
   reset();
   fake.rejectUrl = true;
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
   assert.equal(fake.sent.length, 2, 'un 2e essai');
   assert.deepEqual(buttons(fake.sent[1]).map((b) => b.text), ['✓ Marquer comme lu'], 'sans le bouton lien');
-  assert.match(fake.sent[1].text, /Ouvrir dans SuricateWEB/, 'le lien revient dans le texte');
+  assert.match(fake.sent[1].text, /Ouvrir dans SuricateWeb/, 'le lien revient dans le texte');
 
   reset();
   fake.rejectMarkup = true;
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
   assert.equal(fake.sent.length, 3, 'complet, puis sans bouton lien, puis sans aucun bouton');
   assert.equal(fake.sent[2].reply_markup, undefined, 'retour au message simple : l’alerte part quand même');
-  assert.match(fake.sent[2].text, /Ouvrir dans SuricateWEB/);
+  assert.match(fake.sent[2].text, /Ouvrir dans SuricateWeb/);
 
   reset();
   fake.chatNotFound = true;
@@ -185,7 +185,7 @@ test('clics : conversation inconnue, bouton déjà lu, bouton périmé, échec �
     mode = 'boom';
     fake.queue = [click('lu:5:42', { update_id: 24 })];
     await until(() => fake.answers.length === 5);
-    assert.deepEqual([fake.answers[4].text, fake.answers[4].show_alert], ['Échec : réessayez depuis SuricateWEB.', true]);
+    assert.deepEqual([fake.answers[4].text, fake.answers[4].show_alert], ['Échec : réessayez depuis SuricateWeb.', true]);
 
     mode = 'one';
     fake.queue = [click('lu:5:42', { update_id: 25 })];

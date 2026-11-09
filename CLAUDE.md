@@ -1,4 +1,4 @@
-# SuricateWEB — consignes pour Claude
+# SuricateWeb — consignes pour Claude
 
 ## Version
 

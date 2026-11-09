@@ -1,17 +1,17 @@
 {
   "name": "suricateweb",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "SuricateWEB — surveillance de sites web (défiguration, piratage, remplacement, transfert) avec alertes Telegram. Node.js pur, zéro dépendance.",
   "type": "module",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/burotica49/VigieWeb.git"
+    "url": "git+https://github.com/burotica49/SuricateWEB.git"
   },
-  "homepage": "https://github.com/burotica49/VigieWeb#readme",
+  "homepage": "https://github.com/burotica49/SuricateWEB#readme",
   "bugs": {
-    "url": "https://github.com/burotica49/VigieWeb/issues"
+    "url": "https://github.com/burotica49/SuricateWEB/issues"
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",

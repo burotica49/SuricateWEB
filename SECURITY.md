@@ -7,7 +7,7 @@ SuricateWEB surveille des sites web : une faille dans SuricateWEB touche donc po
 **Ne publiez pas la faille dans une issue ni dans une discussion publique.**
 
 Utilisez le signalement privé de GitHub : onglet **Security** du dépôt › **Report a vulnerability**
-([lien direct](https://github.com/burotica49/VigieWeb/security/advisories/new)). Seuls les mainteneurs voient votre message.
+([lien direct](https://github.com/burotica49/SuricateWEB/security/advisories/new)). Seuls les mainteneurs voient votre message.
 
 Indiquez si possible :
 

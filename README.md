@@ -593,7 +593,7 @@ Le produit s'appelle **SuricateWEB** ; il s'appelait VigieWeb. Les identifiants 
 | cookie `vigie_session`, clé `vigie-theme`, `vigie-view` | `suricate_session`, `suricate-theme`, `suricate-view` | Rien : chacun se reconnecte une fois et retrouve le thème par défaut |
 | export `vigie-sites.json` | `suricate-sites.json` | Rien : seul le nom du fichier téléchargé change |
 
-Les noms d'un volume Docker, d'un conteneur ou d'une image (`vigie-data`…) sont libres : gardez ceux que vous avez déjà. Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est « SuricateWEB » ; le User-Agent par défaut enregistré en base est migré automatiquement (migration v7), un User-Agent personnalisé n'est jamais modifié. Le dépôt GitHub s'appelle encore `burotica49/VigieWeb` tant qu'il n'est pas renommé sur GitHub (les anciennes adresses redirigent).
+Les noms d'un volume Docker, d'un conteneur ou d'une image (`vigie-data`…) sont libres : gardez ceux que vous avez déjà. Dans les textes affichés (interface, messages Telegram, journaux, User-Agent), c'est « SuricateWEB » ; le User-Agent par défaut enregistré en base est migré automatiquement (migration v7), un User-Agent personnalisé n'est jamais modifié. Le dépôt GitHub est devenu `burotica49/SuricateWEB` ; les anciennes adresses (`burotica49/VigieWeb`) redirigent.
 
 ## Sécurité
 

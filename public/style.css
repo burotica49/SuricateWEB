@@ -1,31 +1,34 @@
+/* Charte SuricateWEB : Bleu Nuit #07172F, Bleu Tech #159BFA, Orange Alerte #FF791F, Clair #EAF2FF.
+   --accent sert aux aplats (boutons, interrupteurs, barres) avec du texte Bleu Nuit dessus : le blanc sur #159BFA ne fait que 3:1.
+   --accent-ink sert au TEXTE coloré (liens, onglet actif) : un bleu plus foncé en thème clair (≥ 5:1 sur blanc), plus clair en sombre. */
 :root {
-  --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f1f3f6; --border: #e3e6ec; --border-strong: #d0d5de;
-  --text: #0f172a; --text-2: #475569; --muted: #7b8798;
-  --accent: #4f46e5; --accent-hover: #4338ca; --accent-soft: #eef0ff; --on-accent: #fff;
-  --ok: #15803d; --ok-soft: #e6f6ec; --warn: #b45309; --warn-soft: #fdf1dc; --crit: #c81e3a; --crit-soft: #fde8ec; --info: #0369a1; --info-soft: #e3f2fb;
-  --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 1px 3px rgba(15, 23, 42, .04);
-  --shadow-lg: 0 20px 50px -12px rgba(15, 23, 42, .25);
+  --bg: #eaf2ff; --surface: #ffffff; --surface-2: #f3f7fe; --border: #d3e1f5; --border-strong: #b9cdea;
+  --text: #07172f; --text-2: #3b4f6e; --muted: #566a88;
+  --accent: #159bfa; --accent-hover: #0e86dd; --accent-ink: #0b63ae; --accent-soft: #d9ecff; --on-accent: #07172f;
+  --ok: #15803d; --ok-soft: #e6f6ec; --warn: #b84f08; --warn-soft: #ffefe0; --crit: #c81e3a; --crit-soft: #fde8ec; --info: #0369a1; --info-soft: #e3f2fb;
+  --shadow: 0 1px 2px rgba(7, 23, 47, .06), 0 1px 3px rgba(7, 23, 47, .05);
+  --shadow-lg: 0 20px 50px -12px rgba(7, 23, 47, .3);
   --radius: 14px; --radius-sm: 9px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --diff-add: #e8f7ee; --diff-add-t: #14532d; --diff-del: #fdeaed; --diff-del-t: #7f1d2d;
 }
 :root[data-theme="dark"] {
-  --bg: #0a0d13; --surface: #11151d; --surface-2: #171c26; --border: #222936; --border-strong: #2f3848;
-  --text: #e8ebf2; --text-2: #aab3c4; --muted: #7c879b;
-  --accent: #818cf8; --accent-hover: #9aa4fb; --accent-soft: #1b2040; --on-accent: #0a0d13;
-  --ok: #4ade80; --ok-soft: #10261a; --warn: #fbbf24; --warn-soft: #2a2010; --crit: #fb7185; --crit-soft: #2d1519; --info: #38bdf8; --info-soft: #0f2330;
+  --bg: #07172f; --surface: #0d2140; --surface-2: #122b50; --border: #1d3a66; --border-strong: #2a4d82;
+  --text: #eaf2ff; --text-2: #b3c5e0; --muted: #8197b8;
+  --accent: #159bfa; --accent-hover: #3dadff; --accent-ink: #5cbcff; --accent-soft: #0f2c52; --on-accent: #07172f;
+  --ok: #4ade80; --ok-soft: #0b2b2e; --warn: #ff791f; --warn-soft: #3a2210; --crit: #fb7185; --crit-soft: #3a1626; --info: #38bdf8; --info-soft: #0f2c52;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lg: 0 20px 50px -12px rgba(0, 0, 0, .7);
-  --diff-add: #11291b; --diff-add-t: #86efac; --diff-del: #2d1519; --diff-del-t: #fda4af;
+  --diff-add: #0e2c24; --diff-add-t: #86efac; --diff-del: #3a1626; --diff-del-t: #fda4af;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0d13; --surface: #11151d; --surface-2: #171c26; --border: #222936; --border-strong: #2f3848;
-    --text: #e8ebf2; --text-2: #aab3c4; --muted: #7c879b;
-    --accent: #818cf8; --accent-hover: #9aa4fb; --accent-soft: #1b2040; --on-accent: #0a0d13;
-    --ok: #4ade80; --ok-soft: #10261a; --warn: #fbbf24; --warn-soft: #2a2010; --crit: #fb7185; --crit-soft: #2d1519; --info: #38bdf8; --info-soft: #0f2330;
+    --bg: #07172f; --surface: #0d2140; --surface-2: #122b50; --border: #1d3a66; --border-strong: #2a4d82;
+    --text: #eaf2ff; --text-2: #b3c5e0; --muted: #8197b8;
+    --accent: #159bfa; --accent-hover: #3dadff; --accent-ink: #5cbcff; --accent-soft: #0f2c52; --on-accent: #07172f;
+    --ok: #4ade80; --ok-soft: #0b2b2e; --warn: #ff791f; --warn-soft: #3a2210; --crit: #fb7185; --crit-soft: #3a1626; --info: #38bdf8; --info-soft: #0f2c52;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lg: 0 20px 50px -12px rgba(0, 0, 0, .7);
-    --diff-add: #11291b; --diff-add-t: #86efac; --diff-del: #2d1519; --diff-del-t: #fda4af;
+    --diff-add: #0e2c24; --diff-add-t: #86efac; --diff-del: #3a1626; --diff-del-t: #fda4af;
   }
 }
 
@@ -34,7 +37,7 @@
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; color: inherit; }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--accent-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1, h2, h3, h4 { margin: 0; line-height: 1.25; letter-spacing: -.01em; }
 h1 { font-size: 24px; font-weight: 790; text-transform: uppercase; }
@@ -51,7 +54,8 @@ svg.ic { width: 1em; height: 1em; flex: none; stroke: currentColor; fill: none; 
 .shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 18px 14px; background: var(--surface); border-right: 1px solid var(--border); }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; font-weight: 750; font-size: 17px; letter-spacing: -.02em; }
-.brand .logo { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 18px; }
+.brand .logo { width: 34px; height: 34px; flex: none; }
+.brand .logo img, .login .logo img { display: block; width: 100%; height: 100%; border-radius: 22%; }
 .brand-name { display: flex; align-items: center; gap: 8px; }
 .brand .ver { font: 600 10.5px/1 var(--mono); letter-spacing: 0; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
 a.btn:hover { text-decoration: none; }
@@ -59,7 +63,7 @@ a.btn:hover { text-decoration: none; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 550; text-decoration: none; }
 .nav a:hover { background: var(--surface-2); color: var(--text); }
-.nav a.active { background: var(--accent-soft); color: var(--accent); }
+.nav a.active { background: var(--accent-soft); color: var(--accent-ink); }
 .nav a .ic { font-size: 18px; }
 .nav .badge { margin-left: auto; }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
@@ -135,7 +139,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .chip.crit { background: var(--crit-soft); color: var(--crit); }
 .chip.ok { background: var(--ok-soft); color: var(--ok); }
 .chip.btn-like { cursor: pointer; border: 1px solid transparent; }
-.chip.btn-like.on { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chip.btn-like.on { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* ───── Bandeau de santé ───── */
 .health { display: flex; align-items: center; gap: 18px; padding: 22px 24px; border-radius: var(--radius); border: 1px solid; margin-bottom: 18px; background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
@@ -191,7 +195,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .metric b { display: block; font-weight: 680; font-size: 14px; }
 .metric span { color: var(--muted); font-size: 12px; }
 .empty { text-align: center; padding: 56px 24px; }
-.empty .art { width: 64px; height: 64px; border-radius: 18px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 30px; margin: 0 auto 16px; }
+.empty .art { width: 64px; height: 64px; border-radius: 18px; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; font-size: 30px; margin: 0 auto 16px; }
 .empty p { color: var(--muted); max-width: 440px; margin: 6px auto 18px; }
 .quick-add { display: flex; gap: 8px; max-width: 480px; margin: 0 auto; }
 
@@ -215,7 +219,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .tabs-wrap { position: relative; margin: 22px 0 18px; }
 .tabs a { padding: 10px 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; display: inline-flex; gap: 8px; align-items: center; }
 .tabs a:hover { color: var(--text); }
-.tabs a.on { color: var(--accent); border-color: var(--accent); }
+.tabs a.on { color: var(--accent-ink); border-color: var(--accent); }
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 .kpi { padding: 14px 16px; }
 .kpi .k { color: var(--muted); font-size: 12.5px; font-weight: 600; }
@@ -233,7 +237,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .signals { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 16px; }
 .signal { padding: 16px 18px; }
 .signal h3 { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
-.signal h3 .ic { font-size: 17px; color: var(--accent); }
+.signal h3 .ic { font-size: 17px; color: var(--accent-ink); }
 .signal h3 .pill { margin-left: auto; }
 dl.kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
 dl.kv dt { color: var(--muted); }
@@ -390,7 +394,7 @@ dl.kv dd { margin: 0; word-break: break-word; text-align: right; }
 .lb-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; }
 .lb-title .muted { color: #9aa3b5; }
 .lb-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.lb-actions .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.lb-actions .btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 .lb-stage { flex: 1; min-height: 0; overflow: auto; padding: 0 18px 18px; display: flex; justify-content: center; align-items: flex-start; gap: 16px; }
 .lb-stage figure { margin: 0; max-width: 100%; }
 .lb-stage img { display: block; max-width: 100%; border-radius: 8px; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); background: #fff; }
@@ -417,7 +421,7 @@ dl.kv dd { margin: 0; word-break: break-word; text-align: right; }
 .settings { display: grid; gap: 18px; max-width: 100%; }
 .steps { counter-reset: s; list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 10px; }
 .steps li { counter-increment: s; display: flex; gap: 12px; color: var(--text-2); }
-.steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 12.5px; display: grid; place-items: center; flex: none; }
+.steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; font-size: 12.5px; display: grid; place-items: center; flex: none; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); }
 .toggle-row:first-of-type { border-top: 0; }
 .toggle-row .tt b { display: block; font-weight: 600; }
@@ -456,7 +460,7 @@ details.acc > .in { padding: 4px 14px 14px; }
 
 .login { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
 .login .card { width: min(380px, 100%); padding: 32px; text-align: center; }
-.login .logo { width: 52px; height: 52px; border-radius: 14px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 28px; margin: 0 auto 14px; }
+.login .logo { width: 84px; height: 84px; margin: 0 auto 14px; }
 .login form { text-align: left; margin-top: 22px; }
 .login .login-links { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; margin-top: 18px; font-size: 13px; }
 .skeleton { height: 70px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; margin-bottom: 10px; }

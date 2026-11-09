@@ -1,6 +1,6 @@
 {
   "name": "suricateweb",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "SuricateWEB — surveillance de sites web (défiguration, piratage, remplacement, transfert) avec alertes Telegram. Node.js pur, zéro dépendance.",
   "type": "module",
   "private": true,

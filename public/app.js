@@ -294,7 +294,7 @@ function mountShell() {
   $('#app').replaceChildren(
     h('div', { class: 'shell' },
       h('aside', { class: 'sidebar' },
-        h('div', { class: 'brand' }, h('div', { class: 'logo' }, ic('shield')),
+        h('div', { class: 'brand' }, h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 34, height: 34 })),
           h('div', {}, h('div', { class: 'brand-name' }, 'SuricateWEB', app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
         h('nav', { class: 'nav' }, nav('#/', 'dashboard', 'Sites', 'sites'), nav('#/alertes', 'bell', 'Alertes', 'alertes'), nav('#/reglages', 'settings', 'Réglages', 'reglages')),
         h('div', { class: 'side-foot' },
@@ -2064,7 +2064,7 @@ function viewLogin() {
   };
   const links = [[localHref(S.auth.links?.forgot), 'Mot de passe oublié ?'], [localHref(S.auth.links?.signup), 'Créer un compte']].filter(([href]) => href);
   $('#app').replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
-    h('div', { class: 'logo' }, ic('shield')), h('h1', {}, 'SuricateWEB'), h('p', { class: 'muted' }, 'Connectez-vous pour accéder à la surveillance.'),
+    h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 84, height: 84 })), h('h1', {}, 'SuricateWEB'), h('p', { class: 'muted' }, 'Connectez-vous pour accéder à la surveillance.'),
     h('form', { onsubmit: submit },
       h('div', { class: 'field' }, h('label', {}, label), user),
       h('div', { class: 'field' }, h('label', {}, 'Mot de passe'), pw),

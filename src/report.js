@@ -122,8 +122,8 @@ function countIssues(integ) {
 // ───────────── Mise en page ─────────────
 
 const CSS = `
-:root{--bg:#f4f5f8;--card:#fff;--ink:#1b1f2a;--mute:#667085;--line:#e4e7ec;--ok:#12805c;--warn:#b54708;--bad:#c01048;--info:#175cd3;--okbg:#d1fadf;--warnbg:#fef0c7;--badbg:#fee4e2;--none:#d0d5dd;--accent:#4f46e5}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b24;--ink:#e8eaf0;--mute:#98a2b3;--line:#2a2f3c;--ok:#47cd89;--warn:#fdb022;--bad:#f97066;--info:#84adff;--okbg:#0a3d2a;--warnbg:#4a3205;--badbg:#4a1420;--none:#3a4050;--accent:#8b8bf5}}
+:root{--bg:#f4f5f8;--card:#fff;--ink:#1b1f2a;--mute:#667085;--line:#e4e7ec;--ok:#12805c;--warn:#b54708;--bad:#c01048;--info:#175cd3;--okbg:#d1fadf;--warnbg:#fef0c7;--badbg:#fee4e2;--none:#d0d5dd;--accent:#0b63ae}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b24;--ink:#e8eaf0;--mute:#98a2b3;--line:#2a2f3c;--ok:#47cd89;--warn:#fdb022;--bad:#f97066;--info:#84adff;--okbg:#0a3d2a;--warnbg:#4a3205;--badbg:#4a1420;--none:#3a4050;--accent:#5cbcff}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:860px;margin:0 auto;padding:24px 16px 56px}

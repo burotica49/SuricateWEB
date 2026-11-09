@@ -58,7 +58,7 @@ try {
     .t{display:block;text-align:right;font-size:12px;color:#7f91a4;margin-top:2px}
     .p{background:#182533;border-radius:14px 14px 14px 4px;padding:4px 4px 7px;max-width:100%}.p img{display:block;width:100%;border-radius:11px}.p div{padding:7px 9px 0;white-space:pre-wrap}
   </style><div id="chat">
-    <div class="bot"><div class="av">V</div><div><b>SuricateWEB Bot</b><span>bot</span></div></div>
+    <div class="bot"><div class="av">S</div><div><b>SuricateWEB Bot</b><span>bot</span></div></div>
     <div class="m">${text}<span class="t">14:32</span></div>
     <div class="kb">${keyboard.row.map((b) => `<span>${b.text}</span>`).join('')}</div>
     <div class="p"><img src="data:image/jpeg;base64,${photoB64}"><div>📸 ${SITES.dupont.name} — la page au moment de l'alerte<span class="t">14:32</span></div></div>

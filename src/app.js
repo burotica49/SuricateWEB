@@ -20,6 +20,10 @@
 //                     Défaut : celle de l'environnement (SURICATE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
 //     scheduler,      { concurrency, pickDue(now, limite) } : planificateur (src/extensions.js)
 //     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true })
+//     home,           async ({ req, res, identity }) → booléen : appelé pour GET et HEAD « / » (et pour eux seuls), avant le service du
+//                     dossier public/. `identity` = auth.authenticate(req), ou null sans session valide. Renvoie true s'il a répondu
+//                     (ex. une page de présentation pour les visiteurs) ; false : l'application est servie, comme sans cette option.
+//                     Une erreur du gestionnaire ou de l'authentification ne bloque jamais l'application : elle est servie.
 //     root,           racine du cœur (public/, plugins/, package.json) ; défaut : celle de ce dépôt
 //   });
 //   await app.listen(3000, '127.0.0.1');
@@ -78,6 +82,7 @@ export function createApp({
   scheduler,
   netGuard,
   capabilities = {},
+  home = null,
   root = CORE_ROOT,
 } = {}) {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -141,6 +146,16 @@ export function createApp({
     try {
       const status = req.method === 'GET' && /^\/status\/([A-Za-z0-9_-]{1,80})\/?$/.exec(url.pathname);
       if (status) return await serveStatusPage(req, res, status[1], url.searchParams);
+      if (home && url.pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
+        // À cette adresse, la réponse dépend de la session : visiteur → page d'accueil, compte connecté → application. `vary: cookie`
+        // empêche un cache intermédiaire (CDN, proxy) de resservir l'une à la place de l'autre.
+        res.setHeader('vary', 'cookie');
+        // Une erreur (base indisponible, gestionnaire défaillant) ne doit jamais fermer l'application : on la sert.
+        const identity = await Promise.resolve().then(() => auth.authenticate(req)).catch(() => null);
+        let answered = false;
+        try { answered = !!(await home({ req, res, identity })); } catch (e) { console.error('[home]', e.message); }
+        if (answered || res.headersSent) return;
+      }
       if (!url.pathname.startsWith('/api/')) return await serveStatic(req, res, url.pathname);
       const r = table.find((r) => r.method === req.method && r.re.test(url.pathname));
       if (!r) return send(res, 404, { error: 'Route inconnue' });

@@ -279,3 +279,59 @@ test('capabilities : fusionnées à celles du cœur', async () => {
 });
 
 test.after(() => dbm.db.close());
+
+// ───────────── Option « home » : page d'accueil à la racine ─────────────
+
+test('home : le visiteur reçoit la page, le compte connecté reçoit l\'application, `vary: cookie` posé', async () => {
+  const seen = [];
+  const home = async ({ res, identity }) => {
+    seen.push(identity?.user?.name ?? null);
+    if (identity) return false; // connecté : l'application
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end('<h1>Accueil visiteur</h1>');
+    return true;
+  };
+  const { call } = await start({ auth: fakeAuth(), home });
+  const visitor = await call('GET', '/');
+  assert.equal(visitor.status, 200);
+  assert.match(visitor.text, /Accueil visiteur/);
+  assert.match(visitor.headers.get('vary'), /cookie/i);
+
+  const member = await call('GET', '/', { as: 'alice' });
+  assert.equal(member.status, 200);
+  assert.match(member.text, /<div id="app">/, 'le compte connecté voit l\'application');
+  assert.match(member.headers.get('vary'), /cookie/i, 'la réponse de l\'application varie aussi selon le cookie');
+  assert.deepEqual(seen, [null, seen[1]]);
+  assert.ok(seen[1], 'le gestionnaire reçoit l\'identité du compte connecté');
+});
+
+test('home : appelé pour GET et HEAD « / » seulement ; /index.html reste l\'application', async () => {
+  let calls = 0;
+  const home = async ({ res }) => { calls++; res.writeHead(200, { 'content-type': 'text/html' }); res.end('accueil'); return true; };
+  const { call, base } = await start({ auth: fakeAuth(), home });
+  assert.equal((await call('GET', '/index.html')).text.includes('<div id="app">'), true, "/index.html mène à l'application, même sans session");
+  assert.equal(calls, 0);
+  assert.equal((await call('GET', '/style.css')).status, 200);
+  assert.equal(calls, 0, 'les autres chemins ne passent pas par home');
+  assert.equal((await fetch(`${base}/`, { method: 'HEAD' })).status, 200);
+  assert.equal(calls, 1, 'HEAD « / » passe par home');
+  await fetch(`${base}/`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(calls, 1, 'POST « / » ne passe pas par home');
+});
+
+test('home : sans l\'option, ou en cas d\'erreur, l\'application est servie', async () => {
+  const none = await start({ auth: fakeAuth() });
+  assert.match((await none.call('GET', '/')).text, /<div id="app">/);
+  assert.equal((await none.call('GET', '/')).headers.get('vary'), null, 'sans home, aucun changement d\'en-têtes');
+  await none.app.stop(); apps.pop();
+
+  const boom = await start({ auth: fakeAuth(), home: async () => { throw new Error('panne du gestionnaire'); } });
+  assert.match((await boom.call('GET', '/')).text, /<div id="app">/, 'gestionnaire défaillant : application servie');
+  await boom.app.stop(); apps.pop();
+
+  const authBoom = { ...fakeAuth(), authenticate: () => { throw new Error('base indisponible'); } };
+  let identity = 'jamais appelé';
+  const b = await start({ auth: authBoom, home: async ({ identity: i }) => { identity = i; return false; } });
+  assert.match((await b.call('GET', '/')).text, /<div id="app">/, 'authentification en panne : application servie');
+  assert.equal(identity, null, "une erreur d'authentification n'ouvre rien : le gestionnaire reçoit null");
+});

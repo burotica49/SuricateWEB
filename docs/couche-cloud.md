@@ -49,6 +49,7 @@ const app = createApp({
   scheduler: { concurrency: 20, pickDue }, // §3.7
   netGuard: createNetGuard({ allowedPorts: [80, 443, 8080, 8443] }), // §3.8
   capabilities: { mode: 'cloud', billing: true },
+  home: createHome(),                      // §3.10
 });
 await app.listen(Number(process.env.PORT) || 3000, process.env.HOST || '0.0.0.0');
 app.startBackground();   // voir l'avertissement ci-dessous
@@ -189,6 +190,15 @@ Pas de lecteur de boutons Telegram multi-comptes dans le cœur : le sien est li�
 ### 3.9 `capabilities`
 
 Fusionné dans `GET /api/capabilities` (public), avec `{ mode: 'self-hosted', multiUser: false, billing: false, version }` par défaut. L'interface s'en servira pour afficher ou masquer des écrans (le contrôle réel reste côté serveur).
+
+### 3.10 `home`
+
+`home({ req, res, identity }) → booléen` : appelé pour `GET` et `HEAD` sur « / » (et eux seuls), avant le service du dossier `public/`. `identity` est le résultat de `auth.authenticate(req)`, ou `null` sans session valide. Renvoyer `true` signifie « j'ai répondu » (ex. une page de présentation pour les visiteurs) ; `false`, l'application est servie comme sans cette option.
+
+- Une erreur du gestionnaire **ou** de l'authentification ne bloque jamais l'application : elle est servie (et l'identité transmise est alors `null`).
+- La réponse à « / » dépend de la session : le cœur pose `Vary: Cookie` dès que `home` est défini. Le gestionnaire doit répondre avec `Cache-Control: no-cache` (ou `private`).
+- `/index.html` reste l'application, avec ou sans session : c'est l'adresse à donner à un bouton « Se connecter » de la page d'accueil.
+- Le service worker de l'application met « / » en cache : hors ligne, un visiteur qui a déjà ouvert l'application peut retrouver celle-ci à la place de la page. Sans conséquence (l'application ne fonctionne pas hors ligne).
 
 ## 4. Les données : ctx.data
 

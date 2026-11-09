@@ -9,10 +9,10 @@ export default function register({ route }) {
   route('GET', '/api/plugins/:file', (ctx) => {
     const dir = { 'wordpress.zip': 'wordpress', 'prestashop.zip': 'prestashop' }[ctx.params.file];
     if (!dir) throw new HttpError(404, 'Plugin introuvable');
-    const buf = zipDirectory(join(ctx.app.root, 'plugins', dir, 'vigieweb'), 'vigieweb');
+    const buf = zipDirectory(join(ctx.app.root, 'plugins', dir, 'suricateweb'), 'suricateweb');
     ctx.res.writeHead(200, {
       'content-type': 'application/zip',
-      'content-disposition': `attachment; filename="vigieweb-${dir}.zip"`,
+      'content-disposition': `attachment; filename="suricateweb-${dir}.zip"`,
       'content-length': String(buf.length),
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',

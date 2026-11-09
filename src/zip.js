@@ -46,7 +46,7 @@ function walk(dir, out = []) {
 
 /**
  * Archive le dossier `dir`. Chaque entrée est préfixée par `rootName`
- * (WordPress et PrestaShop attendent un dossier `vigieweb/` à la racine du zip).
+ * (WordPress et PrestaShop attendent un dossier `suricateweb/` à la racine du zip).
  */
 export function zipDirectory(dir, rootName) {
   const files = walk(dir).sort();

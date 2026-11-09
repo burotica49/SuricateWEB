@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { startServer } from '../test-support/server.js';
 import { openPage, findChrome } from '../test-support/browser.js';
 
-const srv = await startServer({ env: { VIGIE_DEMO: '1' } });
-const sql = new DatabaseSync(join(srv.dataDir, 'vigie.db'));
+const srv = await startServer({ env: { SURICATE_DEMO: '1' } });
+const sql = new DatabaseSync(join(srv.dataDir, 'suricate.db'));
 test.after(async () => { sql.close(); await srv.stop(); });
 
 const DAY = 864e5;

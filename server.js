@@ -1,4 +1,4 @@
-// VigieWeb — point d'entrée : lit l'environnement, assemble l'application (src/app.js) avec ses réglages par défaut,
+// SuricateWEB — point d'entrée : lit l'environnement, assemble l'application (src/app.js) avec ses réglages par défaut,
 // l'écoute, puis lance les tâches de fond. Aucune dépendance externe.
 import './src/env.js'; // doit rester le 1er import : charge le .env avant l'ouverture de la base
 import { createApp } from './src/app.js';
@@ -20,12 +20,12 @@ const app = createApp({ env: process.env });
 await app.listen(PORT, HOST);
 
 const s = getSettings();
-console.log(`\n  VigieWeb →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-console.log(`  Connexion : identifiant « ${CREDS.user} » (VIGIE_USER)`);
+console.log(`\n  SuricateWEB →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+console.log(`  Connexion : identifiant « ${CREDS.user} » (SURICATE_USER)`);
 console.log(`  Captures d'écran : ${engine.available() ? `navigateur ${chromePath()}` : 'inactives (aucun Chrome / Chromium détecté — voir CHROME_PATH)'}`);
-if (CREDS.defaultedUser) console.log("  ⚠  VIGIE_USER n'est pas défini : l'identifiant par défaut « admin » est utilisé. Définissez VIGIE_USER pour le personnaliser.");
+if (CREDS.defaultedUser) console.log("  ⚠  SURICATE_USER n'est pas défini : l'identifiant par défaut « admin » est utilisé. Définissez SURICATE_USER pour le personnaliser.");
 console.log(`  Telegram : ${s.telegram.token && s.telegram.chatId ? 'configuré' : 'non configuré (Réglages › Telegram)'}`);
-if (process.env.VIGIE_DEMO === '1') console.log('  ⚠  MODE DÉMO : données fictives, contrôles et captures désactivés (VIGIE_DEMO=1).');
+if (process.env.SURICATE_DEMO === '1') console.log('  ⚠  MODE DÉMO : données fictives, contrôles et captures désactivés (SURICATE_DEMO=1).');
 console.log('');
 app.startBackground();
 

@@ -1,6 +1,6 @@
 FROM node:24-alpine
 
-LABEL org.opencontainers.image.title="VigieWeb" \
+LABEL org.opencontainers.image.title="SuricateWEB" \
       org.opencontainers.image.description="Surveillance de sites web avec alertes Telegram"
 
 # Chromium : captures d'écran des sites. Polices : accents, emojis et caractères non latins s'affichent correctement.
@@ -18,7 +18,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 # Aucune dépendance npm : on copie uniquement le code. Le fichier .env n'est jamais copié (voir .dockerignore) :
-# les identifiants VIGIE_USER / VIGIE_PASSWORD se définissent dans les variables d'environnement de l'hébergeur.
+# les identifiants SURICATE_USER / SURICATE_PASSWORD se définissent dans les variables d'environnement de l'hébergeur.
 COPY --chown=node:node package.json server.js ./
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public

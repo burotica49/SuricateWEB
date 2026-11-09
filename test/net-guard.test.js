@@ -1,4 +1,4 @@
-// Garde réseau (src/net-guard.js) : VigieWeb ne doit pas servir à atteindre le réseau interne de son serveur.
+// Garde réseau (src/net-guard.js) : SuricateWEB ne doit pas servir à atteindre le réseau interne de son serveur.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -7,7 +7,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-guard-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-guard-'));
 // Chrome réel : détecté normalement ; les cas qui en ont besoin sont ignorés sans navigateur.
 
 const { createNetGuard, isBlockedAddress, netGuardFromEnv, NetGuardError } = await import('../src/net-guard.js');
@@ -105,17 +105,17 @@ test('garde inerte : ne refuse rien et se comporte comme fetch()', () => {
   assert.equal(typeof g.fetch, 'function');
 });
 
-test('environnement : VIGIE_NET_GUARD active la garde ; ports et exceptions en listes', () => {
+test('environnement : SURICATE_NET_GUARD active la garde ; ports et exceptions en listes', () => {
   assert.equal(netGuardFromEnv({}), null);
-  assert.equal(netGuardFromEnv({ VIGIE_NET_GUARD: '0' }), null);
-  const g = netGuardFromEnv({ VIGIE_NET_GUARD: '1' });
+  assert.equal(netGuardFromEnv({ SURICATE_NET_GUARD: '0' }), null);
+  const g = netGuardFromEnv({ SURICATE_NET_GUARD: '1' });
   assert.equal(g.enabled, true);
   assert.deepEqual(g.allowedPorts, [80, 443, 8080, 8443]);
-  const g2 = netGuardFromEnv({ VIGIE_NET_GUARD: 'yes', VIGIE_NET_ALLOW_PORTS: '443, 9000', VIGIE_NET_ALLOW_HOSTS: 'Intranet.Exemple, 10.0.0.5 ,10.1.0.0/16' });
+  const g2 = netGuardFromEnv({ SURICATE_NET_GUARD: 'yes', SURICATE_NET_ALLOW_PORTS: '443, 9000', SURICATE_NET_ALLOW_HOSTS: 'Intranet.Exemple, 10.0.0.5 ,10.1.0.0/16' });
   assert.deepEqual(g2.allowedPorts, [443, 9000]);
   assert.equal(refused(g2, 'https://intranet.exemple/'), null);
   assert.equal(refused(g2, 'http://10.1.2.3:443/'), null);
-  assert.equal(netGuardFromEnv({ VIGIE_NET_GUARD: '1', VIGIE_NET_ALLOW_PORTS: '*' }).allowedPorts, '*');
+  assert.equal(netGuardFromEnv({ SURICATE_NET_GUARD: '1', SURICATE_NET_ALLOW_PORTS: '*' }).allowedPorts, '*');
 });
 
 // ───────────── Résolution DNS contrôlée au moment de la connexion ─────────────
@@ -136,7 +136,7 @@ test('lookup : un nom exempté passe ; un nom introuvable garde son erreur DNS',
   const r = await look(g, 'localhost');
   assert.equal(r.err, null);
   assert.ok(['127.0.0.1', '::1'].includes(r.address));
-  const nf = await look(createNetGuard(), 'domaine-inexistant-vigie.invalid');
+  const nf = await look(createNetGuard(), 'domaine-inexistant-suricate.invalid');
   assert.equal(nf.err.code, 'ENOTFOUND');
 });
 
@@ -147,7 +147,7 @@ test('allows : résout le nom (pour Chrome) ; les noms introuvables sont laissé
   assert.equal(await g.allows('http://8.8.8.8/'), true);
   assert.equal(await g.allows('ftp://8.8.8.8/'), false);
   assert.equal(await g.allows('http://8.8.8.8:22/'), false);
-  assert.equal(await g.allows('http://domaine-inexistant-vigie.invalid/'), true);
+  assert.equal(await g.allows('http://domaine-inexistant-suricate.invalid/'), true);
   assert.equal(await createNetGuard({ allowHosts: ['localhost'] }).allows('http://localhost/'), true);
 });
 
@@ -354,7 +354,7 @@ test('createApp : la garde vient de l\'option, de ses options, ou de l\'environn
   createApp({ auth: fakeAuth, netGuard: { enabled: true, allowedPorts: [443] } });
   assert.deepEqual(getExtensions().netGuard.allowedPorts, [443]);
   resetExtensions();
-  createApp({ auth: fakeAuth, env: { VIGIE_NET_GUARD: '1' } });
+  createApp({ auth: fakeAuth, env: { SURICATE_NET_GUARD: '1' } });
   assert.equal(getExtensions().netGuard.enabled, true);
   resetExtensions();
   createApp({ auth: fakeAuth, env: {} });

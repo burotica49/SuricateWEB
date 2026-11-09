@@ -2,7 +2,7 @@
 //
 // Deux niveaux (voir db.js) : les réglages du COMPTE (Telegram, mots-clés, User-Agent, intervalle par défaut, seuil CMS,
 // conservation des captures) sont lus et écrits pour le compte de l'utilisateur. Ceux de l'INSTALLATION (adresse publique de
-// VigieWeb) ne se modifient qu'avec le droit « instance:write » : accordé par défaut dans le cœur, refusé aux comptes clients
+// SuricateWEB) ne se modifient qu'avec le droit « instance:write » : accordé par défaut dans le cœur, refusé aux comptes clients
 // de la version hébergée, qui ne doivent pas changer l'adresse de tout le monde.
 import { HttpError } from '../http.js';
 import { settingsFor, saveAccountSettings, saveInstanceSettings, MAX_KEEP } from '../db.js';
@@ -56,7 +56,7 @@ export default function register({ route }) {
     const chatId = String(ctx.body.chatId || '').trim() || (await settingsFor(ctx.account.id)).telegram.chatId;
     try {
       const me = await tg.getMe(token);
-      await tg.sendMessage(token, chatId, `✅ <b>VigieWeb est connecté</b>\nLes alertes de surveillance arriveront ici.\n<i>Bot : @${me.username}</i>`);
+      await tg.sendMessage(token, chatId, `✅ <b>SuricateWEB est connecté</b>\nLes alertes de surveillance arriveront ici.\n<i>Bot : @${me.username}</i>`);
       return { ok: true, bot: me.username };
     } catch (e) {
       throw new HttpError(400, e.message);

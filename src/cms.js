@@ -1,4 +1,4 @@
-// Relevé des versions PHP / CMS. VigieWeb appelle le plugin du site (le plugin n'appelle jamais VigieWeb).
+// Relevé des versions PHP / CMS. SuricateWEB appelle le plugin du site (le plugin n'appelle jamais SuricateWEB).
 import { getWatch, settingsFor, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
 import { getExtensions } from './extensions.js';
@@ -49,9 +49,9 @@ export function cmsEndpoint(pageUrl, cms, scope = 'status') {
   if (cms.type === 'wordpress') {
     // Fonctionne avec ou sans permaliens réécrits.
     url.pathname = `${base}/`.replace(/\/{2,}/g, '/');
-    url.search = `rest_route=/vigieweb/v1/${scope === 'integrity' ? 'integrity' : 'status'}`;
+    url.search = `rest_route=/suricateweb/v1/${scope === 'integrity' ? 'integrity' : 'status'}`;
   } else {
-    url.pathname = `${base}/modules/vigieweb/status.php`.replace(/\/{2,}/g, '/');
+    url.pathname = `${base}/modules/suricateweb/status.php`.replace(/\/{2,}/g, '/');
     url.search = scope === 'integrity' ? 'scope=integrity' : '';
   }
   url.hash = '';
@@ -181,11 +181,11 @@ async function fetchReport(target, token, refresh, { timeoutS = TIMEOUT_S, notFo
   for (let hop = 0; hop <= 4; hop++) {
     const headers = {
       authorization: `Bearer ${token}`,
-      'x-vigie-token': token,
+      'x-suricate-token': token,
       accept: 'application/json',
       'user-agent': userAgent,
     };
-    if (refresh) headers['x-vigie-refresh'] = '1';
+    if (refresh) headers['x-suricate-refresh'] = '1';
     const res = await getExtensions().netGuard.fetch(cur, { redirect: 'manual', headers, signal: AbortSignal.timeout(timeoutS * 1000) });
     const loc = res.headers.get('location');
     if (res.status >= 300 && res.status < 400 && loc) {
@@ -221,7 +221,7 @@ function sameSite(from, to) {
  * @returns {{ ok: boolean, error: string|null, cms: object|null }}
  */
 export async function pollCms(id, { refresh = false } = {}) {
-  if (process.env.VIGIE_DEMO === '1') return { ok: false, error: 'Mode démo : les contrôles sont désactivés (données fictives).', cms: null };
+  if (process.env.SURICATE_DEMO === '1') return { ok: false, error: 'Mode démo : les contrôles sont désactivés (données fictives).', cms: null };
   if (running.has(id)) return { ok: false, error: 'Relevé déjà en cours', cms: null };
   const w = await getWatch(id);
   if (!w) return { ok: false, error: 'Site introuvable', cms: null };

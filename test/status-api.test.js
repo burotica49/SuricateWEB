@@ -154,7 +154,7 @@ test('page de statut : limitation du débit par adresse', async () => {
 test('« Tout est normal » acquitte aussi les incidents Mises à jour / Sécurité, sans effacer relevé ni alertes', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const w = await create('Acquit');
-  const db = new DatabaseSync(`${srv.dataDir}/vigie.db`);
+  const db = new DatabaseSync(`${srv.dataDir}/suricate.db`);
   const state = { incidents: {
     cms_core: { severity: 'warning', title: 'WordPress 6.8 disponible', detail: '', since: 1 },
     cms_integrity_uploads: { severity: 'critical', title: 'PHP dans uploads', detail: '', since: 1, count: 1 },

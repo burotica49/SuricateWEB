@@ -4,7 +4,7 @@ import { startServer } from '../test-support/server.js';
 import { openPage, findChrome } from '../test-support/browser.js';
 
 // Mode démo : aucun contrôle réseau n'est lancé pour le site créé ici.
-const srv = await startServer({ env: { VIGIE_DEMO: '1' } });
+const srv = await startServer({ env: { SURICATE_DEMO: '1' } });
 test.after(() => srv.stop());
 
 const skip = !findChrome() && 'Chrome/Chromium introuvable';

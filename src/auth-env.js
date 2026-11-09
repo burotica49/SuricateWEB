@@ -28,7 +28,7 @@ export function createEnvAuth({ creds, getSettings, trustProxy = false }) {
   }
 
   function validSession(req) {
-    const m = /(?:^|;\s*)vigie_session=([^;]+)/.exec(req.headers.cookie || '');
+    const m = /(?:^|;\s*)suricate_session=([^;]+)/.exec(req.headers.cookie || '');
     if (!m) return false;
     const [exp, sig] = m[1].split('.');
     if (!exp || !sig || Number(exp) < Date.now()) return false;
@@ -38,7 +38,7 @@ export function createEnvAuth({ creds, getSettings, trustProxy = false }) {
   }
 
   const sessionCookie = (req, value, maxAge) =>
-    `vigie_session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${trustProxy && req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
+    `suricate_session=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${trustProxy && req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 
   // Cinq tentatives par minute et par adresse : assez pour une faute de frappe, trop peu pour deviner un mot de passe.
   const attempts = new Map();

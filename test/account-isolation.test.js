@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-iso-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-iso-'));
 process.env.CHROME_PATH = '/nonexistent/chrome';
 
 const dbm = await import('../src/db.js');
@@ -222,7 +222,7 @@ test('compte implicite : le cœur (identifiants du .env) travaille dans le compt
   assert.equal(w.accountId, 1);
   const g = await dbm.createGroup({ name: 'Ancien groupe' });
   assert.equal(g.accountId, 1);
-  const core = createApp({ env: { VIGIE_USER: 'u', VIGIE_PASSWORD: 'motdepasse-solide' } });
+  const core = createApp({ env: { SURICATE_USER: 'u', SURICATE_PASSWORD: 'motdepasse-solide' } });
   const p = await core.listen(0, '127.0.0.1');
   try {
     const login = await fetch(`http://127.0.0.1:${p}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'u', password: 'motdepasse-solide' }) });

@@ -1,4 +1,4 @@
-// Faux sites web pour la documentation : des pages HTML crédibles, servies localement, que VigieWeb « capture » dans la démo.
+// Faux sites web pour la documentation : des pages HTML crédibles, servies localement, que SuricateWEB « capture » dans la démo.
 // Tous les noms de domaine utilisent le TLD réservé « .example » (RFC 2606) : ils ne désignent aucun vrai site.
 import http from 'node:http';
 

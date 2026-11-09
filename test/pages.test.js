@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Plusieurs pages par site : panier, contact, connexion.
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-pages-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-pages-'));
 
 const dbm = await import('../src/db.js');
 const { runCheck } = await import('../src/checker.js');

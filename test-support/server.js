@@ -15,12 +15,12 @@ const freePort = () => new Promise((resolve) => {
   });
 });
 
-/** Démarre le serveur (aucune variable VIGIE_* héritée du poste). Retourne un client déjà connecté si `login` est vrai. */
-export async function startServer({ user = 'boss', password = 'motdepasse-test-1', dataDir = mkdtempSync(join(tmpdir(), 'vigie-srv-')), env = {} } = {}) {
+/** Démarre le serveur (aucune variable SURICATE_* héritée du poste). Retourne un client déjà connecté si `login` est vrai. */
+export async function startServer({ user = 'boss', password = 'motdepasse-test-1', dataDir = mkdtempSync(join(tmpdir(), 'suricate-srv-')), env = {} } = {}) {
   const port = await freePort();
   const envFile = join(dataDir, '.env');
-  writeFileSync(envFile, `VIGIE_USER=${user}\nVIGIE_PASSWORD="${password}"\n`);
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(VIGIE_|DATA_DIR|PORT|HOST|ENV_FILE|TRUST_PROXY|CHROME_PATH)/.test(k)));
+  writeFileSync(envFile, `SURICATE_USER=${user}\nSURICATE_PASSWORD="${password}"\n`);
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(SURICATE_|DATA_DIR|PORT|HOST|ENV_FILE|TRUST_PROXY|CHROME_PATH)/.test(k)));
   const proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(ROOT, 'server.js')], {
     // CHROME_PATH vers un chemin inexistant : aucune capture (Chrome) ne démarre pendant ces tests.
     env: { ...clean, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ENV_FILE: envFile, CHROME_PATH: '/nonexistent/chrome', TELEGRAM_POLL: '0', ...env },

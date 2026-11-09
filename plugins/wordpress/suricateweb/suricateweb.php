@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: VigieWeb
- * Description: Indique à VigieWeb la version de PHP, les mises à jour, le nombre d'administrateurs et l'intégrité des fichiers (sommes de contrôle de wordpress.org). VigieWeb interroge ce site ; le plugin n'envoie rien de lui-même.
- * Version: 1.1.0
- * Author: VigieWeb
+ * Plugin Name: SuricateWEB
+ * Description: Indique à SuricateWEB la version de PHP, les mises à jour, le nombre d'administrateurs et l'intégrité des fichiers (sommes de contrôle de wordpress.org). SuricateWEB interroge ce site ; le plugin n'envoie rien de lui-même.
+ * Version: 1.2.0
+ * Author: SuricateWEB
  * Requires at least: 5.6
  * Requires PHP: 7.2
  * License: MIT
@@ -14,104 +14,104 @@ if (!defined('ABSPATH')) {
 }
 
 add_action('admin_menu', function () {
-    add_options_page('VigieWeb', 'VigieWeb', 'manage_options', 'vigieweb', 'vigieweb_options_page');
+    add_options_page('SuricateWEB', 'SuricateWEB', 'manage_options', 'suricateweb', 'suricateweb_options_page');
 });
 
 add_filter('plugin_action_links_' . plugin_basename(__FILE__), function ($links) {
-    $url = admin_url('options-general.php?page=vigieweb');
+    $url = admin_url('options-general.php?page=suricateweb');
     array_unshift($links, '<a href="' . esc_url($url) . '">Réglages</a>');
     return $links;
 });
 
 add_action('admin_init', function () {
-    register_setting('vigieweb', 'vigieweb_token', array(
+    register_setting('suricateweb', 'suricateweb_token', array(
         'type' => 'string',
-        'sanitize_callback' => 'vigieweb_sanitize_token',
+        'sanitize_callback' => 'suricateweb_sanitize_token',
         'default' => '',
     ));
 });
 
-function vigieweb_sanitize_token($value)
+function suricateweb_sanitize_token($value)
 {
     $value = trim((string) $value);
     if ($value !== '' && strlen($value) < 16) {
-        add_settings_error('vigieweb_token', 'short', 'Le jeton doit contenir au moins 16 caractères.');
-        return (string) get_option('vigieweb_token', '');
+        add_settings_error('suricateweb_token', 'short', 'Le jeton doit contenir au moins 16 caractères.');
+        return (string) get_option('suricateweb_token', '');
     }
     return $value;
 }
 
-function vigieweb_options_page()
+function suricateweb_options_page()
 {
     if (!current_user_can('manage_options')) {
         return;
     }
-    echo '<div class="wrap"><h1>VigieWeb</h1>';
-    echo '<p>Collez le jeton affiché dans VigieWeb, sur la fiche du site. Rien n’est envoyé : VigieWeb vient lire les versions.</p>';
+    echo '<div class="wrap"><h1>SuricateWEB</h1>';
+    echo '<p>Collez le jeton affiché dans SuricateWEB, sur la fiche du site. Rien n’est envoyé : SuricateWEB vient lire les versions.</p>';
     echo '<form action="options.php" method="post">';
-    settings_fields('vigieweb');
-    echo '<table class="form-table"><tr><th scope="row"><label for="vigieweb_token">Jeton</label></th><td>';
-    echo '<input name="vigieweb_token" id="vigieweb_token" type="text" class="regular-text" autocomplete="off" spellcheck="false" value="' . esc_attr((string) get_option('vigieweb_token', '')) . '">';
+    settings_fields('suricateweb');
+    echo '<table class="form-table"><tr><th scope="row"><label for="suricateweb_token">Jeton</label></th><td>';
+    echo '<input name="suricateweb_token" id="suricateweb_token" type="text" class="regular-text" autocomplete="off" spellcheck="false" value="' . esc_attr((string) get_option('suricateweb_token', '')) . '">';
     echo '</td></tr></table>';
     submit_button('Enregistrer');
     echo '</form></div>';
 }
 
-register_uninstall_hook(__FILE__, 'vigieweb_uninstall');
-function vigieweb_uninstall()
+register_uninstall_hook(__FILE__, 'suricateweb_uninstall');
+function suricateweb_uninstall()
 {
-    delete_option('vigieweb_token');
-    delete_transient('vigieweb_force');
-    delete_transient('vigieweb_force_int');
-    delete_transient('vigieweb_integrity_cache');
+    delete_option('suricateweb_token');
+    delete_transient('suricateweb_force');
+    delete_transient('suricateweb_force_int');
+    delete_transient('suricateweb_integrity_cache');
 }
 
 add_action('rest_api_init', function () {
-    register_rest_route('vigieweb/v1', '/status', array(
+    register_rest_route('suricateweb/v1', '/status', array(
         'methods' => 'GET',
-        'callback' => 'vigieweb_status',
-        'permission_callback' => 'vigieweb_auth',
+        'callback' => 'suricateweb_status',
+        'permission_callback' => 'suricateweb_auth',
         'show_in_index' => false,
     ));
-    register_rest_route('vigieweb/v1', '/integrity', array(
+    register_rest_route('suricateweb/v1', '/integrity', array(
         'methods' => 'GET',
-        'callback' => 'vigieweb_integrity',
-        'permission_callback' => 'vigieweb_auth',
+        'callback' => 'suricateweb_integrity',
+        'permission_callback' => 'suricateweb_auth',
         'show_in_index' => false,
     ));
 });
 
-function vigieweb_presented_token(WP_REST_Request $req)
+function suricateweb_presented_token(WP_REST_Request $req)
 {
     $auth = (string) $req->get_header('authorization');
     if (preg_match('/Bearer\s+(\S+)/i', $auth, $m)) {
         return $m[1];
     }
-    return trim((string) $req->get_header('x-vigie-token'));
+    return trim((string) $req->get_header('x-suricate-token'));
 }
 
-function vigieweb_auth(WP_REST_Request $req)
+function suricateweb_auth(WP_REST_Request $req)
 {
-    $stored = (string) get_option('vigieweb_token', '');
-    $given = vigieweb_presented_token($req);
+    $stored = (string) get_option('suricateweb_token', '');
+    $given = suricateweb_presented_token($req);
     if ($stored === '' || $given === '' || strlen($stored) !== strlen($given)) {
         return false;
     }
     return hash_equals($stored, $given);
 }
 
-function vigieweb_status(WP_REST_Request $req)
+function suricateweb_status(WP_REST_Request $req)
 {
     require_once ABSPATH . 'wp-includes/update.php';
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
-    $force = strtolower((string) $req->get_header('x-vigie-refresh')) === '1';
+    $force = strtolower((string) $req->get_header('x-suricate-refresh')) === '1';
     if ($force) {
-        $last = (int) get_transient('vigieweb_force');
+        $last = (int) get_transient('suricateweb_force');
         if ($last && (time() - $last) < 15 * 60) {
             $force = false;
         } else {
-            set_transient('vigieweb_force', time(), 15 * 60);
+            set_transient('suricateweb_force', time(), 15 * 60);
             delete_site_transient('update_core');
             delete_site_transient('update_plugins');
             delete_site_transient('update_themes');
@@ -188,15 +188,15 @@ function vigieweb_status(WP_REST_Request $req)
         'core' => array('current' => $current, 'available' => $available, 'known' => $coreKnown),
         'extensions' => $extensions,
         'themes' => $themes,
-        'admins' => vigieweb_safe_admins(),
+        'admins' => suricateweb_safe_admins(),
     );
 }
 
 /** Un compteur d'administrateurs en échec ne doit pas faire échouer tout le relevé des versions. */
-function vigieweb_safe_admins()
+function suricateweb_safe_admins()
 {
     try {
-        return vigieweb_admins();
+        return suricateweb_admins();
     } catch (Throwable $e) {
         return null;
     }
@@ -206,7 +206,7 @@ function vigieweb_safe_admins()
  * Comptes administrateurs : un compteur et les créations des 30 derniers jours (identifiant, nom de connexion, date).
  * Jamais d'adresse e-mail ni de mot de passe.
  */
-function vigieweb_admins()
+function suricateweb_admins()
 {
     $window = 30;
     $all = new WP_User_Query(array(
@@ -246,13 +246,13 @@ function vigieweb_admins()
 // jamais le contenu d'un fichier. Les extensions et thèmes hors dépôt officiel (premium, sur mesure) ne sont pas comparables.
 
 /** Extensions de fichiers que le serveur peut exécuter comme du PHP. */
-function vigieweb_is_php_file($name)
+function suricateweb_is_php_file($name)
 {
     return (bool) preg_match('/\\.(php[0-9]?|phtml|pht|phar)$/i', $name);
 }
 
 /** Les index.php « Silence is golden » que WordPress et de nombreuses extensions déposent partout. */
-function vigieweb_is_silence_stub($path)
+function suricateweb_is_silence_stub($path)
 {
     if (basename($path) !== 'index.php') {
         return false;
@@ -266,7 +266,7 @@ function vigieweb_is_silence_stub($path)
 }
 
 /** Chemins (relatifs à $base, séparateur « / ») des fichiers PHP sous $dir, sans suivre les liens symboliques. */
-function vigieweb_php_files($dir, $base, $deadline, $limit = 100000, $skipStubs = false)
+function suricateweb_php_files($dir, $base, $deadline, $limit = 100000, $skipStubs = false)
 {
     $found = array();
     $scanned = 0;
@@ -289,11 +289,11 @@ function vigieweb_php_files($dir, $base, $deadline, $limit = 100000, $skipStubs 
                 continue;
             }
             $name = $file->getFilename();
-            if (!vigieweb_is_php_file($name)) {
+            if (!suricateweb_is_php_file($name)) {
                 continue;
             }
             $path = $file->getPathname();
-            if ($skipStubs && vigieweb_is_silence_stub($path)) {
+            if ($skipStubs && suricateweb_is_silence_stub($path)) {
                 continue;
             }
             $rel = ltrim(str_replace('\\', '/', substr($path, strlen(rtrim($base, '/\\')))), '/');
@@ -307,7 +307,7 @@ function vigieweb_php_files($dir, $base, $deadline, $limit = 100000, $skipStubs 
 }
 
 /** Le fichier a-t-il l'une des sommes attendues ? $expected : {md5, sha256} ou une simple chaîne ; chaque valeur peut être une liste. */
-function vigieweb_hash_matches($path, $expected)
+function suricateweb_hash_matches($path, $expected)
 {
     if (is_string($expected)) {
         $expected = array('md5' => $expected);
@@ -331,7 +331,7 @@ function vigieweb_hash_matches($path, $expected)
  * Retourne array(modifiés, manquants, nombre de fichiers vérifiés).
  * $skip : fonction qui dit si un chemin est ignoré (dossiers d'utilisateur, fichiers de durcissement…).
  */
-function vigieweb_compare_files($root, $sums, $deadline, $skip = null)
+function suricateweb_compare_files($root, $sums, $deadline, $skip = null)
 {
     $modified = array();
     $missing = array();
@@ -350,7 +350,7 @@ function vigieweb_compare_files($root, $sums, $deadline, $skip = null)
             continue;
         }
         $checked++;
-        if (!vigieweb_hash_matches($path, $expected)) {
+        if (!suricateweb_hash_matches($path, $expected)) {
             $modified[] = $rel;
         }
     }
@@ -360,17 +360,17 @@ function vigieweb_compare_files($root, $sums, $deadline, $skip = null)
 }
 
 /** Borne une liste pour la réponse : array(les N premiers, nombre omis). */
-function vigieweb_cap($list, $max = 40)
+function suricateweb_cap($list, $max = 40)
 {
     $list = array_values($list);
     return array(array_slice($list, 0, $max), max(0, count($list) - $max));
 }
 
-function vigieweb_section($known, $checked, $modified, $added, $missing)
+function suricateweb_section($known, $checked, $modified, $added, $missing)
 {
-    list($m, $mMore) = vigieweb_cap($modified);
-    list($a, $aMore) = vigieweb_cap($added);
-    list($x, $xMore) = vigieweb_cap($missing);
+    list($m, $mMore) = suricateweb_cap($modified);
+    list($a, $aMore) = suricateweb_cap($added);
+    list($x, $xMore) = suricateweb_cap($missing);
     return array(
         'known' => (bool) $known,
         'checked' => (int) $checked,
@@ -381,9 +381,9 @@ function vigieweb_section($known, $checked, $modified, $added, $missing)
     );
 }
 
-function vigieweb_remote_json($url)
+function suricateweb_remote_json($url)
 {
-    $res = wp_remote_get($url, array('timeout' => 12, 'redirection' => 2, 'user-agent' => 'VigieWeb; ' . home_url('/')));
+    $res = wp_remote_get($url, array('timeout' => 12, 'redirection' => 2, 'user-agent' => 'SuricateWEB; ' . home_url('/')));
     if (is_wp_error($res) || (int) wp_remote_retrieve_response_code($res) !== 200) {
         return null;
     }
@@ -391,9 +391,9 @@ function vigieweb_remote_json($url)
     return is_array($json) ? $json : null;
 }
 
-function vigieweb_core_sums($version)
+function suricateweb_core_sums($version)
 {
-    $key = 'vigieweb_core_' . md5($version . get_locale());
+    $key = 'suricateweb_core_' . md5($version . get_locale());
     $cached = get_transient($key);
     if (is_array($cached) && $cached) {
         return $cached;
@@ -410,42 +410,42 @@ function vigieweb_core_sums($version)
     return $sums;
 }
 
-function vigieweb_plugin_sums($slug, $version)
+function suricateweb_plugin_sums($slug, $version)
 {
-    $key = 'vigieweb_pl_' . md5($slug . '|' . $version);
+    $key = 'suricateweb_pl_' . md5($slug . '|' . $version);
     $cached = get_transient($key);
     if (is_array($cached)) {
         return $cached ? $cached : null; // tableau vide = version inconnue du dépôt (mémorisé)
     }
-    $json = vigieweb_remote_json('https://downloads.wordpress.org/plugin-checksums/' . rawurlencode($slug) . '/' . rawurlencode($version) . '.json');
+    $json = suricateweb_remote_json('https://downloads.wordpress.org/plugin-checksums/' . rawurlencode($slug) . '/' . rawurlencode($version) . '.json');
     $files = ($json && isset($json['files']) && is_array($json['files'])) ? $json['files'] : array();
     set_transient($key, $files, $files ? 6 * 3600 : 1800);
     return $files ? $files : null;
 }
 
 /** Chemins du noyau qui ne sont pas un signe d'intrusion s'ils manquent (durcissement courant). */
-function vigieweb_core_may_be_absent($rel)
+function suricateweb_core_may_be_absent($rel)
 {
     return in_array($rel, array('readme.html', 'license.txt', 'wp-config-sample.php', 'wp-admin/install.php', 'wp-admin/upgrade.php'), true)
         || strpos($rel, 'wp-content/') === 0;
 }
 
-function vigieweb_integrity_core($deadline)
+function suricateweb_integrity_core($deadline)
 {
     global $wp_version;
-    $sums = vigieweb_core_sums($wp_version);
+    $sums = suricateweb_core_sums($wp_version);
     if (!$sums) {
-        return array_merge(vigieweb_section(false, 0, array(), array(), array()), array('version' => $wp_version));
+        return array_merge(suricateweb_section(false, 0, array(), array(), array()), array('version' => $wp_version));
     }
-    list($modified, $missing, $checked) = vigieweb_compare_files(ABSPATH, $sums, $deadline, function ($rel) {
+    list($modified, $missing, $checked) = suricateweb_compare_files(ABSPATH, $sums, $deadline, function ($rel) {
         return strpos($rel, 'wp-content/') === 0;
     });
     $missing = array_values(array_filter($missing, function ($rel) {
-        return !vigieweb_core_may_be_absent($rel);
+        return !suricateweb_core_may_be_absent($rel);
     }));
     $added = array();
     foreach (array('wp-admin', 'wp-includes') as $dir) {
-        list($php) = vigieweb_php_files(ABSPATH . $dir, ABSPATH, $deadline);
+        list($php) = suricateweb_php_files(ABSPATH . $dir, ABSPATH, $deadline);
         foreach ($php as $rel) {
             if (!isset($sums[$rel])) {
                 $added[] = $rel;
@@ -454,16 +454,16 @@ function vigieweb_integrity_core($deadline)
     }
     foreach ((array) @scandir(ABSPATH) as $name) {
         $path = rtrim(ABSPATH, '/\\') . '/' . $name;
-        if ($name !== '.' && $name !== '..' && is_file($path) && !is_link($path) && vigieweb_is_php_file($name) && $name !== 'wp-config.php' && !isset($sums[$name])) {
+        if ($name !== '.' && $name !== '..' && is_file($path) && !is_link($path) && suricateweb_is_php_file($name) && $name !== 'wp-config.php' && !isset($sums[$name])) {
             $added[] = $name;
         }
     }
     sort($added);
-    return array_merge(vigieweb_section(true, $checked, $modified, $added, $missing), array('version' => $wp_version));
+    return array_merge(suricateweb_section(true, $checked, $modified, $added, $missing), array('version' => $wp_version));
 }
 
 /** Slug => true pour les extensions hébergées sur wordpress.org (d'après les informations de mise à jour). */
-function vigieweb_official_plugins()
+function suricateweb_official_plugins()
 {
     $official = array();
     $t = get_site_transient('update_plugins');
@@ -482,10 +482,10 @@ function vigieweb_official_plugins()
     return $official;
 }
 
-function vigieweb_integrity_plugins($deadline, &$partial)
+function suricateweb_integrity_plugins($deadline, &$partial)
 {
     $rows = array();
-    $official = vigieweb_official_plugins();
+    $official = suricateweb_official_plugins();
     foreach (get_plugins() as $file => $p) {
         $slug = dirname($file);
         if ($slug === '.') {
@@ -494,29 +494,29 @@ function vigieweb_integrity_plugins($deadline, &$partial)
         $version = isset($p['Version']) ? (string) $p['Version'] : '';
         $row = array('name' => isset($p['Name']) && $p['Name'] ? (string) $p['Name'] : $slug, 'slug' => $slug, 'version' => $version);
         if (empty($official[$file]) || $version === '') {
-            $rows[] = array_merge($row, vigieweb_section(false, 0, array(), array(), array()));
+            $rows[] = array_merge($row, suricateweb_section(false, 0, array(), array(), array()));
             continue;
         }
         if (microtime(true) > $deadline) {
             $partial = true;
-            $rows[] = array_merge($row, vigieweb_section(false, 0, array(), array(), array()), array('skipped' => true));
+            $rows[] = array_merge($row, suricateweb_section(false, 0, array(), array(), array()), array('skipped' => true));
             continue;
         }
-        $sums = vigieweb_plugin_sums($slug, $version);
+        $sums = suricateweb_plugin_sums($slug, $version);
         if (!$sums) {
-            $rows[] = array_merge($row, vigieweb_section(false, 0, array(), array(), array()));
+            $rows[] = array_merge($row, suricateweb_section(false, 0, array(), array(), array()));
             continue;
         }
         $root = WP_PLUGIN_DIR . '/' . $slug;
-        list($modified, $missing, $checked) = vigieweb_compare_files($root, $sums, $deadline);
-        list($php) = vigieweb_php_files($root, $root, $deadline);
+        list($modified, $missing, $checked) = suricateweb_compare_files($root, $sums, $deadline);
+        list($php) = suricateweb_php_files($root, $root, $deadline);
         $added = array();
         foreach ($php as $rel) {
             if (!isset($sums[$rel])) {
                 $added[] = $rel;
             }
         }
-        $rows[] = array_merge($row, vigieweb_section(true, $checked, $modified, $added, $missing));
+        $rows[] = array_merge($row, suricateweb_section(true, $checked, $modified, $added, $missing));
         if (count($rows) >= 150) {
             break;
         }
@@ -524,31 +524,31 @@ function vigieweb_integrity_plugins($deadline, &$partial)
     return $rows;
 }
 
-function vigieweb_integrity_uploads($deadline)
+function suricateweb_integrity_uploads($deadline)
 {
     $dir = wp_get_upload_dir();
     $base = isset($dir['basedir']) ? (string) $dir['basedir'] : '';
-    list($php, $scanned, $truncated) = vigieweb_php_files($base, $base, $deadline, 100000, true);
-    list($list, $more) = vigieweb_cap($php);
+    list($php, $scanned, $truncated) = suricateweb_php_files($base, $base, $deadline, 100000, true);
+    list($list, $more) = suricateweb_cap($php);
     return array('php' => $list, 'more' => $more, 'scanned' => $scanned, 'truncated' => $truncated);
 }
 
-function vigieweb_integrity(WP_REST_Request $req)
+function suricateweb_integrity(WP_REST_Request $req)
 {
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
     if (function_exists('set_time_limit')) {
         @set_time_limit(90);
     }
-    $force = strtolower((string) $req->get_header('x-vigie-refresh')) === '1';
+    $force = strtolower((string) $req->get_header('x-suricate-refresh')) === '1';
     if ($force) {
-        $last = (int) get_transient('vigieweb_force_int');
+        $last = (int) get_transient('suricateweb_force_int');
         if ($last && (time() - $last) < 15 * 60) {
             $force = false;
         } else {
-            set_transient('vigieweb_force_int', time(), 15 * 60);
+            set_transient('suricateweb_force_int', time(), 15 * 60);
         }
     }
-    $cached = get_transient('vigieweb_integrity_cache');
+    $cached = get_transient('suricateweb_integrity_cache');
     if (!$force && is_array($cached)) {
         return $cached;
     }
@@ -557,12 +557,12 @@ function vigieweb_integrity(WP_REST_Request $req)
     $report = array(
         'cms' => 'wordpress',
         'integrity' => array(
-            'core' => vigieweb_integrity_core($deadline),
-            'plugins' => vigieweb_integrity_plugins($deadline, $partial),
-            'uploads' => vigieweb_integrity_uploads($deadline),
+            'core' => suricateweb_integrity_core($deadline),
+            'plugins' => suricateweb_integrity_plugins($deadline, $partial),
+            'uploads' => suricateweb_integrity_uploads($deadline),
             'partial' => $partial || microtime(true) > $deadline,
         ),
     );
-    set_transient('vigieweb_integrity_cache', $report, 30 * 60);
+    set_transient('suricateweb_integrity_cache', $report, 30 * 60);
     return $report;
 }

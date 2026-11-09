@@ -1,6 +1,6 @@
 // npm run docs:screenshots : régénère docs/screenshots/*.png à partir des données FICTIVES de la démo.
 //
-// Principe : on fabrique une base de démonstration (scripts/docs/demo-data.js), on lance VigieWeb dessus en « mode démo »
+// Principe : on fabrique une base de démonstration (scripts/docs/demo-data.js), on lance SuricateWEB dessus en « mode démo »
 // (aucun contrôle réseau), puis on pilote un vrai Chrome qui se connecte, parcourt les écrans et les photographie.
 // Les images ne contiennent donc que des données inventées (domaines « .example », IP de documentation).
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, statSync } from 'node:fs';
@@ -25,7 +25,7 @@ if (!findChrome()) {
 }
 
 mkdirSync(OUT, { recursive: true });
-const dataDir = mkdtempSync(join(tmpdir(), 'vigieweb-docs-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'suricateweb-docs-'));
 const fake = await startFakeSites();
 let srv;
 let page;
@@ -43,7 +43,7 @@ try {
   ];
   // Le texte ET les boutons sont ceux que produit l'application ; seul l'habillage de la conversation est reconstitué.
   const dupont = { id: 1, name: SITES.dupont.name, url: `https://${SITES.dupont.domain}/` };
-  const demoSettings = { telegram: { includeDiff: true, buttons: true }, baseUrl: 'https://vigieweb.exemple-societe.example' };
+  const demoSettings = { telegram: { includeDiff: true, buttons: true }, baseUrl: 'https://suricateweb.exemple-societe.example' };
   const keyboard = buildKeyboard(dupont, defacedAlerts, demoSettings);
   const text = buildMessage(dupont, defacedAlerts, demoSettings, { link: !keyboard.link });
   const photoB64 = images.dupontDefaced.image.toString('base64');
@@ -58,14 +58,14 @@ try {
     .t{display:block;text-align:right;font-size:12px;color:#7f91a4;margin-top:2px}
     .p{background:#182533;border-radius:14px 14px 14px 4px;padding:4px 4px 7px;max-width:100%}.p img{display:block;width:100%;border-radius:11px}.p div{padding:7px 9px 0;white-space:pre-wrap}
   </style><div id="chat">
-    <div class="bot"><div class="av">V</div><div><b>VigieWeb Bot</b><span>bot</span></div></div>
+    <div class="bot"><div class="av">V</div><div><b>SuricateWEB Bot</b><span>bot</span></div></div>
     <div class="m">${text}<span class="t">14:32</span></div>
     <div class="kb">${keyboard.row.map((b) => `<span>${b.text}</span>`).join('')}</div>
     <div class="p"><img src="data:image/jpeg;base64,${photoB64}"><div>📸 ${SITES.dupont.name} — la page au moment de l'alerte<span class="t">14:32</span></div></div>
   </div>`);
 
   console.log('2/3  Serveur de démonstration…');
-  srv = await startServer({ user: DEMO_USER, password: DEMO_PASSWORD, dataDir, env: { VIGIE_DEMO: '1' } });
+  srv = await startServer({ user: DEMO_USER, password: DEMO_PASSWORD, dataDir, env: { SURICATE_DEMO: '1' } });
   const list = (await srv.get('/api/watches')).json;
   const id = (name) => list.find((w) => w.name === name).id;
 
@@ -90,7 +90,7 @@ try {
   const fit = (o = {}) => page.fit(W, o);
 
   const reload = async () => { await page.navigate(`${srv.base}/`); await waitFor('document.querySelector(".sidebar")'); };
-  await page.run(`localStorage.setItem('vigie-theme', 'light'); localStorage.setItem('vigie-view', 'groups'); true`);
+  await page.run(`localStorage.setItem('suricate-theme', 'light'); localStorage.setItem('suricate-view', 'groups'); true`);
   await reload();
 
   // ── Thème clair ──
@@ -191,14 +191,14 @@ try {
 
   // ── Thème sombre ──
   await page.navigate(`${srv.base}/`);
-  await page.run(`localStorage.setItem('vigie-theme', 'dark'); true`);
+  await page.run(`localStorage.setItem('suricate-theme', 'dark'); true`);
   await reload();
   await go('#/', '.grp .site');
   await fit({ max: 1800 });
   await save('tableau-de-bord-sombre.png', await page.screenshot());
 
   // ── Mobile ──
-  await page.run(`localStorage.setItem('vigie-theme', 'light'); true`);
+  await page.run(`localStorage.setItem('suricate-theme', 'light'); true`);
   await reload();
   await page.viewport(390, 844, { dpr: 2, mobile: true });
   await go('#/', '.grp .site');

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer } from '../test-support/server.js';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-tgbtn-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-tgbtn-'));
 
 // ── Faux Telegram : envoi, interrogation longue, réponses aux clics ──
 const fake = { sent: [], answers: [], edits: [], polls: [], queue: [], rejectUrl: false, rejectMarkup: false, chatNotFound: false, getUpdatesStatus: null };
@@ -39,7 +39,7 @@ const server = http.createServer((req, res) => {
     }
     if (method === 'answerCallbackQuery') { fake.answers.push(body); return ok(true); }
     if (method === 'editMessageReplyMarkup') { fake.edits.push(body); return ok(true); }
-    if (method === 'getMe') return ok({ username: 'vigie_bot' });
+    if (method === 'getMe') return ok({ username: 'suricate_bot' });
     return ok({});
   });
 });
@@ -55,27 +55,27 @@ const pollsOf = (tok) => fake.polls.filter((p) => p.token === tok);
 const until = async (fn, ms = 4000) => { const t0 = Date.now(); while (!fn()) { if (Date.now() - t0 > ms) throw new Error('délai dépassé'); await new Promise((r) => setTimeout(r, 15)); } };
 const watch = { id: 5, name: 'Boutique', url: 'https://boutique.example/' };
 const alert = (id, severity = 'warning') => ({ id, severity, type: 'content_changed', title: 'Le contenu a changé', detail: '' });
-const settings = (over = {}, tgOver = {}) => ({ baseUrl: 'https://vigieweb.exemple-societe.com', telegram: { includeDiff: true, buttons: true, ...tgOver }, ...over });
+const settings = (over = {}, tgOver = {}) => ({ baseUrl: 'https://suricateweb.exemple-societe.com', telegram: { includeDiff: true, buttons: true, ...tgOver }, ...over });
 const buttons = (m) => (m.reply_markup?.inline_keyboard ?? [[]])[0];
 
 test('adresse du bouton : publique seulement, jamais localhost ni réseau privé', () => {
-  assert.equal(tg.siteLink('https://vigieweb.exemple.com', 7), 'https://vigieweb.exemple.com/#/sites/7');
-  assert.equal(tg.siteLink('https://exemple.com/outils/vigieweb/', 7), 'https://exemple.com/outils/vigieweb/#/sites/7', 'installation dans un sous-dossier');
-  assert.equal(tg.siteLink('http://vigieweb.exemple.com:8080', 7), 'http://vigieweb.exemple.com:8080/#/sites/7');
-  for (const bad of ['', null, 'ftp://x.com', 'vigieweb.exemple.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://192.168.1.20', 'http://10.0.0.4', 'http://172.20.1.1', 'http://nas.local', 'http://vigieweb', 'http://[::1]:3000', 'javascript:alert(1)']) {
+  assert.equal(tg.siteLink('https://suricateweb.exemple.com', 7), 'https://suricateweb.exemple.com/#/sites/7');
+  assert.equal(tg.siteLink('https://exemple.com/outils/suricateweb/', 7), 'https://exemple.com/outils/suricateweb/#/sites/7', 'installation dans un sous-dossier');
+  assert.equal(tg.siteLink('http://suricateweb.exemple.com:8080', 7), 'http://suricateweb.exemple.com:8080/#/sites/7');
+  for (const bad of ['', null, 'ftp://x.com', 'suricateweb.exemple.com', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://192.168.1.20', 'http://10.0.0.4', 'http://172.20.1.1', 'http://nas.local', 'http://suricateweb', 'http://[::1]:3000', 'javascript:alert(1)']) {
     assert.equal(tg.siteLink(bad, 7), null, `refusé : ${bad}`);
   }
 });
 
 test('clavier : « Marquer comme lu » + « Ouvrir », sans doublon du lien dans le texte', () => {
   const kb = tg.buildKeyboard(watch, [alert(10), alert(12, 'critical'), alert(11)], settings());
-  assert.deepEqual(kb.row.map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans VigieWeb']);
+  assert.deepEqual(kb.row.map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWEB']);
   assert.equal(kb.row[0].callback_data, 'lu:5:12', 'jusqu’à la plus récente alerte du message');
   assert.ok(Buffer.byteLength(kb.row[0].callback_data) <= 64);
-  assert.equal(kb.row[1].url, 'https://vigieweb.exemple-societe.com/#/sites/5');
+  assert.equal(kb.row[1].url, 'https://suricateweb.exemple-societe.com/#/sites/5');
   assert.equal(kb.link, true);
-  assert.doesNotMatch(tg.buildMessage(watch, [alert(10)], settings(), { link: !kb.link }), /Ouvrir dans VigieWeb/);
-  assert.match(tg.buildMessage(watch, [alert(10)], settings()), /Ouvrir dans VigieWeb/, 'comportement historique conservé sans boutons');
+  assert.doesNotMatch(tg.buildMessage(watch, [alert(10)], settings(), { link: !kb.link }), /Ouvrir dans SuricateWEB/);
+  assert.match(tg.buildMessage(watch, [alert(10)], settings()), /Ouvrir dans SuricateWEB/, 'comportement historique conservé sans boutons');
 
   assert.deepEqual(parseCallback(kb.row[0].callback_data), { watchId: 5, upTo: 12 });
   assert.deepEqual(readKeyboard([kb.row]), [[{ text: '✓ Lu', callback_data: 'ok' }, kb.row[1]]], 'le bouton de lecture devient « ✓ Lu », l’autre reste');
@@ -86,7 +86,7 @@ test('clavier : adresse locale = bouton de lecture seul ; rétablissement = lien
   assert.deepEqual(local.row.map((b) => b.text), ['✓ Marquer comme lu']);
   assert.equal(local.link, false, 'le lien reste dans le texte');
   const recovery = tg.buildKeyboard(watch, [alert(10, 'recovery')], settings());
-  assert.deepEqual(recovery.row.map((b) => b.text), ['Ouvrir dans VigieWeb'], 'un « rétabli » est déjà lu');
+  assert.deepEqual(recovery.row.map((b) => b.text), ['Ouvrir dans SuricateWEB'], 'un « rétabli » est déjà lu');
   assert.deepEqual(tg.buildKeyboard(watch, [alert(10)], settings({}, { buttons: false })), { row: [], link: false });
   assert.deepEqual(tg.buildKeyboard(watch, [{ severity: 'warning' }], settings({ baseUrl: '' })).row, [], 'alerte sans identifiant : rien à marquer');
 });
@@ -94,22 +94,22 @@ test('clavier : adresse locale = bouton de lecture seul ; rétablissement = lien
 test('envoi : boutons joints ; repli sans bouton lien, puis sans bouton, si Telegram refuse', async () => {
   reset();
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
-  assert.deepEqual(buttons(fake.sent[0]).map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans VigieWeb']);
-  assert.doesNotMatch(fake.sent[0].text, /Ouvrir dans VigieWeb/);
+  assert.deepEqual(buttons(fake.sent[0]).map((b) => b.text), ['✓ Marquer comme lu', 'Ouvrir dans SuricateWEB']);
+  assert.doesNotMatch(fake.sent[0].text, /Ouvrir dans SuricateWEB/);
 
   reset();
   fake.rejectUrl = true;
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
   assert.equal(fake.sent.length, 2, 'un 2e essai');
   assert.deepEqual(buttons(fake.sent[1]).map((b) => b.text), ['✓ Marquer comme lu'], 'sans le bouton lien');
-  assert.match(fake.sent[1].text, /Ouvrir dans VigieWeb/, 'le lien revient dans le texte');
+  assert.match(fake.sent[1].text, /Ouvrir dans SuricateWEB/, 'le lien revient dans le texte');
 
   reset();
   fake.rejectMarkup = true;
   await tg.sendAlert('123:ABC', '42', watch, [alert(10)], settings());
   assert.equal(fake.sent.length, 3, 'complet, puis sans bouton lien, puis sans aucun bouton');
   assert.equal(fake.sent[2].reply_markup, undefined, 'retour au message simple : l’alerte part quand même');
-  assert.match(fake.sent[2].text, /Ouvrir dans VigieWeb/);
+  assert.match(fake.sent[2].text, /Ouvrir dans SuricateWEB/);
 
   reset();
   fake.chatNotFound = true;
@@ -185,7 +185,7 @@ test('clics : conversation inconnue, bouton déjà lu, bouton périmé, échec �
     mode = 'boom';
     fake.queue = [click('lu:5:42', { update_id: 24 })];
     await until(() => fake.answers.length === 5);
-    assert.deepEqual([fake.answers[4].text, fake.answers[4].show_alert], ['Échec : réessayez depuis VigieWeb.', true]);
+    assert.deepEqual([fake.answers[4].text, fake.answers[4].show_alert], ['Échec : réessayez depuis SuricateWEB.', true]);
 
     mode = 'one';
     fake.queue = [click('lu:5:42', { update_id: 25 })];

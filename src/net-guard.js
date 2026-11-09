@@ -1,8 +1,8 @@
-// Garde réseau : empêche VigieWeb d'être utilisé pour atteindre le réseau INTERNE du serveur qui l'héberge (SSRF).
+// Garde réseau : empêche SuricateWEB d'être utilisé pour atteindre le réseau INTERNE du serveur qui l'héberge (SSRF).
 //
-// Le problème. VigieWeb va chercher des adresses saisies par ses utilisateurs : contrôles, relevé CMS, certificat TLS, captures
+// Le problème. SuricateWEB va chercher des adresses saisies par ses utilisateurs : contrôles, relevé CMS, certificat TLS, captures
 // d'écran. Sans garde, quelqu'un peut déclarer « http://169.254.169.254/ » (service de métadonnées d'un hébergeur cloud, qui livre
-// des identifiants), « http://localhost:5432/ » ou un nom de domaine qui pointe vers 10.0.0.12, et lire ce que VigieWeb y trouve
+// des identifiants), « http://localhost:5432/ » ou un nom de domaine qui pointe vers 10.0.0.12, et lire ce que SuricateWEB y trouve
 // (statut, titre, message d'erreur, capture d'écran). Dans une installation personnelle ce n'est pas un risque (l'utilisateur
 // est le propriétaire, et surveiller un site interne est légitime) : la garde est donc DÉSACTIVÉE par défaut. Une installation
 // ouverte à des inconnus (la version hébergée) l'active.
@@ -245,12 +245,12 @@ export function createNetGuard({ enabled = true, allowedPorts = DEFAULT_PORTS, a
 
 /**
  * La garde décrite par l'environnement, ou null si elle n'y est pas demandée :
- *   VIGIE_NET_GUARD=1                       active la garde
- *   VIGIE_NET_ALLOW_PORTS=80,443,8080,8443  ports autorisés (« * » = tous)
- *   VIGIE_NET_ALLOW_HOSTS=intranet.exemple,10.0.0.5,10.1.0.0/16   exceptions explicites
+ *   SURICATE_NET_GUARD=1                       active la garde
+ *   SURICATE_NET_ALLOW_PORTS=80,443,8080,8443  ports autorisés (« * » = tous)
+ *   SURICATE_NET_ALLOW_HOSTS=intranet.exemple,10.0.0.5,10.1.0.0/16   exceptions explicites
  */
 export function netGuardFromEnv(env = process.env) {
-  if (!/^(1|true|yes)$/i.test(env.VIGIE_NET_GUARD || '')) return null;
-  const ports = list(env.VIGIE_NET_ALLOW_PORTS);
-  return createNetGuard({ allowedPorts: ports.length ? ports : DEFAULT_PORTS, allowHosts: list(env.VIGIE_NET_ALLOW_HOSTS) });
+  if (!/^(1|true|yes)$/i.test(env.SURICATE_NET_GUARD || '')) return null;
+  const ports = list(env.SURICATE_NET_ALLOW_PORTS);
+  return createNetGuard({ allowedPorts: ports.length ? ports : DEFAULT_PORTS, allowHosts: list(env.SURICATE_NET_ALLOW_HOSTS) });
 }

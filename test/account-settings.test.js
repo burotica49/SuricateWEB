@@ -7,7 +7,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-acctset-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-acctset-'));
 process.env.CHROME_PATH = '/nonexistent/chrome';
 
 // Faux Telegram : enregistre le jeton (dans l'adresse) et la conversation de chaque message.
@@ -69,13 +69,13 @@ test('lecture : un compte sans réglages a les valeurs par défaut ; l\'écritur
   const a = (await call('alice', 'GET', '/api/settings')).json;
   assert.deepEqual([a.userAgent, a.defaultInterval, a.cmsAfterDays, a.builtinKeywords, a.telegram.chatId, a.telegram.tokenSet], ['AgentA/1', 45, 3, ['motalice'], '111', true]);
   const b = (await call('bob', 'GET', '/api/settings')).json;
-  assert.deepEqual([b.userAgent, b.defaultInterval, b.cmsAfterDays, b.telegram.chatId, b.telegram.tokenSet], ['Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)', 15, 7, '', false], 'le compte B n\'hérite de rien');
+  assert.deepEqual([b.userAgent, b.defaultInterval, b.cmsAfterDays, b.telegram.chatId, b.telegram.tokenSet], ['Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)', 15, 7, '', false], 'le compte B n\'hérite de rien');
   assert.ok(b.builtinKeywords.includes('hacked by'), 'mots-clés par défaut');
   assert.equal(a.authUser, 'alice');
   assert.ok(!JSON.stringify(a).includes('A:tok'), 'le jeton Telegram n\'est jamais renvoyé');
   // le compte implicite (1) n'est pas touché
   assert.equal(dbm.getSettings().telegram.token, '');
-  assert.equal(dbm.getSettings().userAgent, 'Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)');
+  assert.equal(dbm.getSettings().userAgent, 'Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)');
   await call('bob', 'PUT', '/api/settings', { userAgent: 'AgentB/1', telegram: { token: 'B:tok', chatId: '222', enabled: true, minSeverity: 'info', sendScreenshot: false } });
 });
 
@@ -137,11 +137,11 @@ test('adresse publique : réglage d\'installation, réservé au droit instance:w
   assert.deepEqual([refused.status, refused.json.error], [403, 'Accès refusé']);
   assert.equal(dbm.getInstanceSettings().baseUrl, '');
   assert.equal((await call('alice', 'GET', '/api/settings')).json.defaultInterval, 45, 'les autres champs de la même requête ne sont pas appliqués non plus');
-  const ok = await call('root', 'PUT', '/api/settings', { baseUrl: 'https://vigie.example/' });
+  const ok = await call('root', 'PUT', '/api/settings', { baseUrl: 'https://suricate.example/' });
   assert.equal(ok.status, 200);
-  assert.equal(ok.json.baseUrl, 'https://vigie.example');
+  assert.equal(ok.json.baseUrl, 'https://suricate.example');
   // elle est la même pour tous les comptes
-  assert.equal((await call('bob', 'GET', '/api/settings')).json.baseUrl, 'https://vigie.example');
+  assert.equal((await call('bob', 'GET', '/api/settings')).json.baseUrl, 'https://suricate.example');
   // les écritures du compte, sans baseUrl, restent permises
   assert.equal((await call('alice', 'PUT', '/api/settings', { defaultInterval: 50 })).status, 200);
 });

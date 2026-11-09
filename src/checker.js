@@ -293,7 +293,7 @@ export function tlsInfo(host, port = 443, timeout = 8000) {
 
 async function rdapFetch(domain) {
   const res = await fetch(`https://rdap.org/domain/${domain}`, {
-    headers: { accept: 'application/rdap+json', 'user-agent': 'VigieWeb/1.0 (surveillance de noms de domaine)' },
+    headers: { accept: 'application/rdap+json', 'user-agent': 'SuricateWEB/1.0 (surveillance de noms de domaine)' },
     signal: AbortSignal.timeout(12000),
   });
   if (res.status === 404) return { unsupported: true };

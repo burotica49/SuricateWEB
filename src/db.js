@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -11,9 +11,15 @@ import { MIGRATIONS } from './store/migrations/index.js';
 export const DATA_DIR = process.env.DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 mkdirSync(DATA_DIR, { recursive: true });
 
+// Garde-fou du renommage VigieWeb → SuricateWEB : la base s'appelait « vigie.db ». Sans ce contrôle, une mise à jour qui oublie
+// de renommer le fichier créerait en silence une base vide, et tout semblerait perdu. On préfère refuser de démarrer.
+if (existsSync(join(DATA_DIR, 'vigie.db')) && !existsSync(join(DATA_DIR, 'suricate.db'))) {
+  throw new Error(`Base de données à l'ancien nom : ${join(DATA_DIR, 'vigie.db')}.\n  Renommez-la en « suricate.db » (avec vigie.db-wal et vigie.db-shm s'ils existent), puis relancez.`);
+}
+
 // Toute la base passe par cet adaptateur (src/store) : le SQL de ce fichier est portable, le moteur est interchangeable
 // (SQLite par défaut ; la version hébergée en fournit un autre via src/store/registry.js avant d'importer ce fichier).
-export const db = await openStore({ path: join(DATA_DIR, 'vigie.db'), dataDir: DATA_DIR });
+export const db = await openStore({ path: join(DATA_DIR, 'suricate.db'), dataDir: DATA_DIR });
 // Le schéma est tenu à jour par des migrations numérotées (src/store/migrations), appliquées ici avant tout le reste.
 await migrate(db, [...MIGRATIONS, ...getExtraMigrations()]);
 
@@ -55,7 +61,7 @@ export const DEFAULT_KEYWORDS = [
 // ───────────── Réglages : deux niveaux ─────────────
 //
 // INSTALLATION (ligne « app » de la table settings) : ce qui ne dépend d'aucun compte — secret de signature des sessions,
-// adresse publique de VigieWeb, rétention des contrôles et des versions (politique de stockage), version des migrations de réglages.
+// adresse publique de SuricateWEB, rétention des contrôles et des versions (politique de stockage), version des migrations de réglages.
 // COMPTE (ligne « account:<id> ») : ce que chaque compte règle pour lui — Telegram, mots-clés, User-Agent, intervalle par défaut,
 // seuil des mises à jour CMS, nombre de captures conservées. Un compte sans ligne a les valeurs par défaut.
 //
@@ -72,10 +78,10 @@ const instanceDefaults = () => ({
 });
 
 export const accountDefaults = () => ({
-  // buttons : boutons « Marquer comme lu » / « Ouvrir dans VigieWeb » sous chaque message.
+  // buttons : boutons « Marquer comme lu » / « Ouvrir dans SuricateWEB » sous chaque message.
   telegram: { token: '', chatId: '', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true, buttons: true },
   defaultInterval: 15,
-  userAgent: 'Mozilla/5.0 (compatible; VigieWeb/1.0; surveillance de site)',
+  userAgent: 'Mozilla/5.0 (compatible; SuricateWEB/1.0; surveillance de site)',
   builtinKeywords: [...DEFAULT_KEYWORDS],
   retention: { screenshots: 168 },
   // Une mise à jour du CMS en attente depuis plus de N jours déclenche une alerte.
@@ -155,7 +161,8 @@ export async function saveSettings(patch) {
 
 /**
  * Lecture au démarrage. Les anciennes versions stockaient TOUT dans la ligne « app » : on rejoue d'abord les migrations
- * d'origine sur cet objet complet (v2 à v5), puis la v6 sépare les réglages du compte implicite dans « account:1 ».
+ * d'origine sur cet objet complet (v2 à v5), puis la v6 sépare les réglages du compte implicite dans « account:1 », et la v7
+ * renomme le User-Agent par défaut de ce compte (changement de nom du produit).
  */
 async function loadSettings() {
   const saved = (await settingsRow('app')) ?? {};
@@ -185,8 +192,8 @@ async function loadSettings() {
     delete s.keywordsVersion;
   }
   if (version < 5) {
-    // v5 : le produit s'appelle VigieWeb. Le User-Agent par défaut déjà copié en base suit, mais un User-Agent
-    // personnalisé n'est jamais touché. (Chaîne volontairement coupée : un futur renommage global ne doit pas la casser.)
+    // v5 : premier renommage du produit (anciennement « Vigie »). Le User-Agent par défaut déjà copié en base suit, mais un
+    // User-Agent personnalisé n'est jamais touché. (Chaîne volontairement coupée : un futur renommage global ne doit pas la casser.)
     const oldDefault = ['Mozilla/5.0 (compatible; ', 'Vigie', '/1.0; surveillance de site)'].join('');
     if (s.userAgent === oldDefault) s.userAgent = accountDefaults().userAgent;
   }
@@ -198,13 +205,24 @@ async function loadSettings() {
     });
     dirty = true;
   }
+  if (version < 7) {
+    // v7 : le produit devient SuricateWEB. Le User-Agent par défaut déjà copié en base (compte implicite, désormais
+    // dans « account:1 ») suit ; un User-Agent personnalisé n'est jamais touché. La chaîne de l'ancien nom est coupée
+    // pour qu'un futur renommage global du dépôt ne casse pas cette comparaison.
+    const previousDefault = ['Mozilla/5.0 (compatible; ', 'Vigie', 'Web/1.0; surveillance de site)'].join('');
+    const row = await settingsRow(`account:${DEFAULT_ACCOUNT_ID}`);
+    if (row?.userAgent === previousDefault) {
+      await persistRow(`account:${DEFAULT_ACCOUNT_ID}`, { ...row, userAgent: accountDefaults().userAgent });
+    }
+    dirty = true;
+  }
   instanceCache = {
     baseUrl: s.baseUrl,
     retention: { checks: s.retention.checks, snapshots: s.retention.snapshots },
     sessionSecret: s.sessionSecret,
-    settingsVersion: 6,
+    settingsVersion: 7,
   };
-  if (dirty || version < 6) await persistRow('app', instanceCache);
+  if (dirty || version < 7) await persistRow('app', instanceCache);
   await accountSettings(DEFAULT_ACCOUNT_ID); // met en cache le compte implicite
 }
 
@@ -237,7 +255,7 @@ export const defaultConfig = () => ({
     content: true, keywords: true, title: true, sizeDrop: true, scripts: true, links: true,
     redirect: true, status: true, tls: true, dns: true, rdap: true, server: true,
   },
-  // Connecteur WordPress / PrestaShop : VigieWeb interroge le plugin (intervalMin en minutes).
+  // Connecteur WordPress / PrestaShop : SuricateWEB interroge le plugin (intervalMin en minutes).
   // alerts : mises à jour en retard / PHP en fin de support · security : intégrité des fichiers et comptes administrateurs.
   cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true },
   // Pages supplémentaires du même site (panier, contact, connexion…) : [{ url, label }], 10 au plus.

@@ -18,7 +18,7 @@ export const findChrome = () => CANDIDATES.find((p) => existsSync(p)) || null;
 export async function openPage(url, { width = 1280, height = 900 } = {}) {
   const bin = findChrome();
   if (!bin) throw new Error('Chrome introuvable');
-  const profile = mkdtempSync(join(tmpdir(), 'vigie-e2e-'));
+  const profile = mkdtempSync(join(tmpdir(), 'suricate-e2e-'));
   const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--disable-gpu', '--disable-dev-shm-usage', `--window-size=${width},${height}`, 'about:blank'];
   if (/^(1|true)$/i.test(process.env.CHROME_NO_SANDBOX || '')) args.push('--no-sandbox');
   const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });

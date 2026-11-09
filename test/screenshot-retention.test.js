@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Même dossier de données pour ce processus et pour le serveur lancé plus bas.
-const dataDir = mkdtempSync(join(tmpdir(), 'vigie-ret-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'suricate-ret-'));
 process.env.DATA_DIR = dataDir;
 const dbm = await import('../src/db.js');
 const shots = await import('../src/screenshot.js');
@@ -14,7 +14,7 @@ const { openPage, findChrome } = await import('../test-support/browser.js');
 
 // Le serveur démarre AVANT tout test : les tests s'exécutent dès qu'ils sont déclarés, et le serveur met ses réglages en cache
 // au démarrage (sans cela, il pourrait lire un réglage qu'un test vient de modifier).
-const srv = await startServer({ dataDir, env: { VIGIE_DEMO: '1', CHROME_PATH: findChrome() || '/nonexistent/chrome' } });
+const srv = await startServer({ dataDir, env: { SURICATE_DEMO: '1', CHROME_PATH: findChrome() || '/nonexistent/chrome' } });
 test.after(async () => { await srv.stop(); dbm.db.close(); });
 
 /** Insère n captures (lignes + vrais fichiers) sans passer par Chrome. */

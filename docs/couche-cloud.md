@@ -1,4 +1,4 @@
-# Construire une couche hébergée sur VigieWeb
+# Construire une couche hébergée sur SuricateWEB
 
 Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, forfaits, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
@@ -87,7 +87,7 @@ Renvoie un booléen (ou une promesse). Défaut : tout est permis. Il est appelé
 - automatiquement, avec la `perm` de la route, **avant** la lecture du corps de la requête (un refus ne consomme rien et ne modifie rien) ;
 - par `ctx.can(action, resource)` (booléen) et `ctx.require(action, resource)` (lève 403 « Accès refusé »), pour les contrôles propres à une route, avec la ressource concernée.
 
-Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de VigieWeb, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
+Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de SuricateWEB, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
 
 C'est ici que vivra le partage de l'offre Agence : un invité « rapport » n'a que `report:read` (et `site:read` limité à ce qui lui est partagé) ; un invité « complet » a les actions de lecture et d'acquittement. `authorize` reçoit `ctx.user`, `ctx.account` et, pour les contrôles par ressource, la ressource.
 
@@ -166,7 +166,7 @@ Pas de lecteur de boutons Telegram multi-comptes dans le cœur : le sien est li�
 
 ### 3.8 `netGuard` — protection SSRF
 
-`createNetGuard({ enabled, allowedPorts, allowHosts })` ; ou ses options ; ou `VIGIE_NET_GUARD=1` (+ `VIGIE_NET_ALLOW_PORTS`, `VIGIE_NET_ALLOW_HOSTS`). **À activer dès que des inconnus ajoutent des sites.** Voir `src/net-guard.js` pour le détail ; en résumé :
+`createNetGuard({ enabled, allowedPorts, allowHosts })` ; ou ses options ; ou `SURICATE_NET_GUARD=1` (+ `SURICATE_NET_ALLOW_PORTS`, `SURICATE_NET_ALLOW_HOSTS`). **À activer dès que des inconnus ajoutent des sites.** Voir `src/net-guard.js` pour le détail ; en résumé :
 
 - refuse tout ce qui n'est pas http(s), les ports hors liste (80, 443, 8080, 8443 par défaut) et toute adresse privée ou réservée, écrite telle quelle ou renvoyée par le DNS ;
 - vérifie l'adresse **dans le `lookup` de la connexion** : pas de fenêtre pour un « DNS rebinding » ;
@@ -350,11 +350,11 @@ Décisions encore ouvertes : prix et essai gratuit ; contenu exact de chaque for
 |---|---|
 | `DATA_DIR` | dossier des données (base SQLite par défaut, captures) |
 | `PORT`, `HOST` | écoute (dans `server.js` ; `createApp` n'écoute qu'à l'appel de `listen`) |
-| `VIGIE_USER`, `VIGIE_PASSWORD` | identifiants du fournisseur par défaut (inutiles avec votre `auth`) |
+| `SURICATE_USER`, `SURICATE_PASSWORD` | identifiants du fournisseur par défaut (inutiles avec votre `auth`) |
 | `TRUST_PROXY` | lire `X-Forwarded-*` derrière un reverse proxy de confiance |
 | `TELEGRAM_POLL` | `0` désactive le lecteur des boutons Telegram (à faire en multi-comptes) |
 | `TELEGRAM_API` | adresse de l'API Telegram (tests) |
-| `VIGIE_DEMO` | `1` : données fictives, aucun contrôle ni capture |
-| `VIGIE_NET_GUARD`, `VIGIE_NET_ALLOW_PORTS`, `VIGIE_NET_ALLOW_HOSTS` | garde réseau |
+| `SURICATE_DEMO` | `1` : données fictives, aucun contrôle ni capture |
+| `SURICATE_NET_GUARD`, `SURICATE_NET_ALLOW_PORTS`, `SURICATE_NET_ALLOW_HOSTS` | garde réseau |
 | `CHROME_PATH`, `CHROME_NO_SANDBOX`, `SCREENSHOT_CONCURRENCY` | Chrome et captures |
 | `ENV_FILE` | emplacement du `.env` (chargé seulement par `server.js`) |

@@ -12,7 +12,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const url = (p) => pathToFileURL(join(ROOT, p)).href;
 
 function run(script) {
-  const dir = mkdtempSync(join(tmpdir(), 'vigie-registry-'));
+  const dir = mkdtempSync(join(tmpdir(), 'suricate-registry-'));
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', script], {
       env: { ...process.env, DATA_DIR: dir }, encoding: 'utf8', timeout: 20000,
@@ -30,7 +30,7 @@ test('registre : un adaptateur fourni remplace SQLite, ses migrations s\'ajouten
     import { openSqlite } from '${url('src/store/sqlite.js')}';
     let opened = null;
     configureStore({
-      open: async ({ path, dataDir }) => { opened = { file: path.endsWith('vigie.db'), dataDir: dataDir === process.env.DATA_DIR }; return openSqlite(path); },
+      open: async ({ path, dataDir }) => { opened = { file: path.endsWith('suricate.db'), dataDir: dataDir === process.env.DATA_DIR }; return openSqlite(path); },
       migrations: [{ version: 1000, name: 'comptes', sqlite: (db) => db.exec('CREATE TABLE cloud_accounts (id INTEGER PRIMARY KEY)'), postgres: () => {} }],
     });
     const dbm = await import('${url('src/db.js')}');

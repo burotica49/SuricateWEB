@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Rapport mensuel client : bornes du mois, calculs et mise en page.
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-report-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-report-'));
 
 const dbm = await import('../src/db.js');
 const { monthRange, siteReport, renderReport, statusData, renderStatusPage, fmtPct } = await import('../src/report.js');

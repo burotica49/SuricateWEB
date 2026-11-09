@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { startServer } from '../test-support/server.js';
 
 // Le mode démo (npm run demo, captures du README) ne doit JAMAIS contacter un site : même sur demande explicite.
-const srv = await startServer({ env: { VIGIE_DEMO: '1' } });
+const srv = await startServer({ env: { SURICATE_DEMO: '1' } });
 test.after(() => srv.stop());
 
 test('mode démo : « Vérifier maintenant » ne fait aucune requête et ne modifie rien', async () => {

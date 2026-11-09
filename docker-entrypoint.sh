@@ -14,7 +14,7 @@ if [ "$(id -u)" = "0" ]; then
   esac
   mkdir -p "$data"
   # Répertoire non inscriptible, ou base déjà créée par root : on reprend tout le dossier.
-  if ! su-exec node sh -c 'test -w "$1" && { [ ! -e "$1/vigie.db" ] || [ -w "$1/vigie.db" ]; }' sh "$data"; then
+  if ! su-exec node sh -c 'test -w "$1" && { [ ! -e "$1/suricate.db" ] || [ -w "$1/suricate.db" ]; }' sh "$data"; then
     chown -R node:node "$data"
   fi
   exec su-exec node "$@"

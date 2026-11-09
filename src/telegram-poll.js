@@ -1,6 +1,6 @@
 // Réception des clics sur les boutons Telegram, par interrogation régulière (getUpdates).
 //
-// VigieWeb demande à Telegram « y a-t-il eu des clics ? » : aucune adresse publique ni route ouverte sans connexion.
+// SuricateWEB demande à Telegram « y a-t-il eu des clics ? » : aucune adresse publique ni route ouverte sans connexion.
 // Telegram n'admet qu'un lecteur à la fois : si le bot a un webhook, ou si le bouton « Détecter » interroge en même
 // temps, la demande la plus récente l'emporte et l'autre reprend un instant plus tard.
 import * as tg from './telegram.js';
@@ -46,7 +46,7 @@ export function startTelegramPoller({ settings, onRead, pollSeconds = 25, idleMs
       n = await onRead(cb.watchId, cb.upTo);
     } catch (e) {
       log.error(`[telegram] marquage comme lu : ${e.message}`);
-      return reply('Échec : réessayez depuis VigieWeb.', true);
+      return reply('Échec : réessayez depuis SuricateWEB.', true);
     }
     await reply(n > 1 ? `${n} alertes marquées comme lues.` : n === 1 ? 'Alerte marquée comme lue.' : 'Déjà marqué comme lu.');
     const rows = cq.message?.reply_markup?.inline_keyboard;

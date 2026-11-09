@@ -1,4 +1,4 @@
-// npm run demo : lance VigieWeb avec des données FICTIVES (mode démo : aucun contrôle ni capture réels).
+// npm run demo : lance SuricateWEB avec des données FICTIVES (mode démo : aucun contrôle ni capture réels).
 // Aucune donnée n'est écrite dans ./data : tout vit dans un dossier temporaire, supprimé à l'arrêt.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { seedDemo, DEMO_USER, DEMO_PASSWORD } from './demo-data.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = process.env.PORT || '3100';
-const dataDir = mkdtempSync(join(tmpdir(), 'vigieweb-demo-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'suricateweb-demo-'));
 
 console.log('Préparation des données fictives…');
 const fake = await startFakeSites();
@@ -19,11 +19,11 @@ await fake.close();
 
 // Le serveur lit ses identifiants dans un .env : on lui en fournit un jetable, hors du projet.
 const envFile = join(dataDir, '.env');
-writeFileSync(envFile, `VIGIE_USER=${DEMO_USER}\nVIGIE_PASSWORD=${DEMO_PASSWORD}\n`);
+writeFileSync(envFile, `SURICATE_USER=${DEMO_USER}\nSURICATE_PASSWORD=${DEMO_PASSWORD}\n`);
 
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(ROOT, 'server.js')], {
   stdio: 'inherit',
-  env: { ...process.env, DATA_DIR: dataDir, ENV_FILE: envFile, PORT, HOST: '127.0.0.1', VIGIE_DEMO: '1' },
+  env: { ...process.env, DATA_DIR: dataDir, ENV_FILE: envFile, PORT, HOST: '127.0.0.1', SURICATE_DEMO: '1' },
 });
 console.log(`\n  Démo : http://127.0.0.1:${PORT}   identifiant « ${DEMO_USER} » · mot de passe « ${DEMO_PASSWORD} »\n  Ctrl+C pour arrêter (les données fictives sont alors supprimées).\n`);
 

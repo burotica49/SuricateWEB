@@ -124,7 +124,7 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
   // ── Réglages : Telegram « configuré » avec un faux jeton (jamais utilisé : aucun envoi en mode démo) ──
   await dbm.saveSettings({
     telegram: { token: `123456789:${'DEMO'.padEnd(35, '0')}`, chatId: '987654321', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true },
-    baseUrl: 'https://vigieweb.exemple-societe.example',
+    baseUrl: 'https://suricateweb.exemple-societe.example',
   });
 
   // ── Groupes et sites ──

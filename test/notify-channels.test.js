@@ -6,7 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-notify-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-notify-'));
 process.env.CHROME_PATH = '/nonexistent/chrome'; // aucune capture : on teste l'acheminement, pas la photo
 
 const sent = [];

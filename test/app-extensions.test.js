@@ -6,7 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-app-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-app-'));
 process.env.CHROME_PATH = '/nonexistent/chrome';
 
 const dbm = await import('../src/db.js');
@@ -65,12 +65,12 @@ const SITE = { url: 'http://127.0.0.1:9/', config: { checks: { dns: false, tls: 
 // ───────────── Valeurs par défaut du cœur ─────────────
 
 test('cœur : sans identifiants dans l\'environnement, l\'application refuse de démarrer', () => {
-  assert.throws(() => createApp({ env: {} }), /VIGIE_PASSWORD/);
-  assert.throws(() => createApp({ env: { VIGIE_PASSWORD: 'court' } }), /trop court/);
+  assert.throws(() => createApp({ env: {} }), /SURICATE_PASSWORD/);
+  assert.throws(() => createApp({ env: { SURICATE_PASSWORD: 'court' } }), /trop court/);
 });
 
 test('cœur : un compte, identifiants du .env, cookie de session ; tout est permis, aucune limite', async () => {
-  const { call } = await start({ env: { VIGIE_USER: 'patron', VIGIE_PASSWORD: 'motdepasse-solide' } });
+  const { call } = await start({ env: { SURICATE_USER: 'patron', SURICATE_PASSWORD: 'motdepasse-solide' } });
   assert.equal((await call('GET', '/api/auth')).json.authenticated, false);
   assert.equal((await call('GET', '/api/me')).status, 401);
   assert.equal((await call('POST', '/api/login', { body: { username: 'patron', password: 'faux' } })).status, 401);
@@ -89,7 +89,7 @@ test('cœur : un compte, identifiants du .env, cookie de session ; tout est perm
 });
 
 test('garde : toute route privée du cœur déclare une permission (une nouvelle route ne peut pas oublier de le faire)', async () => {
-  const { app } = await start({ env: { VIGIE_USER: 'u', VIGIE_PASSWORD: 'motdepasse-solide' } });
+  const { app } = await start({ env: { SURICATE_USER: 'u', SURICATE_PASSWORD: 'motdepasse-solide' } });
   const sans = app.routes().filter((r) => !r.public && !r.perm).map((r) => `${r.method} ${r.path}`);
   assert.deepEqual(sans, ['GET /api/me'], 'seule la lecture de sa propre identité n\'a pas de permission');
   const publiques = app.routes().filter((r) => r.public).map((r) => `${r.method} ${r.path}`).sort();
@@ -250,7 +250,7 @@ test('hooks : création, modification, suppression ; une erreur de hook n\'empê
 
 test('hooks : onStart / onStop encadrent la vie de l\'application', async () => {
   const seen = [];
-  const { app } = await start({ auth: fakeAuth(), hooks: { onStart: () => seen.push('start'), onStop: () => seen.push('stop') }, env: { TELEGRAM_POLL: '0', VIGIE_DEMO: '1' } });
+  const { app } = await start({ auth: fakeAuth(), hooks: { onStart: () => seen.push('start'), onStop: () => seen.push('stop') }, env: { TELEGRAM_POLL: '0', SURICATE_DEMO: '1' } });
   await app.startBackground();
   await app.stop();
   apps.pop();

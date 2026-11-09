@@ -1,7 +1,7 @@
-// VigieWeb — coque de l'application installable.
+// SuricateWEB — coque de l'application installable.
 // Le réseau prime : le cache ne sert que hors ligne, et jamais pour l'API, le flux d'événements ni les pages de statut.
 
-const CACHE = 'vigieweb-coque-1';
+const CACHE = 'suricateweb-coque-1';
 const SHELL = ['/', '/app.js', '/layout.js', '/style.css', '/favicon.svg', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {

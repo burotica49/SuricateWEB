@@ -4,7 +4,7 @@ import { watchInput } from './shared.js';
 
 export default function register({ route }) {
   route('GET', '/api/export', async (ctx) => {
-    ctx.headers['content-disposition'] = 'attachment; filename="vigie-sites.json"';
+    ctx.headers['content-disposition'] = 'attachment; filename="suricate-sites.json"';
     const groups = await ctx.data.listGroups();
     const nameOf = new Map(groups.map((g) => [g.id, g.name]));
     return {

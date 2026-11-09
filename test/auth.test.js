@@ -13,11 +13,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // ───────────── Unitaire ─────────────
 
 test('identifiants : obligatoires, 8 caractères minimum, identifiant « admin » par défaut', () => {
-  assert.match(readCredentials({}).error, /VIGIE_PASSWORD/);
-  assert.match(readCredentials({ VIGIE_USER: 'x' }).error, /VIGIE_PASSWORD/, 'un identifiant seul ne protège rien');
-  assert.match(readCredentials({ VIGIE_PASSWORD: 'court' }).error, /8 caractères/);
-  assert.deepEqual(readCredentials({ VIGIE_PASSWORD: 'longenough' }), { user: 'admin', password: 'longenough', defaultedUser: true });
-  assert.deepEqual(readCredentials({ VIGIE_USER: ' boss ', VIGIE_PASSWORD: 'longenough' }), { user: 'boss', password: 'longenough', defaultedUser: false });
+  assert.match(readCredentials({}).error, /SURICATE_PASSWORD/);
+  assert.match(readCredentials({ SURICATE_USER: 'x' }).error, /SURICATE_PASSWORD/, 'un identifiant seul ne protège rien');
+  assert.match(readCredentials({ SURICATE_PASSWORD: 'court' }).error, /8 caractères/);
+  assert.deepEqual(readCredentials({ SURICATE_PASSWORD: 'longenough' }), { user: 'admin', password: 'longenough', defaultedUser: true });
+  assert.deepEqual(readCredentials({ SURICATE_USER: ' boss ', SURICATE_PASSWORD: 'longenough' }), { user: 'boss', password: 'longenough', defaultedUser: false });
 });
 
 test('checkLogin : identifiant ET mot de passe exacts', () => {
@@ -41,10 +41,10 @@ const freePort = () => new Promise((resolve) => {
   });
 });
 
-/** Lance server.js avec un environnement maîtrisé (aucun VIGIE_* hérité du poste). */
-async function start({ envFile, env = {}, dataDir = mkdtempSync(join(tmpdir(), 'vigie-auth-')) } = {}) {
+/** Lance server.js avec un environnement maîtrisé (aucun SURICATE_* hérité du poste). */
+async function start({ envFile, env = {}, dataDir = mkdtempSync(join(tmpdir(), 'suricate-auth-')) } = {}) {
   const port = await freePort();
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(VIGIE_|DATA_DIR|PORT|HOST|ENV_FILE|TRUST_PROXY)/.test(k)));
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(SURICATE_|DATA_DIR|PORT|HOST|ENV_FILE|TRUST_PROXY)/.test(k)));
   const proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(ROOT, 'server.js')], {
     env: { ...clean, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, ENV_FILE: envFile || join(dataDir, 'absent.env'), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -72,7 +72,7 @@ async function start({ envFile, env = {}, dataDir = mkdtempSync(join(tmpdir(), '
 }
 
 const writeEnv = (content) => {
-  const f = join(mkdtempSync(join(tmpdir(), 'vigie-env-')), '.env');
+  const f = join(mkdtempSync(join(tmpdir(), 'suricate-env-')), '.env');
   writeFileSync(f, content);
   return f;
 };
@@ -85,12 +85,12 @@ test('sans identifiants : le serveur refuse de démarrer', async () => {
   const srv = await start();
   assert.equal(srv.ready, false);
   assert.equal(await srv.exited, 1);
-  assert.match(srv.out(), /VIGIE_PASSWORD/);
+  assert.match(srv.out(), /SURICATE_PASSWORD/);
   assert.match(srv.out(), /\.env/);
 });
 
 test('mot de passe trop court : refus de démarrer', async () => {
-  const srv = await start({ envFile: writeEnv('VIGIE_USER=boss\nVIGIE_PASSWORD=court\n') });
+  const srv = await start({ envFile: writeEnv('SURICATE_USER=boss\nSURICATE_PASSWORD=court\n') });
   assert.equal(srv.ready, false);
   assert.equal(await srv.exited, 1);
   assert.match(srv.out(), /8 caractères/);
@@ -98,7 +98,7 @@ test('mot de passe trop court : refus de démarrer', async () => {
 
 test('.env : identifiants lus, API protégée, connexion, session', async () => {
   // Guillemets et « # » dans le mot de passe : cas classique qui casse un .env mal parsé.
-  const srv = await start({ envFile: writeEnv('# commentaire\nVIGIE_USER=boss\nVIGIE_PASSWORD="pa ss#word-Solide1"\n') });
+  const srv = await start({ envFile: writeEnv('# commentaire\nSURICATE_USER=boss\nSURICATE_PASSWORD="pa ss#word-Solide1"\n') });
   try {
     assert.equal(srv.ready, true, srv.out());
     assert.match(srv.out(), /identifiant « boss »/);
@@ -118,7 +118,7 @@ test('.env : identifiants lus, API protégée, connexion, session', async () => 
 
     const ok = await loginCookie(srv, 'boss', 'pa ss#word-Solide1');
     assert.equal(ok.status, 200);
-    assert.match(ok.cookie, /^vigie_session=/);
+    assert.match(ok.cookie, /^suricate_session=/);
     assert.equal((await srv.api('/api/watches', { cookie: ok.cookie })).status, 200);
     assert.equal((await srv.api('/api/watches', { cookie: ok.cookie.slice(0, -3) + 'xyz' })).status, 401, 'cookie falsifié');
     assert.equal((await (await srv.api('/api/settings', { cookie: ok.cookie })).json()).authUser, 'boss');
@@ -135,13 +135,13 @@ test('.env : identifiants lus, API protégée, connexion, session', async () => 
 });
 
 test('changer le mot de passe invalide les sessions existantes', async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), 'vigie-auth-'));
-  const a = await start({ dataDir, envFile: writeEnv('VIGIE_USER=boss\nVIGIE_PASSWORD=ancien-mdp-1\n') });
+  const dataDir = mkdtempSync(join(tmpdir(), 'suricate-auth-'));
+  const a = await start({ dataDir, envFile: writeEnv('SURICATE_USER=boss\nSURICATE_PASSWORD=ancien-mdp-1\n') });
   const { cookie } = await loginCookie(a, 'boss', 'ancien-mdp-1');
   assert.equal((await a.api('/api/watches', { cookie })).status, 200);
   await a.stop();
 
-  const b = await start({ dataDir, envFile: writeEnv('VIGIE_USER=boss\nVIGIE_PASSWORD=nouveau-mdp-2\n') });
+  const b = await start({ dataDir, envFile: writeEnv('SURICATE_USER=boss\nSURICATE_PASSWORD=nouveau-mdp-2\n') });
   try {
     assert.equal((await b.api('/api/watches', { cookie })).status, 401, "l'ancienne session ne doit plus être valide");
     assert.equal((await loginCookie(b, 'boss', 'ancien-mdp-1')).status, 401);
@@ -152,30 +152,30 @@ test('changer le mot de passe invalide les sessions existantes', async () => {
 });
 
 test('variables d\'environnement prioritaires sur .env ; identifiant par défaut « admin »', async () => {
-  const srv = await start({ envFile: writeEnv('VIGIE_USER=depuis-fichier\nVIGIE_PASSWORD=depuis-fichier-1\n'), env: { VIGIE_USER: '', VIGIE_PASSWORD: 'depuis-docker-22' } });
+  const srv = await start({ envFile: writeEnv('SURICATE_USER=depuis-fichier\nSURICATE_PASSWORD=depuis-fichier-1\n'), env: { SURICATE_USER: '', SURICATE_PASSWORD: 'depuis-docker-22' } });
   try {
     assert.equal(srv.ready, true, srv.out());
     assert.equal((await loginCookie(srv, 'depuis-fichier', 'depuis-fichier-1')).status, 401, 'le .env ne doit pas écraser les variables déjà définies');
-    assert.equal((await loginCookie(srv, 'admin', 'depuis-docker-22')).status, 200, 'VIGIE_USER vide → « admin »');
-    assert.match(srv.out(), /VIGIE_USER n'est pas défini/);
+    assert.equal((await loginCookie(srv, 'admin', 'depuis-docker-22')).status, 200, 'SURICATE_USER vide → « admin »');
+    assert.match(srv.out(), /SURICATE_USER n'est pas défini/);
   } finally {
     await srv.stop();
   }
 });
 
 test('.env : DATA_DIR est pris en compte (chargé avant la base)', async () => {
-  const dataDir = mkdtempSync(join(tmpdir(), 'vigie-data-'));
-  const srv = await start({ envFile: writeEnv(`VIGIE_PASSWORD=motdepasse-ok1\nDATA_DIR=${dataDir}\n`), env: { DATA_DIR: undefined }, dataDir: mkdtempSync(join(tmpdir(), 'vigie-unused-')) });
+  const dataDir = mkdtempSync(join(tmpdir(), 'suricate-data-'));
+  const srv = await start({ envFile: writeEnv(`SURICATE_PASSWORD=motdepasse-ok1\nDATA_DIR=${dataDir}\n`), env: { DATA_DIR: undefined }, dataDir: mkdtempSync(join(tmpdir(), 'suricate-unused-')) });
   try {
     assert.equal(srv.ready, true, srv.out());
-    assert.equal(existsSync(join(dataDir, 'vigie.db')), true);
+    assert.equal(existsSync(join(dataDir, 'suricate.db')), true);
   } finally {
     await srv.stop();
   }
 });
 
 test('limitation des tentatives de connexion (429 après 5 essais)', async () => {
-  const srv = await start({ envFile: writeEnv('VIGIE_USER=boss\nVIGIE_PASSWORD=motdepasse-ok1\n') });
+  const srv = await start({ envFile: writeEnv('SURICATE_USER=boss\nSURICATE_PASSWORD=motdepasse-ok1\n') });
   try {
     for (let i = 0; i < 5; i++) assert.equal((await loginCookie(srv, 'boss', 'faux-' + i)).status, 401);
     assert.equal((await loginCookie(srv, 'boss', 'faux-6')).status, 429);
@@ -186,7 +186,7 @@ test('limitation des tentatives de connexion (429 après 5 essais)', async () =>
 });
 
 test('derrière un proxy HTTPS : cookie Secure, et limitation par IP réelle', async () => {
-  const srv = await start({ envFile: writeEnv('VIGIE_USER=boss\nVIGIE_PASSWORD=motdepasse-ok1\n'), env: { TRUST_PROXY: '1' } });
+  const srv = await start({ envFile: writeEnv('SURICATE_USER=boss\nSURICATE_PASSWORD=motdepasse-ok1\n'), env: { TRUST_PROXY: '1' } });
   try {
     const r = await srv.api('/api/login', { body: { username: 'boss', password: 'motdepasse-ok1' }, headers: { 'x-forwarded-proto': 'https', 'x-forwarded-for': '203.0.113.9' } });
     assert.match(r.headers.get('set-cookie'), /; Secure/);

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-cms-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-cms-'));
 
 const { normalizeConfig, createWatch, getWatch } = await import('../src/db.js');
 const { cmsEndpoint, cmsConfigError, parseCmsReport, pollCms } = await import('../src/cms.js');
@@ -34,19 +34,19 @@ test('config CMS : défauts, domaine seul, chemin invalide', () => {
 test('adresse du plugin : origine du site, chemin fixe', () => {
   assert.equal(
     cmsEndpoint('https://www.exemple.fr/page', { type: 'wordpress', path: '' }),
-    'https://www.exemple.fr/?rest_route=/vigieweb/v1/status',
+    'https://www.exemple.fr/?rest_route=/suricateweb/v1/status',
   );
   assert.equal(
     cmsEndpoint('https://shop.exemple.fr/fr/', { type: 'prestashop', path: 'boutique' }),
-    'https://shop.exemple.fr/boutique/modules/vigieweb/status.php',
+    'https://shop.exemple.fr/boutique/modules/suricateweb/status.php',
   );
   assert.equal(
     cmsEndpoint('https://exemple.fr/', { type: 'wordpress', path: '' }, 'integrity'),
-    'https://exemple.fr/?rest_route=/vigieweb/v1/integrity',
+    'https://exemple.fr/?rest_route=/suricateweb/v1/integrity',
   );
   assert.equal(
     cmsEndpoint('https://shop.exemple.fr/', { type: 'prestashop', path: '' }, 'integrity'),
-    'https://shop.exemple.fr/modules/vigieweb/status.php?scope=integrity',
+    'https://shop.exemple.fr/modules/suricateweb/status.php?scope=integrity',
   );
   assert.equal(cmsEndpoint('https://exemple.fr/', { type: 'wordpress', path: '../x' }), null);
   assert.equal(cmsEndpoint('ftp://exemple.fr/', { type: 'wordpress', path: '' }), null);
@@ -75,12 +75,12 @@ test('réponse du plugin : versions bornées, CMS inattendu rejeté', () => {
   assert.throws(() => parseCmsReport('non', 'wordpress'), SyntaxError);
 });
 
-test('zip des plugins : dossier vigieweb/ et sources en clair', () => {
+test('zip des plugins : dossier suricateweb/ et sources en clair', () => {
   for (const dir of ['wordpress', 'prestashop']) {
-    const buf = zipDirectory(join(ROOT, 'plugins', dir, 'vigieweb'), 'vigieweb');
+    const buf = zipDirectory(join(ROOT, 'plugins', dir, 'suricateweb'), 'suricateweb');
     assert.equal(buf.readUInt32LE(0), 0x04034b50);
     const text = buf.toString('utf8');
-    assert.match(text, /vigieweb\/vigieweb\.php/);
+    assert.match(text, /suricateweb\/suricateweb\.php/);
     assert.match(text, /PHP_VERSION/);
   }
 });
@@ -106,7 +106,7 @@ test('relevé : jeton accepté, redirection vers un autre domaine refusée, JSON
       return;
     }
     const auth = req.headers.authorization || '';
-    const alt = req.headers['x-vigie-token'] || '';
+    const alt = req.headers['x-suricate-token'] || '';
     if (auth !== `Bearer ${TOKEN}` && alt !== TOKEN) {
       res.writeHead(401);
       res.end('no');

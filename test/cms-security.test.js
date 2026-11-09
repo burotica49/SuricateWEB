@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Sécurité du CMS : intégrité des fichiers et comptes administrateurs (plugin 1.1).
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-cmssec-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-cmssec-'));
 const sent = [];
 const fakeTelegram = http.createServer((req, res) => {
   let b = '';

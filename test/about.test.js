@@ -16,7 +16,7 @@ test('package.json : champs utilisés par la barre latérale', () => {
   const licence = readFileSync(new URL('../LICENSE', import.meta.url), 'utf8');
   assert.match(licence, /Apache License\s+Version 2\.0, January 2004/, 'LICENSE contient le texte Apache 2.0');
   assert.equal(licence.includes('MIT License'), false, "plus de trace de l'ancienne licence");
-  assert.match(readFileSync(new URL('../NOTICE', import.meta.url), 'utf8'), /^VigieWeb\nCopyright 2026 /);
+  assert.match(readFileSync(new URL('../NOTICE', import.meta.url), 'utf8'), /^SuricateWEB\nCopyright 2026 /);
 });
 
 test('API : version et liens dérivés de package.json, réservés aux utilisateurs connectés', async () => {
@@ -45,7 +45,7 @@ test('interface : version à côté du nom, liens GitHub et documentation en pie
       const order = [...document.querySelectorAll('.side-actions > *')].map((e) => e.tagName.toLowerCase() + ':' + (e.getAttribute('aria-label') || '').split(' ')[0]);
       return { name: brand.querySelector('.brand-name').firstChild.textContent, ver: brand.querySelector('.ver')?.textContent, verTitle: brand.querySelector('.ver')?.title, sub: brand.querySelector('small').textContent, links, order };
     })()`);
-    assert.equal(ui.name, 'VigieWeb');
+    assert.equal(ui.name, 'SuricateWEB');
     assert.equal(ui.ver, `v${pkg.version}`);
     assert.equal(ui.verTitle, `Version ${pkg.version}`);
     assert.equal(ui.sub, 'Surveillance de sites');

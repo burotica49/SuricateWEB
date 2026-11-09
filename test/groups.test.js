@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 // Base « d'une ancienne version » : table watches SANS group_id ni position, avec 3 sites déjà là.
-const dir = mkdtempSync(join(tmpdir(), 'vigie-groups-'));
+const dir = mkdtempSync(join(tmpdir(), 'suricate-groups-'));
 process.env.DATA_DIR = dir;
 {
-  const old = new DatabaseSync(join(dir, 'vigie.db'));
+  const old = new DatabaseSync(join(dir, 'suricate.db'));
   old.exec(`CREATE TABLE watches (
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, interval_min INTEGER NOT NULL DEFAULT 15,
     enabled INTEGER NOT NULL DEFAULT 1, tags TEXT NOT NULL DEFAULT '[]', config TEXT NOT NULL DEFAULT '{}', state TEXT NOT NULL DEFAULT '{}',

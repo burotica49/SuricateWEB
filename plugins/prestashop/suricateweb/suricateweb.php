@@ -3,64 +3,64 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-class Vigieweb extends Module
+class Suricateweb extends Module
 {
     public function __construct()
     {
-        $this->name = 'vigieweb';
+        $this->name = 'suricateweb';
         $this->tab = 'administration';
-        $this->version = '1.1.0';
-        $this->author = 'VigieWeb';
+        $this->version = '1.2.0';
+        $this->author = 'SuricateWEB';
         $this->need_instance = 0;
         $this->bootstrap = true;
         parent::__construct();
-        $this->displayName = $this->l('VigieWeb');
-        $this->description = $this->l('Indique à VigieWeb la version de PHP, les mises à jour disponibles, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers d’images et de téléversements. VigieWeb interroge la boutique ; le module n’envoie rien de lui-même.');
+        $this->displayName = $this->l('SuricateWEB');
+        $this->description = $this->l('Indique à SuricateWEB la version de PHP, les mises à jour disponibles, le nombre d’administrateurs et les fichiers PHP suspects dans les dossiers d’images et de téléversements. SuricateWEB interroge la boutique ; le module n’envoie rien de lui-même.');
         $this->ps_versions_compliancy = array('min' => '1.7.6.0', 'max' => _PS_VERSION_);
     }
 
     public function install()
     {
         return parent::install()
-            && Configuration::updateValue('VIGIEWEB_TOKEN', '')
-            && Configuration::updateValue('VIGIEWEB_FORCE_AT', '0')
-            && Configuration::updateValue('VIGIEWEB_CORE', '');
+            && Configuration::updateValue('SURICATEWEB_TOKEN', '')
+            && Configuration::updateValue('SURICATEWEB_FORCE_AT', '0')
+            && Configuration::updateValue('SURICATEWEB_CORE', '');
     }
 
     public function uninstall()
     {
-        Configuration::deleteByName('VIGIEWEB_TOKEN');
-        Configuration::deleteByName('VIGIEWEB_FORCE_AT');
-        Configuration::deleteByName('VIGIEWEB_CORE');
+        Configuration::deleteByName('SURICATEWEB_TOKEN');
+        Configuration::deleteByName('SURICATEWEB_FORCE_AT');
+        Configuration::deleteByName('SURICATEWEB_CORE');
         return parent::uninstall();
     }
 
     public function getContent()
     {
         $out = '';
-        if (Tools::isSubmit('submitVigieweb')) {
-            $token = trim((string) Tools::getValue('VIGIEWEB_TOKEN'));
+        if (Tools::isSubmit('submitSuricateweb')) {
+            $token = trim((string) Tools::getValue('SURICATEWEB_TOKEN'));
             if ($token !== '' && strlen($token) < 16) {
                 $out .= $this->displayError($this->l('Le jeton doit contenir au moins 16 caractères.'));
             } else {
-                Configuration::updateValue('VIGIEWEB_TOKEN', $token);
-                $out .= $this->displayConfirmation($this->l('Jeton enregistré. VigieWeb peut maintenant lire les versions.'));
+                Configuration::updateValue('SURICATEWEB_TOKEN', $token);
+                $out .= $this->displayConfirmation($this->l('Jeton enregistré. SuricateWEB peut maintenant lire les versions.'));
             }
         }
-        $token = htmlspecialchars((string) Configuration::get('VIGIEWEB_TOKEN'), ENT_QUOTES, 'UTF-8');
+        $token = htmlspecialchars((string) Configuration::get('SURICATEWEB_TOKEN'), ENT_QUOTES, 'UTF-8');
         $action = htmlspecialchars((string) $_SERVER['REQUEST_URI'], ENT_QUOTES, 'UTF-8');
         return $out . '<form method="post" action="' . $action . '" class="defaultForm form-horizontal">
             <div class="panel">
-                <div class="panel-heading">' . $this->l('VigieWeb') . '</div>
+                <div class="panel-heading">' . $this->l('SuricateWEB') . '</div>
                 <div class="form-group">
                     <label class="control-label col-lg-3">' . $this->l('Jeton') . '</label>
                     <div class="col-lg-6">
-                        <input type="text" name="VIGIEWEB_TOKEN" value="' . $token . '" class="form-control" autocomplete="off" spellcheck="false">
-                        <p class="help-block">' . $this->l('Collez le jeton affiché dans VigieWeb, sur la fiche du site.') . '</p>
+                        <input type="text" name="SURICATEWEB_TOKEN" value="' . $token . '" class="form-control" autocomplete="off" spellcheck="false">
+                        <p class="help-block">' . $this->l('Collez le jeton affiché dans SuricateWEB, sur la fiche du site.') . '</p>
                     </div>
                 </div>
                 <div class="panel-footer">
-                    <button type="submit" name="submitVigieweb" class="btn btn-default pull-right"><i class="process-icon-save"></i> ' . $this->l('Enregistrer') . '</button>
+                    <button type="submit" name="submitSuricateweb" class="btn btn-default pull-right"><i class="process-icon-save"></i> ' . $this->l('Enregistrer') . '</button>
                 </div>
             </div>
         </form>';
@@ -68,7 +68,7 @@ class Vigieweb extends Module
 
     public function emitStatus()
     {
-        $stored = (string) Configuration::get('VIGIEWEB_TOKEN');
+        $stored = (string) Configuration::get('SURICATEWEB_TOKEN');
         $given = $this->presentedToken();
         if ($stored === '' || $given === '' || strlen($stored) !== strlen($given) || !hash_equals($stored, $given)) {
             http_response_code(401);
@@ -103,23 +103,23 @@ class Vigieweb extends Module
         if (preg_match('/Bearer\s+(\S+)/i', $auth, $m)) {
             return $m[1];
         }
-        if (isset($_SERVER['HTTP_X_VIGIE_TOKEN'])) {
-            return trim((string) $_SERVER['HTTP_X_VIGIE_TOKEN']);
+        if (isset($_SERVER['HTTP_X_SURICATE_TOKEN'])) {
+            return trim((string) $_SERVER['HTTP_X_SURICATE_TOKEN']);
         }
         return '';
     }
 
     private function wantsRefresh()
     {
-        $flag = isset($_SERVER['HTTP_X_VIGIE_REFRESH']) ? (string) $_SERVER['HTTP_X_VIGIE_REFRESH'] : '';
+        $flag = isset($_SERVER['HTTP_X_SURICATE_REFRESH']) ? (string) $_SERVER['HTTP_X_SURICATE_REFRESH'] : '';
         if ($flag !== '1') {
             return false;
         }
-        $last = (int) Configuration::get('VIGIEWEB_FORCE_AT');
+        $last = (int) Configuration::get('SURICATEWEB_FORCE_AT');
         if ($last && (time() - $last) < 15 * 60) {
             return false;
         }
-        Configuration::updateValue('VIGIEWEB_FORCE_AT', (string) time());
+        Configuration::updateValue('SURICATEWEB_FORCE_AT', (string) time());
         return true;
     }
 
@@ -139,7 +139,7 @@ class Vigieweb extends Module
 
     /**
      * Administrateurs actifs (profil SuperAdmin) : un compteur seulement. La table des employés ne date pas
-     * leur création : VigieWeb détecte donc un nouvel administrateur à l'augmentation du compteur.
+     * leur création : SuricateWEB détecte donc un nouvel administrateur à l'augmentation du compteur.
      */
     private function adminReport()
     {
@@ -231,7 +231,7 @@ class Vigieweb extends Module
 
     private function coreAvailable($refresh)
     {
-        $cache = json_decode((string) Configuration::get('VIGIEWEB_CORE'), true);
+        $cache = json_decode((string) Configuration::get('SURICATEWEB_CORE'), true);
         $fresh = is_array($cache) && (time() - (int) (isset($cache['at']) ? $cache['at'] : 0) < 12 * 3600);
         if ($fresh && !$refresh) {
             $version = isset($cache['version']) && $cache['version'] !== '' ? (string) $cache['version'] : null;
@@ -254,7 +254,7 @@ class Vigieweb extends Module
             $version = isset($cache['version']) && $cache['version'] !== '' ? (string) $cache['version'] : null;
             return array($version, true);
         }
-        Configuration::updateValue('VIGIEWEB_CORE', json_encode(array('at' => time(), 'version' => $version, 'known' => $known)));
+        Configuration::updateValue('SURICATEWEB_CORE', json_encode(array('at' => time(), 'version' => $version, 'known' => $known)));
         return array($version, $known);
     }
 
@@ -267,13 +267,13 @@ class Vigieweb extends Module
                 CURLOPT_TIMEOUT => 8,
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_MAXREDIRS => 3,
-                CURLOPT_USERAGENT => 'VigieWeb',
+                CURLOPT_USERAGENT => 'SuricateWEB',
             ));
             $body = curl_exec($ch);
             curl_close($ch);
             return is_string($body) && $body !== '' ? $body : null;
         }
-        $ctx = stream_context_create(array('http' => array('timeout' => 8, 'header' => "User-Agent: VigieWeb\r\n")));
+        $ctx = stream_context_create(array('http' => array('timeout' => 8, 'header' => "User-Agent: SuricateWEB\r\n")));
         $body = @file_get_contents($url, false, $ctx);
         return is_string($body) && $body !== '' ? $body : null;
     }

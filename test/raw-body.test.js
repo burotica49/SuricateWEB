@@ -8,7 +8,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-raw-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-raw-'));
 process.env.CHROME_PATH = '/nonexistent/chrome';
 
 const dbm = await import('../src/db.js');

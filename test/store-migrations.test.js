@@ -12,7 +12,7 @@ const dirs = [];
 test.after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
 const fresh = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'vigie-mig-'));
+  const dir = mkdtempSync(join(tmpdir(), 'suricate-mig-'));
   dirs.push(dir);
   return openSqlite(join(dir, 'm.db'));
 };

@@ -9,10 +9,10 @@ const running = new Set();
 const queue = [];
 
 /**
- * Mode démo (VIGIE_DEMO=1) : l'instance affiche des données fictives (captures d'écran de la documentation, essai à blanc).
+ * Mode démo (SURICATE_DEMO=1) : l'instance affiche des données fictives (captures d'écran de la documentation, essai à blanc).
  * Aucun contrôle ni capture ne part sur le réseau, et rien ne vient modifier les données de démonstration.
  */
-export const DEMO = process.env.VIGIE_DEMO === '1';
+export const DEMO = process.env.SURICATE_DEMO === '1';
 export const DEMO_MESSAGE = 'Mode démo : les contrôles sont désactivés (données fictives).';
 
 /** Lance un contrôle (immédiat ou en file). Un même site n'est jamais contrôlé deux fois en parallèle. */

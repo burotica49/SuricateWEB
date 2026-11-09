@@ -175,7 +175,7 @@ export async function capture(url, { width = 1280, height = 800, fullPage = fals
       throw new Error(e.message);
     }
   }
-  const profile = await mkdtemp(join(tmpdir(), 'vigie-chrome-'));
+  const profile = await mkdtemp(join(tmpdir(), 'suricate-chrome-'));
   const args = [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
     '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
@@ -378,7 +378,7 @@ async function doCapture(id, kind) {
   const w = await getWatch(id);
   if (!w) return { error: 'Site introuvable' };
   // Mode démo (voir scheduler.js) : on ne touche ni au réseau ni aux données de démonstration.
-  if (process.env.VIGIE_DEMO === '1') return { error: 'Mode démo : les captures sont désactivées (données fictives).' };
+  if (process.env.SURICATE_DEMO === '1') return { error: 'Mode démo : les captures sont désactivées (données fictives).' };
   const sc = w.config.screenshot;
   const now = Date.now();
   try {

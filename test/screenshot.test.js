@@ -5,10 +5,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-shot-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-shot-'));
 // Dossier temporaire propre à ce test : les profils Chrome y sont créés, ce qui permet de vérifier qu'aucun ne traîne
-// SANS être trompé par un autre VigieWeb qui capturerait au même moment sur la machine.
-const TEST_TMP = mkdtempSync(join(tmpdir(), 'vigie-tmp-'));
+// SANS être trompé par un autre SuricateWEB qui capturerait au même moment sur la machine.
+const TEST_TMP = mkdtempSync(join(tmpdir(), 'suricate-tmp-'));
 process.env.TMPDIR = TEST_TMP;
 
 // Faux serveur Telegram : enregistre le texte envoyé ET les photos (multipart).
@@ -68,15 +68,15 @@ test('Chrome réel : capture JPEG + miniature, erreurs lisibles, aucun processus
     const full = await shots.capture(url, { width: 800, height: 600, fullPage: true, settleMs: 200 });
     assert.ok(full.height > 2000 && full.height <= 5000, `page entière : ${full.height}px`);
 
-    await assert.rejects(shots.capture('http://domaine-inexistant-vigie.invalid/', { settleMs: 0 }), /introuvable \(DNS\)/);
+    await assert.rejects(shots.capture('http://domaine-inexistant-suricate.invalid/', { settleMs: 0 }), /introuvable \(DNS\)/);
     await assert.rejects(shots.capture(`http://127.0.0.1:${site.address().port + 1}/`, { settleMs: 0 }), /refusée/);
   } finally {
     site.close();
   }
   const { execSync } = await import('node:child_process');
   const { readdirSync } = await import('node:fs');
-  assert.equal(execSync(`pgrep -f '${TEST_TMP}/vigie-chrome-' || true`).toString().trim(), '', 'aucun Chrome orphelin');
-  assert.deepEqual(readdirSync(TEST_TMP).filter((n) => n.startsWith('vigie-chrome-')), [], 'aucun profil temporaire laissé');
+  assert.equal(execSync(`pgrep -f '${TEST_TMP}/suricate-chrome-' || true`).toString().trim(), '', 'aucun Chrome orphelin');
+  assert.deepEqual(readdirSync(TEST_TMP).filter((n) => n.startsWith('suricate-chrome-')), [], 'aucun profil temporaire laissé');
 });
 
 // Cas réel (burotica.fr, WP Rocket) : un site dont le JavaScript ne démarre qu'à la 1re interaction d'un visiteur

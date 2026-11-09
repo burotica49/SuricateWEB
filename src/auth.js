@@ -7,24 +7,24 @@ const digest = (s) => createHash('sha256').update(String(s)).digest();
 export const MIN_PASSWORD = 8;
 
 export const MISSING_HELP = `
-  ✖  VigieWeb est protégé par identifiant et mot de passe, mais ils ne sont pas définis.
+  ✖  SuricateWEB est protégé par identifiant et mot de passe, mais ils ne sont pas définis.
 
      Créez un fichier .env à la racine du projet (modèle : .env.example) :
 
-         VIGIE_USER=admin
-         VIGIE_PASSWORD=un-mot-de-passe-solide
+         SURICATE_USER=admin
+         SURICATE_PASSWORD=un-mot-de-passe-solide
 
      ou définissez ces deux variables d'environnement (Docker, Dokploy…).
      Générer un mot de passe :  node -e "console.log(require('crypto').randomBytes(18).toString('base64url'))"
 `;
 
-/** Lit VIGIE_USER / VIGIE_PASSWORD. Retourne { user, password, defaultedUser } ou { error }. */
+/** Lit SURICATE_USER / SURICATE_PASSWORD. Retourne { user, password, defaultedUser } ou { error }. */
 export function readCredentials(env = process.env) {
-  const password = env.VIGIE_PASSWORD || '';
-  const user = (env.VIGIE_USER || '').trim();
+  const password = env.SURICATE_PASSWORD || '';
+  const user = (env.SURICATE_USER || '').trim();
   if (!password) return { error: MISSING_HELP };
-  if (password.length < MIN_PASSWORD) return { error: `\n  ✖  VIGIE_PASSWORD est trop court : ${MIN_PASSWORD} caractères minimum.\n` };
-  // Compatibilité : un déploiement qui ne définissait que VIGIE_PASSWORD garde l'identifiant « admin ».
+  if (password.length < MIN_PASSWORD) return { error: `\n  ✖  SURICATE_PASSWORD est trop court : ${MIN_PASSWORD} caractères minimum.\n` };
+  // Compatibilité : un déploiement qui ne définissait que SURICATE_PASSWORD garde l'identifiant « admin ».
   return { user: user || 'admin', password, defaultedUser: !user };
 }
 

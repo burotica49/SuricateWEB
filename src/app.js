@@ -1,4 +1,4 @@
-// VigieWeb — l'application : serveur HTTP + API, assemblés par createApp().
+// SuricateWEB — l'application : serveur HTTP + API, assemblés par createApp().
 //
 // Le cœur open source l'appelle avec les valeurs par défaut (un compte, identifiants du .env, aucune limite).
 // La version hébergée l'appelle avec ses propres extensions : comptes, droits, quotas, routes, canaux de notification.
@@ -17,7 +17,7 @@
 //                     — informatifs : une erreur y est journalisée, jamais renvoyée au client
 //     notifier,       { resolveChannels(site, alertes, réglages) } : canaux de notification (src/notify.js)
 //     netGuard,       garde réseau (src/net-guard.js) : createNetGuard({ enabled, allowedPorts, allowHosts }) ou ses options.
-//                     Défaut : celle de l'environnement (VIGIE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
+//                     Défaut : celle de l'environnement (SURICATE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
 //     scheduler,      { concurrency, pickDue(now, limite) } : planificateur (src/extensions.js)
 //     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true })
 //     root,           racine du cœur (public/, plugins/, package.json) ; défaut : celle de ce dépôt
@@ -206,7 +206,7 @@ export function createApp({
     /** Planificateur et lecteur des boutons Telegram. TELEGRAM_POLL=0 désactive le second ; inutile en mode démo. */
     startBackground() {
       schedulerTimer = startScheduler();
-      if (env.VIGIE_DEMO !== '1' && env.TELEGRAM_POLL !== '0') {
+      if (env.SURICATE_DEMO !== '1' && env.TELEGRAM_POLL !== '0') {
         poller = startTelegramPoller({
           settings: () => getSettings().telegram,
           onRead: async (watchId, upTo) => {

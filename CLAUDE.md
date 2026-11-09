@@ -1,4 +1,4 @@
-# VigieWeb — consignes pour Claude
+# SuricateWEB — consignes pour Claude
 
 ## Version
 
@@ -7,7 +7,7 @@
 - correctif : `x.y.Z` ;
 - nouvelle fonction : `x.Y.0`.
 
-Si le changement touche un plugin (`plugins/`), mettre aussi à jour sa version (en-tête du plugin WordPress, `config.xml` et `vigieweb.php` du module PrestaShop) et régénérer les archives `plugins/*.zip`.
+Si le changement touche un plugin (`plugins/`), mettre aussi à jour sa version (en-tête du plugin WordPress, `config.xml` et `suricateweb.php` du module PrestaShop) et régénérer les archives `plugins/*.zip`.
 
 ## Tests
 

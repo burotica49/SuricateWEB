@@ -14,14 +14,14 @@ test.after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })
 adapterContract({
   name: 'sqlite',
   open: () => {
-    const dir = mkdtempSync(join(tmpdir(), 'vigie-store-'));
+    const dir = mkdtempSync(join(tmpdir(), 'suricate-store-'));
     dirs.push(dir);
     return openSqlite(join(dir, 'test.db'));
   },
 });
 
 test('adaptateur sqlite : clés étrangères actives, suppression en cascade', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'vigie-store-'));
+  const dir = mkdtempSync(join(tmpdir(), 'suricate-store-'));
   dirs.push(dir);
   const db = openSqlite(join(dir, 'fk.db'));
   db.exec('CREATE TABLE p (id INTEGER PRIMARY KEY); CREATE TABLE c (id INTEGER PRIMARY KEY, p INTEGER NOT NULL REFERENCES p(id) ON DELETE CASCADE)');
@@ -35,7 +35,7 @@ test('adaptateur sqlite : clés étrangères actives, suppression en cascade', (
 });
 
 test('adaptateur sqlite : le cache d\'instructions ne grossit pas sans fin (SQL dynamique)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'vigie-store-'));
+  const dir = mkdtempSync(join(tmpdir(), 'suricate-store-'));
   dirs.push(dir);
   const db = openSqlite(join(dir, 'cache.db'));
   db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)');
@@ -45,7 +45,7 @@ test('adaptateur sqlite : le cache d\'instructions ne grossit pas sans fin (SQL 
 });
 
 test('adaptateur sqlite : deux transactions simultanées passent l\'une après l\'autre (pas de BEGIN imbriqué)', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'vigie-store-'));
+  const dir = mkdtempSync(join(tmpdir(), 'suricate-store-'));
   dirs.push(dir);
   const db = openSqlite(join(dir, 'tx.db'));
   db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)');

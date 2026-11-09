@@ -93,7 +93,7 @@ export function buildMessage(watch, alerts, settings, { link = true } = {}) {
     .join('\n\n');
   let msg = `${head}\n\n${body}\n\n🔗 ${esc(watch.url)}`;
   const base = (settings.baseUrl || '').replace(/\/+$/, '');
-  if (link && /^https?:\/\//.test(base)) msg += `\n<a href="${esc(base)}/#/sites/${watch.id}">Ouvrir dans VigieWeb</a>`;
+  if (link && /^https?:\/\//.test(base)) msg += `\n<a href="${esc(base)}/#/sites/${watch.id}">Ouvrir dans SuricateWEB</a>`;
   return msg;
 }
 
@@ -102,7 +102,7 @@ export function buildMessage(watch, alerts, settings, { link = true } = {}) {
 /** Adresses que Telegram refuse dans un bouton (ou qui ne servent à rien depuis un téléphone). */
 const NON_PUBLIC = /^(localhost|.+\.(localhost|local|internal|lan|home)|0\.0\.0\.0|127\.[\d.]+|10\.[\d.]+|192\.168\.[\d.]+|172\.(1[6-9]|2\d|3[01])\.[\d.]+|169\.254\.[\d.]+|\[.*\])$/i;
 
-/** Adresse de la page du site dans VigieWeb, si l'adresse publique de VigieWeb est utilisable dans un bouton. */
+/** Adresse de la page du site dans SuricateWEB, si l'adresse publique de SuricateWEB est utilisable dans un bouton. */
 export function siteLink(baseUrl, watchId) {
   let u;
   try {
@@ -115,7 +115,7 @@ export function siteLink(baseUrl, watchId) {
 }
 
 /**
- * Une ligne de boutons : « Marquer comme lu » (reçu par VigieWeb, voir telegram-poll.js) et « Ouvrir dans VigieWeb ».
+ * Une ligne de boutons : « Marquer comme lu » (reçu par SuricateWEB, voir telegram-poll.js) et « Ouvrir dans SuricateWEB ».
  * `callback_data` (64 octets au plus) : « lu:<site>:<dernière alerte du message> ».
  * @returns {{ row: object[], link: boolean }} `link` : le lien est porté par un bouton (inutile de le répéter dans le texte).
  */
@@ -126,7 +126,7 @@ export function buildKeyboard(watch, alerts, settings) {
   const ids = alerts.filter((a) => a.severity !== 'recovery' && a.id).map((a) => a.id);
   if (ids.length) row.push({ text: '✓ Marquer comme lu', callback_data: `lu:${watch.id}:${Math.max(...ids)}` });
   const url = siteLink(settings.baseUrl, watch.id);
-  if (url) row.push({ text: 'Ouvrir dans VigieWeb', url });
+  if (url) row.push({ text: 'Ouvrir dans SuricateWEB', url });
   return { row, link: !!url };
 }
 

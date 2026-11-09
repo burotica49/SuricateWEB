@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // Environnement isolé : base temporaire + faux serveur Telegram.
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-'));
 
 const sent = [];
 const fakeTelegram = http.createServer((req, res) => {
@@ -15,7 +15,7 @@ const fakeTelegram = http.createServer((req, res) => {
   req.on('end', () => {
     if (req.url.endsWith('/sendMessage')) sent.push(JSON.parse(b));
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ ok: true, result: req.url.endsWith('/getMe') ? { username: 'vigie_test_bot' } : {} }));
+    res.end(JSON.stringify({ ok: true, result: req.url.endsWith('/getMe') ? { username: 'suricate_test_bot' } : {} }));
   });
 });
 await new Promise((r) => fakeTelegram.listen(0, '127.0.0.1', r));

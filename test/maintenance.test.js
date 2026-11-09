@@ -5,7 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-maint-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-maint-'));
 const sent = [];
 const fakeTelegram = http.createServer((req, res) => {
   let b = '';

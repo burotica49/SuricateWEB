@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'vigie-dom-'));
+process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'suricate-dom-'));
 
 const dbm = await import('../src/db.js');
 const { runCheck, hooks } = await import('../src/checker.js');

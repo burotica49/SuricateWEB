@@ -239,12 +239,16 @@ Dix tests : identifiants, paramètres et `NULL`, nombres, octets, `"end"`, upser
 - Le cœur occupe les numéros 1 à 999 ; **les migrations d'extension portent des numéros ≥ 1000**.
 - Chaque migration a une fonction par moteur utilisé (`sqlite`, `postgres`) ; une migration publiée ne change plus.
 - Elles s'appliquent dans l'ordre, chacune dans sa transaction, au démarrage.
-- **Pas de verrou entre processus** : si plusieurs processus démarrent en même temps sur la même base PostgreSQL, ils peuvent appliquer la même migration. Dans votre adaptateur, prendre un verrou consultatif (`pg_advisory_lock`) autour de la migration, ou lancer les migrations dans une étape de déploiement séparée.
+- **Pas de verrou entre processus** : si plusieurs processus démarrent en même temps sur la même base PostgreSQL, ils peuvent appliquer la même migration. Prendre un verrou consultatif (`pg_advisory_lock`) autour de la migration, dans le point d'entrée et AVANT d'importer le cœur : le migrateur de `db.js` ne trouve alors plus rien à faire. La version hébergée le fait (`migrateLocked`, dépôt privé).
 - Pas de table `accounts` dans le cœur : la vôtre en créera une (clé étrangère facultative depuis `watches.account_id` et `site_groups.account_id`, qui sont de simples entiers avec défaut 1).
 
-### Ce qui n'a pas été vérifié
+### Ce qui a été vérifié, et comment
 
-Les requêtes de `db.js` ont été validées par `PREPARE` contre PostgreSQL 17 (syntaxe, types, mots réservés comme `"end"`), et le comportement de quelques-unes (tri, `IS NOT DISTINCT FROM`, upsert, `LIMIT`/`OFFSET`) exécuté à la main. **Aucune n'a tourné dans l'application contre un pilote réel** : les différences de types renvoyés par le pilote sont le risque principal.
+L'adaptateur de la version hébergée (dépôt privé, pilote `pg`) a fait tourner **toute la suite de tests du cœur sur PostgreSQL 17**, sans modifier les tests : un préchargement redirige `configureStore` vers PostgreSQL, avec un schéma par dossier de données, comme SQLite a un fichier par dossier. Résultat : tous les tests passent, sauf ceux qui vérifient SQLite lui-même (ils préparent ou lisent directement un fichier `suricate.db`).
+
+Ce rejeu a trouvé **une** vraie différence de dialecte, corrigée en 1.9.2 : un alias en camelCase non cité (`AS finalUrl`) est passé en minuscules par PostgreSQL (`finalurl`), donc la propriété `finalUrl` d'une capture revenait `undefined`. Règle : un alias en camelCase s'écrit entre guillemets (`AS "finalUrl"`). `test/sql-portable.test.js` l'interdit, avec d'autres constructions SQLite-seulement (`PRAGMA`, `LIMIT -1`, `COLLATE NOCASE`, `INSERT OR IGNORE`…).
+
+Ce qui reste hors de portée de ces tests : la charge (requêtes lentes avec beaucoup de données), les coupures de connexion en cours de route, et les plans d'exécution. Les index du cœur ont été pensés pour SQLite ; `EXPLAIN` sur des volumes réels est à faire avant l'ouverture.
 
 ## 7. Sécurité : avant d'ouvrir les inscriptions
 

@@ -5,7 +5,9 @@
 //   - les méthodes peuvent renvoyer une valeur ou une promesse : l'appelant écrit toujours `await` ;
 //   - les nombres reviennent en `Number` (même pour COUNT, SUM, AVG et les horodatages en ms, que PostgreSQL
 //     renvoie sinon en texte) ;
-//   - SQL portable uniquement : pas de PRAGMA, de LIMIT -1, de COLLATE NOCASE, de MIN(a, b) à deux arguments.
+//   - SQL portable uniquement : pas de PRAGMA, de LIMIT -1, de COLLATE NOCASE, de MIN(a, b) à deux arguments ; un alias en
+//     camelCase s'écrit entre guillemets (AS "finalUrl"), car PostgreSQL passe les noms non cités en minuscules.
+//     test/sql-portable.test.js interdit ces constructions.
 //     Les écarts de dialecte se règlent ici, ou dans les migrations (une version par moteur).
 //
 //   all(sql, params)    → lignes

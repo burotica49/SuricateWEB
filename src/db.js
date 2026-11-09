@@ -450,7 +450,7 @@ export const screenshotUsage = async (accountId = null) =>
     : db.get('SELECT COUNT(*) AS count, COALESCE(SUM(s.size), 0) AS bytes FROM screenshots s JOIN watches w ON w.id = s.watch_id WHERE w.account_id = ?', [accountId]);
 
 export const listScreenshots = async (watchId, limit = 120) =>
-  await db.all('SELECT id, ts, kind, size, width, height, final_url AS finalUrl, page_title AS title FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?', [watchId, limit]);
+  await db.all('SELECT id, ts, kind, size, width, height, final_url AS "finalUrl", page_title AS title FROM screenshots WHERE watch_id = ? ORDER BY id DESC LIMIT ?', [watchId, limit]);
 
 /** Dernière capture de chaque site : { [watchId]: { id, ts } }. */
 export const latestScreenshots = async (accountId = null) =>

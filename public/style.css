@@ -87,7 +87,7 @@ a.btn:hover { text-decoration: none; }
 .btn:hover { background: var(--surface-2); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary { background: var(--accent-ink); border-color: var(--accent-ink); color: var(--accent-soft); }
 .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.danger { color: var(--crit); }
 .btn.danger.solid { background: var(--crit); border-color: var(--crit); color: #fff; }

@@ -50,8 +50,8 @@ test.afterEach(async () => {
 
 // ── Fournisseur d'authentification de test : l'en-tête « x-user » désigne l'utilisateur ──
 const USERS = {
-  alice: { user: { id: 7, name: 'alice' }, account: { id: 70, name: 'Agence A' } },
-  bob: { user: { id: 8, name: 'bob' }, account: { id: 70, name: 'Agence A' } },
+  alice: { user: { id: 7, name: 'alice' }, account: { id: 70, name: 'Société A' } },
+  bob: { user: { id: 8, name: 'bob' }, account: { id: 70, name: 'Société A' } },
 };
 const fakeAuth = () => ({
   kind: 'test',
@@ -260,12 +260,12 @@ test('hooks : onStart / onStop encadrent la vie de l\'application', async () => 
 test('routes : une extension ajoute les siennes (publiques ou non) ; une route déjà déclarée est refusée', async () => {
   const routes = [({ route, app }) => {
     route('GET', '/api/cloud/ping', (ctx) => ({ pong: ctx.account.id, version: app.info.version }), { perm: 'cloud:ping' });
-    route('GET', '/api/cloud/plans', () => ({ plans: ['perso', 'standard', 'agence'] }), { public: true });
+    route('GET', '/api/cloud/plans', () => ({ plans: ['basic', 'pro'] }), { public: true });
   }];
   const { call, app } = await start({ auth: fakeAuth(), routes });
   assert.equal((await call('GET', '/api/cloud/ping')).status, 401);
   assert.equal((await call('GET', '/api/cloud/ping', { as: 'alice' })).json.pong, 70);
-  assert.deepEqual((await call('GET', '/api/cloud/plans')).json.plans, ['perso', 'standard', 'agence']);
+  assert.deepEqual((await call('GET', '/api/cloud/plans')).json.plans, ['basic', 'pro']);
   assert.ok(app.routes().some((r) => r.path === '/api/cloud/ping' && r.perm === 'cloud:ping'));
 
   assert.throws(() => createApp({ auth: fakeAuth(), routes: [({ route }) => route('GET', '/api/watches', () => ({}))] }), /déjà déclarée : GET \/api\/watches/);
@@ -273,9 +273,9 @@ test('routes : une extension ajoute les siennes (publiques ou non) ; une route d
 });
 
 test('capabilities : fusionnées à celles du cœur', async () => {
-  const { call } = await start({ auth: fakeAuth(), capabilities: { mode: 'cloud', billing: true, plans: ['perso'] } });
+  const { call } = await start({ auth: fakeAuth(), capabilities: { mode: 'cloud', billing: true, plans: ['basic'] } });
   const caps = (await call('GET', '/api/capabilities')).json;
-  assert.deepEqual({ mode: caps.mode, multiUser: caps.multiUser, billing: caps.billing, plans: caps.plans }, { mode: 'cloud', multiUser: false, billing: true, plans: ['perso'] });
+  assert.deepEqual({ mode: caps.mode, multiUser: caps.multiUser, billing: caps.billing, plans: caps.plans }, { mode: 'cloud', multiUser: false, billing: true, plans: ['basic'] });
 });
 
 test.after(() => dbm.db.close());

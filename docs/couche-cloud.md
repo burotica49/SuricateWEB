@@ -1,8 +1,8 @@
 # Construire une couche hébergée sur SuricateWEB
 
-Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, forfaits, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
+Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, quotas, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
-État du cœur décrit ici : **version 1.8.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
+État du cœur décrit ici : **version 1.9.3**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
 
 ## 1. Ce que le cœur garantit
 
@@ -89,9 +89,9 @@ Renvoie un booléen (ou une promesse). Défaut : tout est permis. Il est appelé
 
 Actions des routes du cœur : `site:read`, `site:create`, `site:update`, `site:delete`, `site:check`, `site:ack`, `maintenance:write`, `group:read`, `group:write`, `alert:read`, `alert:ack`, `settings:read`, `settings:write`, `data:export`, `data:import`, `report:read`, `plugin:download`. S'y ajoute **`instance:write`** (modifier l'adresse publique de SuricateWEB, un réglage d'installation) : **à refuser aux comptes clients**. Le tableau complet route ↔ action est en annexe.
 
-C'est ici que vivra le partage de l'offre Agence : un invité « rapport » n'a que `report:read` (et `site:read` limité à ce qui lui est partagé) ; un invité « complet » a les actions de lecture et d'acquittement. `authorize` reçoit `ctx.user`, `ctx.account` et, pour les contrôles par ressource, la ressource.
+C'est ici que vit le partage d'accès : un invité « rapport » n'a que `report:read` (et `site:read` limité à ce qui lui est partagé) ; un invité « complet » a les actions de lecture et d'acquittement. `authorize` reçoit `ctx.user`, `ctx.account` et, pour les contrôles par ressource, la ressource.
 
-> `authorize` décide du *droit*, pas de l'*appartenance* : un site d'un autre compte reste introuvable (404) quel que soit le droit. Pour qu'un invité voie les sites d'un autre compte, il faudra élargir `ctx.data` (§4) — c'est le point le plus délicat de l'offre Agence.
+> `authorize` décide du *droit*, pas de l'*appartenance* : un site d'un autre compte reste introuvable (404) quel que soit le droit. Pour qu'un invité voie les sites d'un autre compte, il faudra élargir `ctx.data` (§4) — c'est le point le plus délicat du partage d'accès.
 
 ### 3.3 `entitlements` — les quotas du forfait
 
@@ -156,7 +156,7 @@ canal = {
 
 Appelé à chaque contrôle qui produit des alertes, après le réglage « ne pas notifier » du site. Chaque canal reçoit les alertes qui lui reviennent selon sa gravité minimale. Une alerte est marquée « envoyée » si **au moins un** canal aboutit ; si tous échouent, l'erreur du dernier échec est conservée. Une seule capture est prise pour tous les canaux qui en veulent.
 
-C'est le point d'ancrage des **canaux multiples par compte, groupe et site** de l'offre Agence : votre `resolveChannels` lit vos tables de canaux et de règles (portée compte, groupe ou site) et renvoie la liste. Le cœur fournit `telegramChannel(t, site)` pour construire un canal Telegram.
+C'est le point d'ancrage des **canaux multiples par compte, groupe et site** : votre `resolveChannels` lit vos tables de canaux et de règles (portée compte, groupe ou site) et renvoie la liste. Le cœur fournit `telegramChannel(t, site)` pour construire un canal Telegram.
 
 Pas de lecteur de boutons Telegram multi-comptes dans le cœur : le sien est lié au compte implicite et à un seul bot. Pour un bot partagé, prévoir un webhook (route `public` avec en-tête secret) qui retrouve le compte à partir de la conversation, **et vérifie que le site du bouton appartient à ce compte** avant de marquer des alertes comme lues (les fonctions `markAlertsReadUpTo` et `rememberDomainAck` ne vérifient pas le compte).
 
@@ -256,7 +256,7 @@ Ce qui reste hors de portée de ces tests : la charge (requêtes lentes avec bea
 - [ ] **Chrome isolé.** L'image Docker du cœur lance Chrome avec `CHROME_NO_SANDBOX=1` (le bac à sable exige des privilèges que Docker n'accorde pas). Avec des sites inconnus, c'est une surface d'attaque : exécuter Chrome dans un conteneur dédié, sans accès à la base ni aux secrets, ni au réseau interne, avec un vrai bac à sable (profil seccomp, ou machine à part). Les captures sont alors à produire par ce worker.
 - [ ] **`instance:write` refusé** aux comptes clients.
 - [ ] **Secrets chiffrés** : jetons Telegram (§5), et tout secret que vous ajoutez.
-- [ ] **Authentification complète** (§3.1) : hachage, e-mail vérifié, limitation des tentatives par compte, 2FA pour l'offre Agence.
+- [ ] **Authentification complète** (§3.1) : hachage, e-mail vérifié, limitation des tentatives par compte, 2FA.
 - [ ] **Anti-abus** : un compte gratuit ne doit pas servir à surveiller ou capturer à haute fréquence un site tiers. Leviers : `limits().minIntervalMin`, quotas de captures, `User-Agent` identifiable avec un contact, vérification de propriété du domaine pour les fonctions agressives.
 - [ ] **Limitation de débit** : celle du cœur est en mémoire et par processus (connexion : 5 par minute et par IP ; page de statut : 120 par minute et par IP). Insuffisant derrière plusieurs processus.
 - [ ] **`TRUST_PROXY=1`** derrière un reverse proxy : sinon `clientIp` voit l'adresse du proxy ; sans proxy de confiance, ne **pas** l'activer (l'en-tête `X-Forwarded-For` serait falsifiable).
@@ -293,23 +293,19 @@ Pour vos propres routes : ajoutez-les à une matrice d'isolation équivalente, a
 | Relevé CMS et contrôles : mêmes `fetch` globaux sans limitation par compte | un compte peut saturer le serveur | `pickDue` équitable, `concurrency` |
 | Disponibilité mesurée depuis **un seul point** | une panne réseau du serveur ressemble à une panne du site | sondes multi-régions (hors périmètre actuel) |
 
-## 10. Ce qu'il reste à construire, par point d'extension
+## 10. Ce qu'une couche hébergée doit construire
 
-Plan en sept lots, du plus fondamental au plus visible. Chaque lot dit où il s'accroche.
+Chaque besoin dit où il s'accroche. Le plan détaillé, les forfaits et les décisions produit relèvent du dépôt de la couche hébergée, pas du cœur.
 
-| # | Lot | S'accroche à |
-|---|---|---|
-| 1 | **Adaptateur PostgreSQL** (`pg`, types, transactions, verrou de migration) + tests de contrat + migrations cloud (comptes, utilisateurs, sessions, e-mails) | `configureStore` |
-| 2 | **Comptes et utilisateurs** : inscription, vérification d'e-mail, mot de passe oublié, sessions, 2FA ; compte ↔ utilisateurs ; invitations | `auth`, migrations ≥ 1000, routes |
-| 3 | **Durcissement** : garde réseau, Chrome isolé, secrets chiffrés, anti-abus | `netGuard`, worker de capture |
-| 4 | **Forfaits paramétrables** : table `plans` (limites et options en JSON, prix, identifiants Stripe), moteur de droits, jauges d'usage, page d'administration | `entitlements`, `authorize`, `capabilities`, `hooks`, routes |
-| 5 | **Paiement Stripe** : Checkout, portail client, webhooks idempotents, rétrogradation sans suppression, TVA/facturation | routes (`{ public: true, raw: true }` pour le webhook : signature sur le corps brut), `entitlements` |
-| 6 | **Partage et notifications Agence** : accès par groupe ou site, niveau complet ou rapport ; canaux multiples par compte, groupe, site ; bot Telegram partagé | `authorize` + élargissement de `ctx.data`, `notifier`, routes |
-| 7 | **Exploitation** : séparation web/worker, équité du planificateur, sauvegardes, effacement et export RGPD, pages légales, site vitrine | `scheduler`, hooks, déploiement |
-
-Les trois forfaits prévus (« Perso » : gratuit, 1 site ; « Standard » : 10 sites ; « Agence » : illimité, canaux multiples globaux/groupe/site, partage par groupe ou site en accès complet ou « rapport ») se traduisent en lignes de la table `plans`, lues par `entitlements.check` et `limits`. Les accès « rapport » s'appuient sur `report:read` et sur le rapport mensuel et la page de statut du cœur.
-
-Décisions encore ouvertes : prix et essai gratuit ; contenu exact de chaque forfait (captures, CMS, page de statut, intervalle minimal) ; droits précis de l'accès « complet » (peut-il modifier la configuration d'un site ?) ; les invités comptent-ils comme sièges ; bot Telegram partagé ou propre à chaque client ; vérification de propriété du domaine (obligatoire, optionnelle, absente) ; fournisseur de paiement (Stripe ou intermédiaire gérant la TVA) et d'e-mail transactionnel ; échelle visée à 12 mois.
+| Besoin | S'accroche à |
+|---|---|
+| **Moteur de base** autre que SQLite : adaptateur, tests de contrat, migrations | `configureStore` |
+| **Comptes et utilisateurs** : inscription, vérification d'e-mail, sessions, mot de passe oublié, 2FA, invitations | `auth`, migrations ≥ 1000, routes |
+| **Durcissement** : garde réseau, Chrome isolé, secrets chiffrés, anti-abus | `netGuard`, worker de capture |
+| **Quotas et droits** : limites par compte, jauges d'usage | `entitlements`, `authorize`, `capabilities`, `hooks`, routes |
+| **Paiement** : webhooks idempotents, rétrogradation sans suppression | routes (`{ public: true, raw: true }` : signature sur le corps brut), `entitlements` |
+| **Partage et notifications** : accès par groupe ou site, canaux multiples | `authorize` + élargissement de `ctx.data`, `notifier`, routes |
+| **Exploitation** : séparation web/worker, équité du planificateur, sauvegardes, effacement et export de données, pages légales | `scheduler`, hooks, déploiement |
 
 ## 11. Compatibilité et versions
 

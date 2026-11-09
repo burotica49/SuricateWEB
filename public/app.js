@@ -199,7 +199,11 @@ async function api(path, opts = {}) {
     boot();
     throw new Error('Session expirée');
   }
-  if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Erreur ${res.status}`);
+    Object.assign(err, { status: res.status, code: data.code }); // `code` : identifiant stable d'une erreur (ex. needs_2fa), si le serveur en donne un
+    throw err;
+  }
   return data;
 }
 
@@ -1905,7 +1909,7 @@ async function viewSettings() {
         h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Liste intégrée de mots-clés suspects'), f.kw,
           h('span', { class: 'hint' }, 'Un par ligne. Détectés dans le texte de chaque page : revendications de pirates, pages par défaut de serveur, domaine à vendre, spam.'),
           h('div', {}, h('button', { class: 'btn sm', style: { marginTop: '6px' }, onclick: () => { f.kw.value = s.defaultKeywords.join('\n'); } }, 'Rétablir la liste par défaut')))),
-      h('section', { class: 'card card-pad' },
+      S.auth?.accountApi ? accountSecurityCard() : h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '4px' } }, 'Sécurité'),
         h('p', { class: 'muted', style: { marginBottom: '14px' } }, 'L\'accès à SuricateWEB est protégé par un identifiant et un mot de passe définis hors de l\'application.'),
         h('div', { class: 'toggle-row' }, h('div', { class: 'tt' }, h('b', {}, 'Identifiant de connexion'), h('span', {}, 'Variable SURICATE_USER')), h('span', { class: 'chip' }, ic('lock'), s.authUser)),
@@ -1918,31 +1922,154 @@ async function viewSettings() {
           h('button', { class: 'btn', onclick: () => importInput.click() }, ic('upload'), 'Importer'), importInput))));
 }
 
+// ───────────── Sécurité du compte (version hébergée) ─────────────
+// Affichée quand le fournisseur d'authentification annonce `accountApi: true` dans GET /api/auth (voir docs/couche-cloud.md §3.1) :
+// changer son mot de passe, fermer ses autres connexions, activer ou retirer la double authentification (TOTP).
+// Le secret TOTP s'affiche en texte et en lien otpauth:// : le cœur n'a aucune dépendance, donc pas de code QR ici.
+function accountSecurityCard() {
+  const body = h('div', {});
+  const card = h('section', { class: 'card card-pad', id: 'account-security' }, h('h2', { style: { marginBottom: '4px' } }, 'Sécurité du compte'), body);
+  const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('span', { class: 'hint' }, hint) : null);
+  const sub = (title) => h('h3', { style: { margin: '22px 0 8px', fontSize: '14px' } }, title);
+
+  const load = async () => {
+    try {
+      render(await api('/account/security'));
+    } catch (e) {
+      body.replaceChildren(h('p', { class: 'muted' }, e.message));
+    }
+  };
+
+  function render(sec, reveal = {}) {
+    // Mot de passe
+    const cur = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', id: 'sec-current' });
+    const nxt = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', id: 'sec-next' });
+    const changePw = guard(async (e) => {
+      e.preventDefault();
+      await api('/account/password', { method: 'POST', body: { current: cur.value, next: nxt.value } });
+      cur.value = nxt.value = '';
+      toast('Mot de passe modifié. Vos autres connexions ont été fermées.');
+      load();
+    });
+
+    // Autres connexions
+    const revoke = guard(async () => {
+      const r = await api('/account/sessions/revoke-others', { method: 'POST' });
+      toast(r.revoked ? `${r.revoked} autre${r.revoked > 1 ? 's' : ''} connexion${r.revoked > 1 ? 's' : ''} fermée${r.revoked > 1 ? 's' : ''}` : 'Aucune autre connexion ouverte');
+      load();
+    });
+
+    const nodes = [
+      h('div', { class: 'toggle-row', style: { borderTop: 0, paddingTop: 0 } }, h('div', { class: 'tt' }, h('b', {}, 'Adresse de connexion'), h('span', {}, sec.email))),
+      sub('Mot de passe'),
+      h('form', { onsubmit: changePw },
+        h('div', { class: 'row' }, field('Mot de passe actuel', cur), field('Nouveau mot de passe', nxt, '10 caractères au moins.')),
+        h('button', { class: 'btn', type: 'submit' }, 'Changer le mot de passe')),
+      sub('Connexions'),
+      h('p', { class: 'muted', style: { marginBottom: '8px' } }, `${sec.sessions} connexion${sec.sessions > 1 ? 's' : ''} ouverte${sec.sessions > 1 ? 's' : ''} (celle-ci comprise).`),
+      h('button', { class: 'btn', type: 'button', onclick: revoke }, 'Fermer les autres connexions'),
+    ];
+
+    if (sec.twofa?.available) nodes.push(sub('Double authentification'), twofaBlock(sec, reveal));
+    body.replaceChildren(...nodes);
+    linkLabels(body);
+  }
+
+  function twofaBlock(sec, reveal) {
+    // Codes de secours tout juste générés : montrés UNE fois, avant tout autre contenu.
+    if (reveal.recoveryCodes) {
+      return h('div', {},
+        h('p', { style: { marginBottom: '8px' } }, h('b', {}, 'Double authentification activée.'), ' Conservez ces codes de secours dans un endroit sûr : chacun sert une fois si vous perdez votre téléphone. Ils ne seront plus affichés.'),
+        h('pre', { class: 'mono', id: 'recovery-codes', style: { padding: '12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '8px', userSelect: 'all' } }, reveal.recoveryCodes.join('\n')),
+        h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px' } },
+          h('button', { class: 'btn', type: 'button', onclick: guard(async () => { await navigator.clipboard.writeText(reveal.recoveryCodes.join('\n')); toast('Codes copiés'); }) }, 'Copier'),
+          h('button', { class: 'btn primary', type: 'button', onclick: () => load() }, 'J\'ai noté mes codes')));
+    }
+    if (sec.twofa.enabled) {
+      const pw = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', id: 'twofa-off-pw' });
+      const code = h('input', { class: 'input mono', autocomplete: 'one-time-code', id: 'twofa-off-code', maxlength: 12 });
+      const off = guard(async (e) => {
+        e.preventDefault();
+        await api('/account/2fa/disable', { method: 'POST', body: { password: pw.value, code: code.value } });
+        toast('Double authentification désactivée');
+        load();
+      });
+      return h('div', {},
+        h('p', { style: { marginBottom: '10px' } }, h('span', { class: 'chip ok' }, ic('check'), 'Activée'), ' Un code est demandé à chaque connexion.'),
+        h('form', { onsubmit: off },
+          h('div', { class: 'row' }, field('Mot de passe', pw), field('Code de vérification ou code de secours', code)),
+          h('button', { class: 'btn', type: 'submit' }, 'Désactiver la double authentification')));
+    }
+    if (reveal.secret) {
+      const code = h('input', { class: 'input mono', autocomplete: 'one-time-code', inputmode: 'numeric', id: 'twofa-on-code', maxlength: 7 });
+      const on = guard(async (e) => {
+        e.preventDefault();
+        const r = await api('/account/2fa/enable', { method: 'POST', body: { code: code.value } });
+        render(await api('/account/security'), { recoveryCodes: r.recoveryCodes });
+      });
+      const uri = /^otpauth:\/\//.test(reveal.otpauth) ? reveal.otpauth : null;
+      return h('div', {},
+        h('p', { style: { marginBottom: '8px' } }, 'Dans votre application d\'authentification (Google Authenticator, Authy, 1Password, Bitwarden…), ajoutez un compte avec cette clé :'),
+        h('pre', { class: 'mono', id: 'twofa-secret', style: { padding: '10px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '8px', userSelect: 'all', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' } }, reveal.secret),
+        uri ? h('p', { class: 'hint', style: { marginBottom: '10px' } }, 'Sur ce téléphone : ', h('a', { href: uri }, 'ouvrir dans mon application d\'authentification')) : null,
+        h('form', { onsubmit: on },
+          field('Code à 6 chiffres affiché par l\'application', code),
+          h('div', { style: { display: 'flex', gap: '8px' } }, h('button', { class: 'btn primary', type: 'submit' }, 'Activer'), h('button', { class: 'btn', type: 'button', onclick: () => load() }, 'Annuler'))));
+    }
+    return h('div', {},
+      h('p', { class: 'muted', style: { marginBottom: '8px' } }, 'Protégez votre compte avec un code à usage unique en plus du mot de passe.'),
+      h('button', { class: 'btn', type: 'button', id: 'twofa-begin', onclick: guard(async () => { const r = await api('/account/2fa/begin', { method: 'POST' }); render(sec, { secret: r.secret, otpauth: r.otpauth }); }) }, 'Activer la double authentification'));
+  }
+
+  load();
+  return card;
+}
+
 // ───────────── Connexion ─────────────
+// Un fournisseur d'authentification peut enrichir GET /api/auth (voir docs/couche-cloud.md §3.1) :
+//   identifierLabel  libellé du premier champ (« Adresse e-mail » au lieu de « Identifiant »)
+//   links            { signup, forgot } : adresses (du même site) des pages d'inscription et de mot de passe oublié
+// et répondre à POST /api/login par { code: 'needs_2fa' } : l'écran demande alors le code de double authentification.
+const localHref = (u) => (typeof u === 'string' && /^\/(?!\/)/.test(u) ? u : null); // chemin du même site seulement : jamais « javascript: » ni un autre domaine
+
 function viewLogin() {
-  const user = h('input', { class: 'input', id: 'login-user', name: 'username', autocomplete: 'username', autocapitalize: 'off', spellcheck: false, 'aria-label': 'Identifiant' });
+  const label = S.auth.identifierLabel || 'Identifiant';
+  const user = h('input', { class: 'input', id: 'login-user', name: 'username', autocomplete: 'username', autocapitalize: 'off', spellcheck: false, 'aria-label': label });
   const pw = h('input', { class: 'input', id: 'login-pw', name: 'password', type: 'password', autocomplete: 'current-password', 'aria-label': 'Mot de passe' });
+  const code = h('input', { class: 'input mono', id: 'login-code', name: 'code', autocomplete: 'one-time-code', inputmode: 'text', autocapitalize: 'off', spellcheck: false, 'aria-label': 'Code de vérification', maxlength: 12 });
+  const codeField = h('div', { class: 'field', id: 'login-code-field', hidden: true },
+    h('label', {}, 'Code de vérification'), code,
+    h('span', { class: 'hint' }, 'Les 6 chiffres affichés par votre application d\'authentification, ou un code de secours.'));
   const err = h('p', { role: 'alert', style: { color: 'var(--crit)', margin: '4px 0 12px', minHeight: '20px', fontSize: '13px' } });
   const btn = h('button', { class: 'btn primary', style: { width: '100%' } }, 'Se connecter');
   const submit = async (e) => {
     e.preventDefault();
     btn.disabled = true;
     try {
-      await api('/login', { method: 'POST', body: { username: user.value, password: pw.value } });
+      await api('/login', { method: 'POST', body: { username: user.value, password: pw.value, ...(codeField.hidden ? {} : { code: code.value }) } });
       S.auth.authenticated = true;
       boot();
     } catch (x) {
-      err.textContent = x.message;
-      pw.value = '';
-      pw.focus();
+      if (x.code === 'needs_2fa' || x.code === 'invalid_2fa') {
+        codeField.hidden = false;
+        code.value = '';
+        code.focus();
+        err.textContent = x.code === 'invalid_2fa' ? x.message : '';
+      } else {
+        err.textContent = x.message;
+        pw.value = '';
+        pw.focus();
+      }
     } finally { btn.disabled = false; }
   };
+  const links = [[localHref(S.auth.links?.forgot), 'Mot de passe oublié ?'], [localHref(S.auth.links?.signup), 'Créer un compte']].filter(([href]) => href);
   $('#app').replaceChildren(h('div', { class: 'login' }, h('div', { class: 'card' },
     h('div', { class: 'logo' }, ic('shield')), h('h1', {}, 'SuricateWEB'), h('p', { class: 'muted' }, 'Connectez-vous pour accéder à la surveillance.'),
     h('form', { onsubmit: submit },
-      h('div', { class: 'field' }, h('label', {}, 'Identifiant'), user),
+      h('div', { class: 'field' }, h('label', {}, label), user),
       h('div', { class: 'field' }, h('label', {}, 'Mot de passe'), pw),
-      err, btn))));
+      codeField, err, btn),
+    links.length ? h('p', { class: 'login-links' }, ...links.map(([href, text]) => h('a', { href }, text))) : null)));
   linkLabels($('#app'));
   user.focus();
 }

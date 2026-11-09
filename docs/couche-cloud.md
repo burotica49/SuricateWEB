@@ -2,7 +2,7 @@
 
 Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, quotas, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
-État du cœur décrit ici : **version 1.9.3**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
+État du cœur décrit ici : **version 1.10.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
 
 ## 1. Ce que le cœur garantit
 
@@ -78,6 +78,17 @@ Toutes les options de `createApp` sont facultatives ; sans elles, le comportemen
 - `null` → la requête reçoit **401**. Les routes déclarées `{ public: true }` n'appellent pas `authenticate`.
 - `account.id` est **obligatoire : un entier ≥ 1**. Sans lui, la requête est refusée (500) : jamais de repli silencieux sur le compte 1. `user` est libre (le cœur n'y lit que `name`, pour l'affichage).
 - `register` doit déclarer au moins **`GET /api/auth`** public (état de connexion pour l'interface, et sonde de santé Docker). Une route déjà déclarée par le cœur est refusée au démarrage, même celle d'un fournisseur.
+- **Ce que l'interface sait afficher.** `GET /api/auth` peut ajouter, en plus de `required` et `authenticated`, des champs facultatifs ; sans eux, l'écran est celui d'une installation classique :
+
+  | Champ | Effet |
+  |---|---|
+  | `identifierLabel` | Libellé du premier champ de connexion (« Adresse e-mail » au lieu de « Identifiant ») |
+  | `links: { signup, forgot }` | Liens « Créer un compte » et « Mot de passe oublié ? » sous le formulaire. **Chemins du même site** (`/…`) uniquement : tout autre lien (`javascript:`, autre domaine, `//hôte`) est ignoré |
+  | `accountApi: true` | Remplace la carte « Sécurité » (identifiant du `.env`) par « Sécurité du compte », qui appelle les routes ci-dessous |
+
+  **Double authentification.** Si `POST /api/login` répond `401` avec `{ error, code: 'needs_2fa' }`, l'écran affiche un champ de code et renvoie la demande avec `code` ; `code: 'invalid_2fa'` affiche le message du serveur. Plus généralement, `api()` côté interface conserve `status` et `code` de toute erreur, pour que les extensions puissent réagir à un code stable plutôt qu'à un texte.
+
+  **Routes de la carte « Sécurité du compte »** (toutes derrière une session) : `GET /api/account/security` → `{ email, sessions, twofa: { available, enabled } }` ; `POST /api/account/password` `{ current, next }` ; `POST /api/account/sessions/revoke-others` → `{ revoked }` ; `POST /api/account/2fa/begin` → `{ secret, otpauth }` ; `POST …/2fa/enable` `{ code }` → `{ recoveryCodes }` ; `POST …/2fa/disable` `{ password, code }`. Le secret s'affiche en texte et en lien `otpauth://` : le cœur n'a aucune dépendance, donc pas de code QR.
 - À fournir côté cloud : inscription, vérification d'e-mail, mot de passe oublié, hachage (`scrypt` est dans `node:crypto`), sessions révocables, limitation des tentatives par adresse **et** par compte, 2FA. Le fournisseur par défaut (`src/auth-env.js`) est un exemple minimal : un compte, cookie signé, 5 tentatives par minute et par IP, **en mémoire** (donc par processus).
 
 ### 3.2 `authorize(ctx, action, resource)` — le droit d'agir

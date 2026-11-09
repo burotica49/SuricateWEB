@@ -111,6 +111,7 @@ SURICATE_PASSWORD="un mot de passe solide"     # 8 caractères minimum ; guillem
 | `TRUST_PROXY` | — | `1` derrière un reverse proxy (cookie `Secure`, IP client) |
 | `CHROME_PATH` | détecté | Chemin de Chrome/Chromium pour les captures |
 | `CHROME_NO_SANDBOX` | — | `1` dans Docker (déjà défini dans l'image) |
+| `CHROME_WS_URL` | — | Chrome **distant** (`ws://hôte:port?token=…`, ex. conteneur Browserless) : le serveur s'y connecte au lieu de lancer Chrome |
 | `SCREENSHOT_CONCURRENCY` | `2` | Captures simultanées au maximum |
 | `ENV_FILE` | `./.env` | Emplacement alternatif du fichier d'environnement |
 | `TELEGRAM_API` | `https://api.telegram.org` | Adresse de l'API Telegram (utile pour les tests ou un relais) |
@@ -226,7 +227,7 @@ SuricateWeb prend une photo de chaque site à intervalle régulier (**toutes les
   - Une miniature de ~5 Ko évite d'alourdir le tableau de bord.
 - Les images restent derrière la connexion : aucun lien de capture n'est public.
 
-Le navigateur est piloté directement par le protocole DevTools de Chrome : **aucune dépendance npm**. Il faut Chrome, Chromium, Edge ou Brave sur le serveur (détecté automatiquement, ou `CHROME_PATH`) ; l'image Docker embarque Chromium. Sans navigateur, tout le reste fonctionne et l'interface l'indique.
+Le navigateur est piloté directement par le protocole DevTools de Chrome : **aucune dépendance npm**. Il faut Chrome, Chromium, Edge ou Brave sur le serveur (détecté automatiquement, ou `CHROME_PATH`) ; l'image Docker embarque Chromium. Sans navigateur, tout le reste fonctionne et l'interface l'indique. Pour garder Chrome hors du serveur, `CHROME_WS_URL` pointe vers un Chrome déjà lancé ailleurs (conteneur Browserless, `chromedp/headless-shell`…) : chaque capture y ouvre un contexte isolé, détruit ensuite.
 
 Chaque capture lance un navigateur neuf avec un profil jetable, puis le détruit : pas de cookies qui s'accumulent, pas de processus orphelin. Les fenêtres `alert()` sont ignorées. **La page est réellement exécutée** (JavaScript compris) : si un site est piraté, son code malveillant s'exécute dans ce navigateur. Il tourne dans le conteneur, sous un utilisateur sans privilèges, et ne conserve rien après la capture. Dans Docker, le bac à sable interne de Chrome est désactivé (`--no-sandbox`, impossible sans privilèges) : l'isolation est celle du conteneur. Si ce risque ne vous convient pas, désactivez les captures site par site (*Modifier › Capture d'écran*).
 

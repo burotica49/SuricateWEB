@@ -266,7 +266,7 @@ Ce qui reste hors de portée de ces tests : la charge (requêtes lentes avec bea
 ## 7. Sécurité : avant d'ouvrir les inscriptions
 
 - [ ] **Garde réseau activée** (`netGuard`), avec la liste de ports voulue.
-- [ ] **Chrome isolé.** L'image Docker du cœur lance Chrome avec `CHROME_NO_SANDBOX=1` (le bac à sable exige des privilèges que Docker n'accorde pas). Avec des sites inconnus, c'est une surface d'attaque : exécuter Chrome dans un conteneur dédié, sans accès à la base ni aux secrets, ni au réseau interne, avec un vrai bac à sable (profil seccomp, ou machine à part). Les captures sont alors à produire par ce worker.
+- [ ] **Chrome isolé.** L'image Docker du cœur lance Chrome avec `CHROME_NO_SANDBOX=1` (le bac à sable exige des privilèges que Docker n'accorde pas). Avec des sites inconnus, c'est une surface d'attaque : exécuter Chrome dans un conteneur dédié, sans accès à la base ni aux secrets, ni au réseau interne, avec un vrai bac à sable (profil seccomp, ou machine à part). Les captures sont alors à produire par ce worker : le cœur le permet avec `CHROME_WS_URL` (voir ci-dessous), la mise en place du conteneur restant côté exploitation.
 - [ ] **`instance:write` refusé** aux comptes clients.
 - [ ] **Secrets chiffrés** : jetons Telegram (§5), et tout secret que vous ajoutez.
 - [ ] **Authentification complète** (§3.1) : hachage, e-mail vérifié, limitation des tentatives par compte, 2FA.
@@ -369,5 +369,17 @@ Chaque besoin dit où il s'accroche. Le plan détaillé, les forfaits et les dé
 | `TELEGRAM_API` | adresse de l'API Telegram (tests) |
 | `SURICATE_DEMO` | `1` : données fictives, aucun contrôle ni capture |
 | `SURICATE_NET_GUARD`, `SURICATE_NET_ALLOW_PORTS`, `SURICATE_NET_ALLOW_HOSTS` | garde réseau |
-| `CHROME_PATH`, `CHROME_NO_SANDBOX`, `SCREENSHOT_CONCURRENCY` | Chrome et captures |
+| `CHROME_PATH`, `CHROME_NO_SANDBOX`, `CHROME_WS_URL`, `SCREENSHOT_CONCURRENCY` | Chrome (local ou distant) et captures |
 | `ENV_FILE` | emplacement du `.env` (chargé seulement par `server.js`) |
+
+## Chrome distant (`CHROME_WS_URL`)
+
+Si `CHROME_WS_URL` (`ws://` ou `wss://`) est défini, le cœur ne lance aucun Chrome : il se connecte à ce navigateur par le protocole DevTools et capture dedans. Ce que cela garantit :
+
+- **Un contexte de navigation par capture** (`Target.createBrowserContext`), détruit à la fin : deux sites ne partagent ni cookies ni stockage. Le navigateur distant, lui, reste en service.
+- **La garde réseau s'applique toujours** : elle passe par `Fetch.enable`, donc par le protocole, et juge chaque requête de la page avant son départ.
+- **L'adresse est un secret** (elle porte souvent un jeton) : elle n'apparaît ni dans les messages d'erreur, ni dans les réglages, ni dans l'API (l'interface affiche « Chrome distant »).
+- Une adresse invalide désactive les captures ; elle ne retombe **pas** sur un Chrome local.
+- `SURICATE_CAPTURES=0` coupe toujours les captures, distantes comprises.
+
+Côté exploitation : le conteneur Chrome doit être sur un réseau SANS accès à la base ni aux autres services internes, ne jamais être publié, avoir un jeton, et plafonner sa concurrence et sa durée de session au-delà de la capture la plus longue du cœur (environ 60 s).

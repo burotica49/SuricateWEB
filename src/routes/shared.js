@@ -7,7 +7,7 @@ import { settingsFor, statusTokenInUse, getWatch, updateWatch, normalizeConfig, 
 import { isRunning } from '../scheduler.js';
 import { cmsConfigError } from '../cms.js';
 import { resolvePage } from '../pages.js';
-import { engine, chromePath } from '../screenshot.js';
+import { engine, browserLabel } from '../screenshot.js';
 import { parseHtml, selectAll } from '../html.js';
 import { clamp, SEV } from '../util.js';
 
@@ -161,7 +161,7 @@ export async function publicSettings(ctx) {
     telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: ctx.user?.name ?? '', defaultKeywords: DEFAULT_KEYWORDS,
-    screenshots: { available: engine.available(), browser: chromePath(), usage: await ctx.data.screenshotUsage() },
+    screenshots: { available: engine.available(), browser: browserLabel(), usage: await ctx.data.screenshotUsage() },
     app: ctx.app.info,
   };
 }

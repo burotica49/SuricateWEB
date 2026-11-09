@@ -79,6 +79,63 @@ test('Chrome réel : capture JPEG + miniature, erreurs lisibles, aucun processus
   assert.deepEqual(readdirSync(TEST_TMP).filter((n) => n.startsWith('suricate-chrome-')), [], 'aucun profil temporaire laissé');
 });
 
+// Chrome distant (CHROME_WS_URL) : un navigateur déjà lancé ailleurs (Browserless, headless-shell). Ici on en lance un à la main et on
+// donne son adresse DevTools, comme le ferait un conteneur.
+test('Chrome distant : capture dans un contexte isolé détruit ensuite, navigateur laissé en service, jeton jamais divulgué', { skip: !shots.chromePath() && 'Chrome/Chromium introuvable' }, async () => {
+  const { spawn } = await import('node:child_process');
+  const profile = mkdtempSync(join(TEST_TMP, 'remote-profile-'));
+  const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--disable-gpu', '--disable-dev-shm-usage', 'about:blank'];
+  if (/^(1|true|yes)$/i.test(process.env.CHROME_NO_SANDBOX || '')) args.push('--no-sandbox');
+  const chrome = spawn(shots.chromePath(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const ws = await new Promise((resolve, reject) => {
+    let err = '';
+    setTimeout(() => reject(new Error('Chrome de test ne démarre pas')), 15000).unref();
+    chrome.stderr.on('data', (d) => { err += d; const m = /DevTools listening on (ws:\/\/\S+)/.exec(err); if (m) resolve(m[1]); });
+  });
+  const site = http.createServer((q, r) => { r.setHeader('content-type', 'text/html; charset=utf-8'); r.end('<html><body style="background:#06c"><h1>Distant</h1></body></html>'); });
+  await new Promise((r) => site.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${site.address().port}/`;
+  const before = process.env.CHROME_WS_URL;
+  try {
+    process.env.CHROME_WS_URL = ws;
+    assert.equal(shots.remoteEndpoint(), ws);
+    assert.equal(shots.browserLabel(), 'Chrome distant', "l'interface ne montre jamais l'adresse (elle porte un jeton)");
+    const a = await shots.capture(url, { width: 800, height: 600, settleMs: 100 });
+    assert.equal(a.image.subarray(0, 3).toString('hex'), 'ffd8ff', 'JPEG');
+    assert.equal(a.title, null);
+
+    // Le contexte de la capture est détruit, et le navigateur distant n'a pas été tué : une 2e capture marche.
+    const probe = new WebSocket(ws);
+    await new Promise((res, rej) => { probe.addEventListener('open', res, { once: true }); probe.addEventListener('error', rej, { once: true }); });
+    const contexts = await new Promise((res) => {
+      probe.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); if (m.id === 1) res(m.result.browserContextIds); });
+      probe.send(JSON.stringify({ id: 1, method: 'Target.getBrowserContexts' }));
+    });
+    probe.close();
+    assert.deepEqual(contexts, [], 'aucun contexte de navigation laissé');
+    await shots.capture(url, { width: 800, height: 600, settleMs: 100 });
+
+    // Distant injoignable : message lisible, sans l'adresse ni le jeton.
+    process.env.CHROME_WS_URL = 'ws://127.0.0.1:1/?token=JETON-SECRET';
+    await assert.rejects(shots.capture(url, { settleMs: 0 }), (e) => /Chrome distant impossible/.test(e.message) && !/JETON-SECRET/.test(e.message));
+    // Adresse mal formée : refusée sans la citer.
+    process.env.CHROME_WS_URL = 'http://pas-un-websocket/?token=JETON-SECRET';
+    assert.throws(() => shots.remoteEndpoint(), /ws:\/\//);
+    assert.equal(shots.browserLabel(), null, 'adresse invalide : le navigateur local n\'est PAS utilisé à la place');
+    await assert.rejects(shots.capture(url, { settleMs: 0 }), (e) => /ws:\/\//.test(e.message) && !/JETON-SECRET/.test(e.message));
+    // Le coupe-circuit des captures prime aussi sur un Chrome distant.
+    process.env.CHROME_WS_URL = ws;
+    process.env.SURICATE_CAPTURES = '0';
+    // (chromePath() mémorise son résultat au premier appel : le coupe-circuit se pose avant le démarrage, comme le fait le cloud.)
+    assert.equal(shots.remoteEndpoint(), null);
+  } finally {
+    delete process.env.SURICATE_CAPTURES;
+    if (before === undefined) delete process.env.CHROME_WS_URL; else process.env.CHROME_WS_URL = before;
+    site.close();
+    try { process.kill(chrome.pid, 'SIGKILL'); } catch { /* déjà arrêté */ }
+  }
+});
+
 // Cas réel (burotica.fr, WP Rocket) : un site dont le JavaScript ne démarre qu'à la 1re interaction d'un visiteur
 // laissait un bandeau d'accueil vide sur la capture. Le faux site rapporte, par requêtes « balises », ce que le navigateur a fait.
 test('Chrome réel : scripts retardés jusqu\'à l\'interaction, défilement, bandeau de cookies', { skip: !shots.chromePath() && 'Chrome/Chromium introuvable' }, async () => {

@@ -1,6 +1,8 @@
 // Captures d'écran : on pilote Chrome/Chromium directement via le protocole DevTools (WebSocket natif de Node).
 // Aucune dépendance npm. Un navigateur neuf (profil jetable) est lancé pour chaque capture puis détruit : pas d'état
 // partagé entre sites, pas de cookie qui traîne, pas de processus orphelin.
+// Variante « Chrome distant » (CHROME_WS_URL) : on se connecte à un navigateur déjà lancé ailleurs (conteneur Browserless, headless-shell…)
+// au lieu d'en lancer un. Chrome vit alors hors du serveur, sans accès à sa base ni à ses secrets.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
@@ -25,7 +27,27 @@ const CANDIDATES = [
 let chromeCache;
 // SURICATE_CAPTURES=0 coupe les captures d'écran même si Chrome est installé : un service ouvert à des inconnus ne doit pas lancer de
 // navigateur sur des adresses choisies par n'importe qui tant que Chrome n'est pas isolé du reste (docs/couche-cloud.md §7).
-export const chromePath = () => (chromeCache ??= /^(0|false|no)$/i.test(process.env.SURICATE_CAPTURES || '') ? null : CANDIDATES.find((p) => existsSync(p)) || null);
+const capturesOff = () => /^(0|false|no)$/i.test(process.env.SURICATE_CAPTURES || '');
+export const chromePath = () => (chromeCache ??= capturesOff() ? null : CANDIDATES.find((p) => existsSync(p)) || null);
+
+/**
+ * Adresse DevTools du Chrome distant (ws:// ou wss://), ou null. Lue à chaque appel (les tests et le démarrage peuvent la poser tard).
+ * Elle contient souvent un jeton (?token=…) : elle ne doit JAMAIS apparaître dans un message d'erreur, un journal ou l'API.
+ */
+export function remoteEndpoint() {
+  const raw = (process.env.CHROME_WS_URL || '').trim();
+  if (!raw || capturesOff()) return null;
+  let u;
+  try { u = new URL(raw); } catch { throw new Error('CHROME_WS_URL n\'est pas une adresse valide (attendu : ws://hôte:port ou wss://hôte:port).'); }
+  if (u.protocol !== 'ws:' && u.protocol !== 'wss:') throw new Error('CHROME_WS_URL doit commencer par ws:// ou wss://.');
+  return raw;
+}
+/** Libellé du navigateur pour l'interface (jamais l'adresse distante : elle porte un jeton). */
+export function browserLabel() {
+  try { if (remoteEndpoint()) return 'Chrome distant'; } catch { return null; }
+  return chromePath();
+}
+const hasBrowser = () => { try { return !!remoteEndpoint() || !!chromePath(); } catch { return false; } };
 
 export const NO_CHROME = "Chrome ou Chromium est introuvable sur le serveur : installez-le, ou indiquez son chemin dans CHROME_PATH.";
 
@@ -168,8 +190,9 @@ const scrollThroughScript = (limit) => `(async () => {
  * (redirections, images, scripts, iframes…) : Chrome ne doit atteindre aucun réseau interne, même par un élément de la page.
  */
 export async function capture(url, { width = 1280, height = 800, fullPage = false, timeoutMs = 30000, settleMs = 3000, interact = true, hideBanners = true, quality = 72, headers, userAgent, guard } = {}) {
-  const bin = chromePath();
-  if (!bin) throw new Error(NO_CHROME);
+  const remote = remoteEndpoint();
+  const bin = remote ? null : chromePath();
+  if (!remote && !bin) throw new Error(NO_CHROME);
   if (guard?.enabled) {
     try {
       guard.checkUrl(url);
@@ -177,48 +200,59 @@ export async function capture(url, { width = 1280, height = 800, fullPage = fals
       throw new Error(e.message);
     }
   }
-  const profile = await mkdtemp(join(tmpdir(), 'suricate-chrome-'));
-  const args = [
-    '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
-    '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
-    '--disable-extensions', '--disable-background-networking', '--disable-sync', '--disable-component-update', '--disable-breakpad',
-    '--disable-features=Translate,MediaRouter,OptimizationHints', 'about:blank',
-  ];
-  // Le bac à sable de Chrome exige des privilèges que Docker n'accorde pas : à n'activer que dans un conteneur.
-  if (/^(1|true|yes)$/i.test(process.env.CHROME_NO_SANDBOX || '')) args.push('--no-sandbox');
-
   const win = process.platform === 'win32';
-  const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: !win });
+  let child = null;
+  let profile = null;
+  let stderr = '';
   const kill = () => {
+    if (!child) return;
     try {
       if (win) child.kill();
       else process.kill(-child.pid, 'SIGKILL'); // tout le groupe : processus de rendu compris
     } catch { /* déjà terminé */ }
   };
-  let stderr = '';
-  const hardStop = setTimeout(kill, timeoutMs + 25000);
   let ws;
+  let cdp;
+  let contextId = null;
   let loaded;
+  // Plafond global : navigateur local tué, ou connexion distante coupée (le serveur distant referme alors la session).
+  const hardStop = setTimeout(() => { if (child) kill(); else try { ws?.close(); } catch { /* ignoré */ } }, timeoutMs + 25000);
   try {
-    const wsUrl = await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`Le navigateur ne démarre pas${stderr ? ` : ${stderr.trim().split('\n').pop().slice(0, 160)}` : ''}`)), 15000);
-      child.stderr.on('data', (d) => {
-        stderr += d;
-        const m = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
-        if (m) { clearTimeout(t); resolve(m[1]); }
+    let wsUrl = remote;
+    if (!remote) {
+      profile = await mkdtemp(join(tmpdir(), 'suricate-chrome-'));
+      const args = [
+        '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
+        '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
+        '--disable-extensions', '--disable-background-networking', '--disable-sync', '--disable-component-update', '--disable-breakpad',
+        '--disable-features=Translate,MediaRouter,OptimizationHints', 'about:blank',
+      ];
+      // Le bac à sable de Chrome exige des privilèges que Docker n'accorde pas : à n'activer que dans un conteneur.
+      if (/^(1|true|yes)$/i.test(process.env.CHROME_NO_SANDBOX || '')) args.push('--no-sandbox');
+      child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: !win });
+      wsUrl = await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`Le navigateur ne démarre pas${stderr ? ` : ${stderr.trim().split('\n').pop().slice(0, 160)}` : ''}`)), 15000);
+        child.stderr.on('data', (d) => {
+          stderr += d;
+          const m = /DevTools listening on (ws:\/\/\S+)/.exec(stderr);
+          if (m) { clearTimeout(t); resolve(m[1]); }
+        });
+        child.on('error', (e) => { clearTimeout(t); reject(new Error(`Lancement du navigateur impossible : ${e.message}`)); });
+        child.on('exit', (code) => { clearTimeout(t); reject(new Error(`Le navigateur s'est arrêté (code ${code})${stderr ? ` : ${stderr.trim().split('\n').pop().slice(0, 160)}` : ''}`)); });
       });
-      child.on('error', (e) => { clearTimeout(t); reject(new Error(`Lancement du navigateur impossible : ${e.message}`)); });
-      child.on('exit', (code) => { clearTimeout(t); reject(new Error(`Le navigateur s'est arrêté (code ${code})${stderr ? ` : ${stderr.trim().split('\n').pop().slice(0, 160)}` : ''}`)); });
-    });
+    }
 
     ws = new WebSocket(wsUrl);
     await new Promise((res, rej) => {
       ws.addEventListener('open', res, { once: true });
-      ws.addEventListener('error', () => rej(new Error('Connexion au navigateur impossible')), { once: true });
+      ws.addEventListener('error', () => rej(new Error(remote ? 'Connexion au Chrome distant impossible (vérifiez CHROME_WS_URL et que le conteneur tourne).' : 'Connexion au navigateur impossible')), { once: true });
     });
-    const cdp = new Cdp(ws);
+    cdp = new Cdp(ws);
 
-    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+    // Navigateur partagé : chaque capture a son PROPRE contexte (cookies, stockage, cache), détruit à la fin. Sans cela, deux sites
+    // (donc deux clients) se verraient mutuellement leurs cookies. Le navigateur local, jetable, n'en a pas besoin.
+    if (remote) contextId = (await cdp.send('Target.createBrowserContext', { disposeOnDetach: true })).browserContextId;
+    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', ...(contextId ? { browserContextId: contextId } : {}) });
     const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     const S = (method, params) => cdp.send(method, params, sessionId);
     await S('Page.enable');
@@ -330,14 +364,16 @@ export async function capture(url, { width = 1280, height = 800, fullPage = fals
   } finally {
     clearTimeout(hardStop);
     loaded?.cancel();
+    // Distant : le contexte est détruit explicitement (le navigateur, lui, reste en service pour les captures suivantes).
+    if (contextId && cdp) await withTimeout(cdp.send('Target.disposeBrowserContext', { browserContextId: contextId }), 3000);
     try { ws?.close(); } catch { /* ignoré */ }
     kill();
-    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => {});
+    if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }).catch(() => {});
   }
 }
 
 /** Point d'entrée remplaçable (tests, ou autre moteur de rendu). */
-export const engine = { available: () => !!chromePath(), capture };
+export const engine = { available: hasBrowser, capture };
 
 // ───────────── File d'attente : Chrome est gourmand, 2 captures en parallèle au maximum ─────────────
 

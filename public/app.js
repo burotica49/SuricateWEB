@@ -300,8 +300,9 @@ function mountShell() {
         h('div', { class: 'brand' }, h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 34, height: 34 })),
           h('div', {}, h('div', { class: 'brand-name' }, h('span', {}, ...brandName()), app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
         h('nav', { class: 'nav' }, nav('#/', 'dashboard', 'Sites', 'sites'), nav('#/alertes', 'bell', 'Alertes', 'alertes'), nav('#/reglages', 'settings', 'Réglages', 'reglages')),
-        h('div', { id: 'plan-box', class: 'plan-box', hidden: true }),
         h('div', { class: 'side-foot' },
+          // Forfait et jauge : calés juste au-dessus de l'indicateur Telegram, en bas de la barre latérale.
+          h('div', { id: 'plan-box', class: 'plan-box', hidden: true }),
           h('a', { class: 'tg-state', href: '#/reglages' }, h('span', { class: `dot ${tgOk ? 'ok' : ''}` }), tgOk ? 'Telegram actif' : 'Telegram non configuré'),
           h('div', { class: 'side-actions' },
             // Liens externes : nouvel onglet, sans transmettre l'adresse de cette page (noopener, noreferrer)

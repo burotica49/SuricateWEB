@@ -66,7 +66,7 @@ a.btn:hover { text-decoration: none; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 550; text-decoration: none; }
 .nav a:hover { background: var(--surface-2); color: var(--text); }
-.plan-box { margin: 16px 4px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px; }
+.plan-box { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px; }
 .plan-box a { font-weight: 600; color: var(--accent-ink); }
 .plan-head { color: var(--text-2); }
 .gauge { height: 6px; border-radius: 4px; background: var(--border); overflow: hidden; }
@@ -485,7 +485,7 @@ details.acc > .in { padding: 4px 14px 14px; }
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: auto; flex-direction: row; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--border); z-index: 40; }
-  .brand, .side-foot .tg-state { display: none; }
+  .brand, .side-foot .tg-state, .side-foot .plan-box { display: none; } /* la barre du bas reste réservée à la navigation */
   .nav { flex-direction: row; flex: 1; justify-content: space-around; }
   .nav a { flex-direction: column; gap: 2px; font-size: 11.5px; padding: 6px 12px; position: relative; }
   .nav a .badge { position: absolute; top: 0; right: 6px; margin: 0; min-width: 17px; height: 17px; font-size: 10.5px; }

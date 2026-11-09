@@ -53,6 +53,7 @@ test('jauge et lien « Mon forfait » : annoncés par le serveur, texte seulemen
     assert.equal(await page.run("document.querySelector('#plan-box .gauge').getAttribute('aria-valuemax')"), '1');
     const links = await page.run("[...document.querySelectorAll('#plan-box a')].map((a) => [a.textContent, a.getAttribute('href')])");
     assert.deepEqual(links, [['Mon forfait', '/api/account/pages/forfaits']], 'ni « javascript: » ni un autre site');
+    assert.equal(await page.run("document.querySelector('#plan-box').nextElementSibling?.classList.contains('tg-state')"), true, 'la boîte est calée juste au-dessus de l\'indicateur Telegram');
   });
 });
 

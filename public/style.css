@@ -66,6 +66,12 @@ a.btn:hover { text-decoration: none; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text-2); font-weight: 550; text-decoration: none; }
 .nav a:hover { background: var(--surface-2); color: var(--text); }
+.plan-box { margin: 16px 4px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px; }
+.plan-box a { font-weight: 600; color: var(--accent-ink); }
+.plan-head { color: var(--text-2); }
+.gauge { height: 6px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.gauge i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.gauge.full i { background: var(--warn); }
 .nav a.active { background: var(--accent-soft); color: var(--accent-ink); }
 .nav a .ic { font-size: 18px; }
 .nav .badge { margin-left: auto; }

@@ -9,7 +9,8 @@
 //     authorize,      (ctx, action, ressource) → booléen. Défaut : tout est permis. Appelé pour la `perm` de chaque route
 //                     (voir PERMS ci-dessous) et par ctx.can() / ctx.require() dans le code des routes.
 //     entitlements,   { check(ctx, action, info), limits(ctx) } : quotas du forfait. `check` lève une HttpError (402, 403…)
-//                     pour refuser ; `limits` renvoie des plafonds (ex. { minIntervalMin: 5 }). Défaut : aucune limite.
+//                     pour refuser ; `limits` renvoie des plafonds (ex. { minIntervalMin: 5, screenshots: false }). Défaut : aucune limite.
+//                     `limits` est aussi appelé SANS requête (captures planifiées ou d'alerte) avec { account: { id } } seulement.
 //     routes,         [(api) => void] : routes supplémentaires, via api.route(méthode, chemin, gestionnaire, { public, perm, raw })
 //                     raw: true (ou une taille en octets) : le corps n'est pas analysé, le gestionnaire reçoit ctx.rawBody (Buffer) —
 //                     indispensable pour vérifier la signature d'un webhook (Stripe…), qui porte sur les octets exacts
@@ -19,7 +20,9 @@
 //     netGuard,       garde réseau (src/net-guard.js) : createNetGuard({ enabled, allowedPorts, allowHosts }) ou ses options.
 //                     Défaut : celle de l'environnement (SURICATE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
 //     scheduler,      { concurrency, pickDue(now, limite) } : planificateur (src/extensions.js)
-//     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true })
+//     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true }). L'interface lit aussi :
+//                       accountLinks  [{ label, href }]  liens affichés sous le menu (ex. « Mon forfait »), chemins du même site seulement
+//                       usageUrl      '/api/…'  jauge d'usage : GET renvoie { plan: { name }, usage: { sites: { active, max } } } (max null = illimité)
 //     home,           async ({ req, res, identity }) → booléen : appelé pour GET et HEAD « / » (et pour eux seuls), avant le service du
 //                     dossier public/. `identity` = auth.authenticate(req), ou null sans session valide. Renvoie true s'il a répondu
 //                     (ex. une page de présentation pour les visiteurs) ; false : l'application est servie, comme sans cette option.
@@ -105,7 +108,7 @@ export function createApp({
   }
   // Garde réseau : un objet createNetGuard(), des options pour en créer une, ou l'environnement ; sinon on ne touche à rien.
   const guard = netGuard?.fetch ? netGuard : netGuard ? createNetGuard(netGuard) : netGuardFromEnv(env);
-  configureExtensions({ notifier, scheduler, ...(guard ? { netGuard: guard } : {}) });
+  configureExtensions({ notifier, scheduler, entitlements, ...(guard ? { netGuard: guard } : {}) });
 
   // Contexte commun à tous les gestionnaires (ctx.app) : ce que les routes ont besoin de savoir de l'application.
   const app = {

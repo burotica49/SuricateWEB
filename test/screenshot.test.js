@@ -32,6 +32,7 @@ const dbm = await import('../src/db.js');
 const shots = await import('../src/screenshot.js');
 const { runCheck, hooks } = await import('../src/checker.js');
 const { engine } = shots;
+const { configureExtensions, resetExtensions } = await import('../src/extensions.js');
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffdb00430008060607060508070707090908', 'hex');
 const noNet = { checks: { dns: false, tls: false, rdap: false } };
@@ -212,6 +213,39 @@ test('capture : échec enregistré sur le site, nouvelle tentative plus tôt, au
   const ok = await shots.captureWatch(w.id);
   assert.ok(ok.id);
   assert.equal((await dbm.getWatch(w.id)).shotError, null, "l'erreur disparaît au succès");
+});
+
+test('capture : refusée par le forfait (planifiée, d\'alerte), sans navigateur ; reprise au changement de forfait ; panne des quotas = autorisé', async () => {
+  const w = await dbm.createWatch({ name: 'Forfait', url: 'https://forfait.test/', interval: 5, config: { ...noNet, screenshot: { interval: 30 } } });
+  const seen = [];
+  const limits = { screenshots: false };
+  configureExtensions({ entitlements: { check() {}, limits: async (ctx) => { seen.push(ctx.account.id); return limits; } } });
+  try {
+    calls = 0;
+    const r = await shots.captureWatch(w.id);
+    assert.equal(r.error, shots.NOT_IN_PLAN);
+    assert.equal(calls, 0, 'aucune capture lancée');
+    assert.deepEqual(seen, [w.accountId], 'les quotas sont demandés pour le compte du site, sans requête');
+    assert.equal((await dbm.listScreenshots(w.id)).length, 0);
+    const after = await dbm.getWatch(w.id);
+    assert.equal(after.shotError, shots.NOT_IN_PLAN, 'le site porte la raison');
+    assert.ok(after.nextShot - Date.now() <= 30 * 60e3 + 1000 && after.nextShot > Date.now() + 25 * 60e3, 'nouvelle vérification dans 30 min, pas à chaque passage du planificateur');
+    assert.equal((await shots.captureWatch(w.id, { kind: 'alert' })).error, shots.NOT_IN_PLAN, 'la photo d\'une alerte non plus');
+
+    limits.screenshots = true; // le forfait change
+    const ok = await shots.captureWatch(w.id);
+    assert.ok(ok.id);
+    assert.equal(calls, 1);
+    assert.equal((await dbm.getWatch(w.id)).shotError, null);
+
+    configureExtensions({ entitlements: { check() {}, limits: async () => { throw new Error('base indisponible'); } } });
+    const logged = console.error;
+    console.error = () => {};
+    try { assert.ok((await shots.captureWatch(w.id)).id, 'une panne des quotas n\'arrête pas les captures'); } finally { console.error = logged; }
+  } finally {
+    resetExtensions();
+  }
+  assert.ok((await shots.captureWatch(w.id)).id, 'sans extension : aucune limite');
 });
 
 test('rétention : planifiées limitées, manuelles et d\'alerte conservées à part, fichiers supprimés', async () => {

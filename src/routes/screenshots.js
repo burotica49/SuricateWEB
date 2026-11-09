@@ -3,7 +3,7 @@ import { HttpError } from '../http.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listScreenshots, screenshotStats, settingsFor, SHOTS_DIR } from '../db.js';
-import { captureWatch, isCapturing, engine, shotLimits, NO_CHROME } from '../screenshot.js';
+import { captureWatch, isCapturing, engine, shotLimits, NO_CHROME, NOT_IN_PLAN } from '../screenshot.js';
 import { clamp } from '../util.js';
 import { loadWatch } from './shared.js';
 
@@ -12,6 +12,7 @@ export default function register({ route }) {
     const w = await loadWatch(ctx);
     return {
       available: engine.available(),
+      allowed: (await ctx.limits()).screenshots !== false, // le forfait inclut-il les captures ?
       enabled: w.config.screenshot.enabled && w.config.mode !== 'domain',
       interval: w.config.screenshot.interval,
       ...shotLimits(w, await settingsFor(ctx.account.id)),
@@ -26,6 +27,7 @@ export default function register({ route }) {
   route('POST', '/api/watches/:id/screenshot', async (ctx) => {
     const w = await loadWatch(ctx);
     if (w.config.mode === 'domain') throw new HttpError(400, "Un domaine seul n'a pas de page à capturer");
+    if ((await ctx.limits()).screenshots === false) throw new HttpError(402, NOT_IN_PLAN);
     if (!engine.available()) throw new HttpError(503, NO_CHROME);
     const r = await captureWatch(w.id, { kind: 'manual' });
     if (r.error) throw new HttpError(502, `Capture impossible : ${r.error}`);

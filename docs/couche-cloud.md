@@ -110,7 +110,7 @@ C'est ici que vit le partage d'accès : un invité « rapport » n'a que `report
 ```js
 {
   check(ctx, action, details) { /* lève une HttpError pour refuser */ },
-  limits(ctx) → { minIntervalMin?: number }   // plafonds ; {} si aucun
+  limits(ctx) → { minIntervalMin?: number, screenshots?: boolean }   // plafonds ; {} si aucun
 }
 ```
 
@@ -121,7 +121,15 @@ Le cœur appelle `check` dans trois cas :
 | `site:create` | création d'un site ; **chaque** site d'un import (au-delà du quota, les suivants sont ignorés et comptés dans `skipped`, sans erreur globale) | 402 (ou le statut de votre `HttpError`) |
 | `site:enable` | reprise d'un site en pause | idem |
 
-`limits().minIntervalMin` ramène un intervalle plus court au minimum autorisé, **sans refuser** la requête. Il ne couvre que l'intervalle des contrôles ; les autres plafonds (captures, rétention, pages par site, connecteur CMS, page de statut) sont à imposer vous-même, soit par `check`, soit dans vos routes, soit en filtrant la configuration reçue (voir §9).
+`limits().minIntervalMin` ramène un intervalle plus court au minimum autorisé, **sans refuser** la requête.
+
+`limits().screenshots === false` (depuis 1.15) retire les **captures d'écran** du forfait :
+
+- les captures planifiées et celles d'une alerte ne se lancent pas ; le site porte la raison (`shotError`) et la vérification reprend toutes les 30 min, ce qui rend un changement de forfait effectif sans action ;
+- la capture manuelle répond **402** ; `GET /api/watches/:id/screenshots` et `GET /api/settings` renvoient `allowed: false`, et l'interface explique « non incluses dans votre forfait » au lieu de « navigateur introuvable » ;
+- hors requête (planificateur, alertes), le cœur appelle `limits({ account: { id } })` **avec le seul compte** : ne comptez pas sur `ctx.user` ni sur la requête. Une erreur de `limits` n'arrête pas les captures (journalisée).
+
+Les autres plafonds (rétention, pages par site, connecteur CMS, page de statut) sont à imposer vous-même, soit par `check`, soit dans vos routes, soit en filtrant la configuration reçue (voir §9).
 
 À trancher côté cloud : un site en pause compte-t-il dans le quota ? Le cœur appelle `site:create` pour tout nouveau site et `site:enable` pour toute reprise ; c'est à votre `check` de compter comme le forfait l'exige. Que faire quand un compte dépasse son forfait après une rétrogradation (mettre les sites en trop en pause, ne **jamais** supprimer) est aussi de votre ressort.
 
@@ -189,7 +197,14 @@ Pas de lecteur de boutons Telegram multi-comptes dans le cœur : le sien est li�
 
 ### 3.9 `capabilities`
 
-Fusionné dans `GET /api/capabilities` (public), avec `{ mode: 'self-hosted', multiUser: false, billing: false, version }` par défaut. L'interface s'en servira pour afficher ou masquer des écrans (le contrôle réel reste côté serveur).
+Fusionné dans `GET /api/capabilities` (public), avec `{ mode: 'self-hosted', multiUser: false, billing: false, version }` par défaut. L'interface s'en sert pour afficher ou masquer des écrans (le contrôle réel reste côté serveur). Depuis 1.15, elle lit aussi :
+
+| Clé | Effet |
+|---|---|
+| `accountLinks: [{ label, href }]` | liens affichés sous le menu de la barre latérale (ex. « Mon forfait »). `href` : un chemin du même site (`/…`), tout autre lien est ignoré |
+| `usageUrl: '/api/…'` | jauge d'usage : l'interface fait `GET` sur cette adresse (avec la session) et lit `{ plan: { name }, usage: { sites: { active, max } } }` ; `max: null` = illimité. Elle se rafraîchit à chaque changement de page, au plus toutes les 4 s |
+
+Sans ces clés (cœur auto-hébergé), rien n'est affiché.
 
 ### 3.10 `home`
 

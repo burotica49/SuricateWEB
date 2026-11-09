@@ -335,3 +335,31 @@ test('home : sans l\'option, ou en cas d\'erreur, l\'application est servie', as
   assert.match((await b.call('GET', '/')).text, /<div id="app">/, 'authentification en panne : application servie');
   assert.equal(identity, null, "une erreur d'authentification n'ouvre rien : le gestionnaire reçoit null");
 });
+
+// ───────────── Captures selon le forfait : limits().screenshots ─────────────
+
+test('forfait sans captures : route manuelle 402, liste et réglages l\'annoncent, un forfait avec captures n\'est pas touché', async () => {
+  const limits = { screenshots: false };
+  const entitlements = { check() {}, limits: () => limits };
+  const { call } = await start({ auth: fakeAuth(), entitlements });
+  const w = await dbm.createWatch({ name: 'Cap', url: 'https://cap.test/', interval: 5, accountId: 70, config: SITE.config });
+
+  const list = await call('GET', `/api/watches/${w.id}/screenshots`, { as: 'alice' });
+  assert.equal(list.status, 200);
+  assert.equal(list.json.allowed, false);
+  const manual = await call('POST', `/api/watches/${w.id}/screenshot`, { as: 'alice', body: {} });
+  assert.equal(manual.status, 402);
+  assert.match(manual.json.error, /pas incluses dans votre forfait/);
+  assert.equal((await call('GET', '/api/settings', { as: 'alice' })).json.screenshots.allowed, false);
+
+  limits.screenshots = true;
+  assert.equal((await call('GET', `/api/watches/${w.id}/screenshots`, { as: 'alice' })).json.allowed, true);
+  assert.equal((await call('GET', '/api/settings', { as: 'alice' })).json.screenshots.allowed, true);
+  assert.notEqual((await call('POST', `/api/watches/${w.id}/screenshot`, { as: 'alice', body: {} })).status, 402, 'avec captures : la route n\'est plus refusée pour le forfait');
+});
+
+test('cœur auto-hébergé : les captures sont « allowed » par défaut', async () => {
+  const { call } = await start({ auth: fakeAuth() });
+  const w = await dbm.createWatch({ name: 'Cap2', url: 'https://cap2.test/', interval: 5, accountId: 70, config: SITE.config });
+  assert.equal((await call('GET', `/api/watches/${w.id}/screenshots`, { as: 'alice' })).json.allowed, true);
+});

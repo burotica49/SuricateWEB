@@ -49,6 +49,9 @@ export function browserLabel() {
 }
 const hasBrowser = () => { try { return !!remoteEndpoint() || !!chromePath(); } catch { return false; } };
 
+/** Message quand le forfait du compte n'inclut pas les captures (affiché sur le site et renvoyé en 402). */
+export const NOT_IN_PLAN = "Les captures d'écran ne sont pas incluses dans votre forfait.";
+
 export const NO_CHROME = "Chrome ou Chromium est introuvable sur le serveur : installez-le, ou indiquez son chemin dans CHROME_PATH.";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -412,9 +415,29 @@ export function captureWatch(id, { kind = 'scheduled' } = {}) {
   return p;
 }
 
+/**
+ * Le forfait du compte permet-il les captures ? `limits({ account })` renvoie `screenshots: false` pour les refuser ; tout autre cas les
+ * permet (cœur auto-hébergé : aucune limite). Une panne du fournisseur de quotas n'arrête pas les captures : elle est journalisée.
+ */
+export async function screenshotsAllowed(accountId) {
+  try {
+    return (await getExtensions().entitlements.limits({ account: { id: accountId } }))?.screenshots !== false;
+  } catch (e) {
+    console.error('[captures] quotas du forfait indisponibles :', e.message);
+    return true;
+  }
+}
+
+/** Reprise de la vérification du forfait pour un site dont les captures sont refusées : assez rare pour ne rien coûter, assez courte pour qu'un changement de forfait joue vite. */
+const PLAN_RECHECK_MS = 30 * 60e3;
+
 async function doCapture(id, kind) {
   const w = await getWatch(id);
   if (!w) return { error: 'Site introuvable' };
+  if (!(await screenshotsAllowed(w.accountId))) {
+    await setShotState(id, { nextShot: Date.now() + PLAN_RECHECK_MS, error: NOT_IN_PLAN });
+    return { error: NOT_IN_PLAN };
+  }
   // Mode démo (voir scheduler.js) : on ne touche ni au réseau ni aux données de démonstration.
   if (process.env.SURICATE_DEMO === '1') return { error: 'Mode démo : les captures sont désactivées (données fictives).' };
   const sc = w.config.screenshot;

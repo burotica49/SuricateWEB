@@ -16,19 +16,25 @@ const defaults = () => ({
   scheduler: { concurrency: 5, pickDue: (now, limit) => dueWatchIds(now, limit) },
   /** Garde réseau (src/net-guard.js) : inerte par défaut ; la version hébergée l'active (refus des adresses privées, DNS rebinding). */
   netGuard: createNetGuard({ enabled: false }),
+  /**
+   * Quotas du forfait (même objet que l'option `entitlements` de createApp). Le cœur le consulte aussi HORS requête : les captures planifiées
+   * ou d'alerte n'ont pas de `ctx`, juste un compte. Défaut : aucune limite.
+   */
+  entitlements: { check: () => {}, limits: () => ({}) },
 });
 
 let current = defaults();
 
 export const getExtensions = () => current;
 
-export function configureExtensions({ notifier, scheduler, netGuard } = {}) {
+export function configureExtensions({ notifier, scheduler, netGuard, entitlements } = {}) {
   if (notifier && typeof notifier.resolveChannels !== 'function') throw new Error('notifier.resolveChannels doit être une fonction');
   if (netGuard && typeof netGuard.fetch !== 'function') throw new Error('netGuard doit venir de createNetGuard()');
   current = {
     notifier: notifier ?? current.notifier,
     scheduler: { ...current.scheduler, ...(scheduler ?? {}) },
     netGuard: netGuard ?? current.netGuard,
+    entitlements: entitlements ?? current.entitlements,
   };
 }
 

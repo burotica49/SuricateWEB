@@ -184,7 +184,7 @@ const avatar = (name) => h('div', { class: 'avatar', style: { background: `hsl($
 // ───────────── API ─────────────
 // view : « groups » (organisation manuelle en groupes) ou « status » (liste à plat, sites en alerte en premier).
 const loadView = () => { try { return localStorage.getItem('suricate-view') === 'status' ? 'status' : 'groups'; } catch { return 'groups'; } };
-const S = { auth: null, watches: [], groups: [], settings: null, filter: 'all', q: '', tag: null, open: new Set(), alertSev: '', view: loadView(), dragging: false };
+const S = { auth: null, caps: {}, plan: null, watches: [], groups: [], settings: null, filter: 'all', q: '', tag: null, open: new Set(), alertSev: '', view: loadView(), dragging: false };
 
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
@@ -300,6 +300,7 @@ function mountShell() {
         h('div', { class: 'brand' }, h('div', { class: 'logo' }, h('img', { src: '/icon-192.png', alt: '', width: 34, height: 34 })),
           h('div', {}, h('div', { class: 'brand-name' }, h('span', {}, ...brandName()), app.version ? h('span', { class: 'ver', title: `Version ${app.version}` }, `v${app.version}`) : null), h('small', {}, 'Surveillance de sites'))),
         h('nav', { class: 'nav' }, nav('#/', 'dashboard', 'Sites', 'sites'), nav('#/alertes', 'bell', 'Alertes', 'alertes'), nav('#/reglages', 'settings', 'Réglages', 'reglages')),
+        h('div', { id: 'plan-box', class: 'plan-box', hidden: true }),
         h('div', { class: 'side-foot' },
           h('a', { class: 'tg-state', href: '#/reglages' }, h('span', { class: `dot ${tgOk ? 'ok' : ''}` }), tgOk ? 'Telegram actif' : 'Telegram non configuré'),
           h('div', { class: 'side-actions' },
@@ -310,6 +311,44 @@ function mountShell() {
             S.auth?.required ? h('button', { class: 'btn ghost icon sm', title: 'Se déconnecter', 'aria-label': 'Se déconnecter', onclick: guard(async () => { await api('/logout', { method: 'POST' }); S.auth.authenticated = false; boot(); }) }, ic('logout')) : null))),
       h('main', { class: 'main', id: 'view' })));
   updateNav();
+  paintPlanBox();
+  refreshPlan();
+}
+
+// ───── Forfait (version hébergée) : liens de compte et jauge d'usage ─────
+// Tout vient des capacités annoncées par le serveur (GET /api/capabilities) : `accountLinks` et `usageUrl`. Le cœur auto-hébergé n'en
+// annonce aucune, et rien n'est affiché. Les liens sont des chemins du même site (localHref) et tout passe par textContent.
+const planLinks = () => (S.caps?.accountLinks ?? []).map((l) => [localHref(l?.href), String(l?.label ?? '').slice(0, 40)]).filter(([href, label]) => href && label);
+let planAt = 0;
+async function refreshPlan() {
+  const url = localHref(S.caps?.usageUrl);
+  if (!url || Date.now() - planAt < 4000) return; // la jauge change à la création ou à la suppression d'un site : pas plus d'une requête toutes les 4 s
+  planAt = Date.now();
+  try {
+    const r = await fetch(url);
+    if (r.ok) S.plan = await r.json();
+  } catch { /* la jauge est un confort : jamais une erreur */ }
+  paintPlanBox();
+}
+function paintPlanBox() {
+  const box = $('#plan-box');
+  if (!box) return;
+  const links = planLinks();
+  const name = S.plan?.plan?.name;
+  const s = S.plan?.usage?.sites;
+  if (!name && !links.length) { box.hidden = true; return; }
+  const kids = [];
+  if (name) kids.push(h('div', { class: 'plan-head' }, 'Forfait ', h('b', {}, String(name))));
+  if (s && Number.isFinite(s.active)) {
+    const max = Number.isFinite(s.max) ? s.max : null; // null : illimité
+    kids.push(
+      max ? h('div', { class: `gauge ${s.active >= max ? 'full' : ''}`, role: 'progressbar', 'aria-label': 'Sites surveillés', 'aria-valuemin': 0, 'aria-valuemax': max, 'aria-valuenow': s.active }, h('i', { style: { width: `${Math.min(100, Math.round((100 * s.active) / max))}%` } })) : null,
+      h('div', { class: 'plan-use muted' }, `${s.active}${max ? ` / ${max}` : ''} site${(max ?? s.active) > 1 ? 's' : ''} surveillé${(max ?? s.active) > 1 ? 's' : ''}${max ? '' : ' · illimité'}`),
+    );
+  }
+  for (const [href, label] of links) kids.push(h('a', { href }, label));
+  box.replaceChildren(...kids);
+  box.hidden = false;
 }
 
 function updateNav() {
@@ -346,7 +385,7 @@ async function route() {
     if (tok === renderToken) view.replaceChildren(h('div', { class: 'card empty' }, h('div', { class: 'art' }, ic('alert')), h('h2', {}, 'Impossible de charger cette page'), h('p', {}, e.message), h('a', { class: 'btn', href: '#/' }, 'Retour au tableau de bord')));
   }
 }
-addEventListener('hashchange', () => { S.open.clear(); route(); window.scrollTo(0, 0); });
+addEventListener('hashchange', () => { S.open.clear(); route(); window.scrollTo(0, 0); refreshPlan(); });
 
 // ───────────── Temps réel ─────────────
 let refreshTimer;
@@ -1111,6 +1150,7 @@ function captureNowButton(w) {
 /** Aperçu du site, dans un cadre de navigateur : la dernière capture, en grand, dès l'ouverture de la page. */
 function previewCard(w) {
   const avail = S.settings?.screenshots?.available;
+  const planOff = S.settings?.screenshots?.allowed === false; // le forfait n'inclut pas les captures
   const on = w.config.screenshot.enabled;
   const s = w.shot;
   const body = s
@@ -1119,8 +1159,8 @@ function previewCard(w) {
       openLightbox(d.items, Math.max(0, d.items.findIndex((x) => x.id === s.id)), w);
     }) }, h('img', { src: shotUrl(s), alt: `Capture de ${w.name}` }))
     : h('div', { class: 'pv-empty' }, ic('image'),
-      h('b', {}, !avail ? 'Navigateur introuvable' : !on ? 'Captures désactivées' : w.shotError ? 'Capture impossible' : 'Première capture en cours…'),
-      h('span', {}, !avail ? 'Installez Chrome ou Chromium sur le serveur, ou définissez CHROME_PATH.' : !on ? 'Activez-les dans « Modifier › Capture d\'écran ».' : w.shotError || 'Elle apparaît dans quelques secondes.'));
+      h('b', {}, planOff ? 'Non incluses dans votre forfait' : !avail ? 'Navigateur introuvable' : !on ? 'Captures désactivées' : w.shotError ? 'Capture impossible' : 'Première capture en cours…'),
+      h('span', {}, planOff ? 'Passez à un forfait supérieur pour suivre l\'apparence de vos sites.' : !avail ? 'Installez Chrome ou Chromium sur le serveur, ou définissez CHROME_PATH.' : !on ? 'Activez-les dans « Modifier › Capture d\'écran ».' : w.shotError || 'Elle apparaît dans quelques secondes.'));
   return h('div', { class: 'card pv' },
     h('div', { class: 'pv-bar' }, h('span', { class: 'pv-dots' }, h('i'), h('i'), h('i')), h('span', { class: 'pv-url' }, host(w.url)),
       s ? h('span', { class: 'pv-when', title: new Date(s.ts).toLocaleString('fr-FR') }, rel(s.ts)) : null),
@@ -1134,6 +1174,7 @@ function previewCard(w) {
 async function capturesTab(w) {
   const d = await api(`/watches/${w.id}/screenshots`);
   const root = h('div', {});
+  if (d.allowed === false) root.append(h('div', { class: 'callout' }, ic('info'), h('div', {}, h('b', {}, 'Les captures d\'écran ne sont pas incluses dans votre forfait. '), 'Passez à un forfait supérieur pour les activer.')));
   if (!d.available) {
     root.append(h('div', { class: 'callout' }, ic('info'), h('div', {}, h('b', {}, 'Aucun navigateur sur le serveur. '), 'Les captures d\'écran nécessitent Chrome ou Chromium. Installez-le, ou indiquez son chemin dans la variable CHROME_PATH (déjà inclus dans l\'image Docker).')));
   } else {
@@ -1747,6 +1788,8 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     h('h3', { style: { margin: '22px 0 4px' } }, 'Que surveiller ?'), h('p', { class: 'muted', style: { marginBottom: '8px' } }, 'La configuration recommandée surveille tout. Désactivez ce qui produit trop de bruit sur ce site.'),
     ...groups,
     siteOnly(details('Capture d\'écran', [
+      S.settings?.screenshots?.allowed === false
+        ? h('div', { class: 'callout', style: { marginBottom: '12px' } }, ic('info'), h('div', {}, 'Les captures d\'écran ne sont pas incluses dans votre forfait : elles resteront inactives tant que vous n\'aurez pas changé de forfait.')) : null,
       S.settings?.screenshots?.available === false
         ? h('div', { class: 'callout', style: { marginBottom: '12px' } }, ic('info'), h('div', {}, 'Aucun navigateur détecté sur le serveur : les captures sont inactives. Installez Chrome ou Chromium, ou définissez CHROME_PATH.')) : null,
       toggle(f.shotOn, 'Capturer le site régulièrement', 'Un aperçu visuel à jour, et l\'historique des changements d\'apparence.'),
@@ -2089,6 +2132,7 @@ async function boot() {
   }
   if (S.auth.required && !S.auth.authenticated) return viewLogin();
   if (!S.settings) S.settings = await api('/settings').catch(() => null);
+  S.caps = await fetch('/api/capabilities').then((r) => r.json()).catch(() => ({}));
   mountShell();
   if (!eventsOn) { eventsOn = true; connectEvents(); }
   route();

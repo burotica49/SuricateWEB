@@ -3,7 +3,7 @@
 // La version hébergée (PostgreSQL) fait, dans son point d'entrée :
 //
 //     import { configureStore } from '<cœur>/src/store/registry.js';
-//     configureStore({ open: async () => openPostgres(process.env.DATABASE_URL), migrations: [m1000Comptes] });
+//     configureStore({ open: async () => openPostgres(process.env.DATABASE_URL), migrations: [m1000Comptes], secrets: { seal, open } });
 //     await import('<cœur>/server.js');   // db.js s'ouvre alors sur l'adaptateur fourni
 //
 // `open` renvoie un adaptateur (contrat : src/store/sqlite.js). `migrations` s'ajoutent à celles du cœur : numéros à partir de
@@ -11,18 +11,29 @@
 import { openSqlite } from './sqlite.js';
 
 let customOpen = null;
+let secretCodec = null;
 const extraMigrations = [];
 
-export function configureStore({ open, migrations = [] } = {}) {
+/**
+ * `secrets` : { seal(texte) → texte chiffré préfixé « v1: », open(texte chiffré) → texte } — chiffre au repos les secrets que le
+ * cœur stocke dans les réglages (le jeton du bot Telegram). Sans lui, tout reste en clair, comme dans une installation personnelle.
+ */
+export function configureStore({ open, migrations = [], secrets } = {}) {
   if (open) customOpen = open;
+  if (secrets) {
+    if (typeof secrets.seal !== 'function' || typeof secrets.open !== 'function') throw new Error('secrets doit fournir seal() et open()');
+    secretCodec = secrets;
+  }
   extraMigrations.push(...migrations);
 }
 
 export const getExtraMigrations = () => [...extraMigrations];
+export const getSecretCodec = () => secretCodec;
 
 /** Remet les valeurs d'origine (tests). */
 export function resetStore() {
   customOpen = null;
+  secretCodec = null;
   extraMigrations.length = 0;
 }
 

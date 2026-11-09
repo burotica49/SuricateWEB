@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 import { clamp } from './util.js';
-import { openStore, getExtraMigrations } from './store/registry.js';
+import { openStore, getExtraMigrations, getSecretCodec } from './store/registry.js';
 import { migrate } from './store/migrate.js';
 import { MIGRATIONS } from './store/migrations/index.js';
 
@@ -98,12 +98,55 @@ const ACCOUNT_TTL_MS = 30e3;
 let instanceCache = null;
 const accountCache = new Map(); // identifiant de compte → { value, at }
 
+// Secrets des réglages (jeton du bot Telegram) : chiffrés AU REPOS quand la version hébergée fournit un codec (store/registry.js),
+// en clair sinon. Un secret chiffré se reconnaît à son préfixe « v1: » ; une valeur sans préfixe est du clair d'avant le chiffrement :
+// elle reste lisible, et se chiffre à la prochaine écriture (ou tout de suite avec sealStoredSecrets). En mémoire, tout est en clair.
+const isSealed = (v) => typeof v === 'string' && /^v\d+:/.test(v);
+
+function openSecrets(value, key) {
+  const token = value?.telegram?.token;
+  if (!isSealed(token)) return value;
+  const codec = getSecretCodec();
+  if (!codec) throw new Error(`Réglages « ${key} » : jeton chiffré, mais aucune clé n'est configurée (voir configureStore, secrets)`);
+  try {
+    return { ...value, telegram: { ...value.telegram, token: codec.open(token) } };
+  } catch {
+    // Clé changée ou perdue : ne pas faire tomber tout le service pour un compte. Le jeton est considéré comme absent (à ressaisir).
+    console.error(`[secrets] Réglages « ${key} » : jeton Telegram illisible avec la clé actuelle (SECRETS_KEY modifiée ?). Il doit être ressaisi.`);
+    return { ...value, telegram: { ...value.telegram, token: '' } };
+  }
+}
+
+function sealSecrets(value) {
+  const codec = getSecretCodec();
+  const token = value?.telegram?.token;
+  if (!codec || typeof token !== 'string' || !token || isSealed(token)) return value;
+  return { ...value, telegram: { ...value.telegram, token: codec.seal(token) } };
+}
+
 const settingsRow = async (key) => {
   const row = await db.get('SELECT value FROM settings WHERE key = ?', [key]);
-  return row ? json(row.value, {}) : null;
+  return row ? openSecrets(json(row.value, {}), key) : null;
 };
 const persistRow = (key, value) =>
-  db.run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, JSON.stringify(value)]);
+  db.run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, JSON.stringify(sealSecrets(value))]);
+
+/**
+ * Chiffre tout de suite les secrets encore en clair dans les réglages des comptes (données d'avant l'activation du chiffrement).
+ * À appeler au démarrage quand un codec est configuré. Renvoie le nombre de lignes réécrites.
+ */
+export async function sealStoredSecrets() {
+  if (!getSecretCodec()) return 0;
+  let n = 0;
+  for (const row of await db.all("SELECT key, value FROM settings WHERE key LIKE 'account:%'")) {
+    const token = json(row.value, {})?.telegram?.token;
+    if (typeof token === 'string' && token && !isSealed(token)) {
+      await db.run('UPDATE settings SET value = ? WHERE key = ?', [JSON.stringify(sealSecrets(json(row.value, {}))), row.key]);
+      n++;
+    }
+  }
+  return n;
+}
 
 /** Réglages de l'installation (secret de session, adresse publique, rétention des contrôles et versions). */
 export function getInstanceSettings() {

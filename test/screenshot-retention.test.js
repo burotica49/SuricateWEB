@@ -174,3 +174,13 @@ test('interface : champ « Captures à conserver », durée couverte, compteur d
     page.close();
   }
 });
+
+test('SURICATE_CAPTURES=0 : le moteur de capture est indisponible, même avec un Chrome installé', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const run = (env) => execFileSync(process.execPath, ['--input-type=module', '-e',
+    `process.env.CHROME_PATH = process.execPath; const m = await import(${JSON.stringify(new URL('../src/screenshot.js', import.meta.url).href)}); console.log(String(m.engine.available())); process.exit(0);`],
+  { env: { ...process.env, DATA_DIR: process.env.DATA_DIR, ...env }, encoding: 'utf8' }).trim().split('\n').pop();
+  assert.equal(run({ SURICATE_CAPTURES: '' }), 'true', 'par défaut : un navigateur est détecté (ici, un chemin existant via CHROME_PATH)');
+  assert.equal(run({ SURICATE_CAPTURES: '0' }), 'false');
+  assert.equal(run({ SURICATE_CAPTURES: 'false' }), 'false');
+});

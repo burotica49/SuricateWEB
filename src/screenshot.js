@@ -23,7 +23,9 @@ const CANDIDATES = [
 ].filter(Boolean);
 
 let chromeCache;
-export const chromePath = () => (chromeCache ??= CANDIDATES.find((p) => existsSync(p)) || null);
+// SURICATE_CAPTURES=0 coupe les captures d'écran même si Chrome est installé : un service ouvert à des inconnus ne doit pas lancer de
+// navigateur sur des adresses choisies par n'importe qui tant que Chrome n'est pas isolé du reste (docs/couche-cloud.md §7).
+export const chromePath = () => (chromeCache ??= /^(0|false|no)$/i.test(process.env.SURICATE_CAPTURES || '') ? null : CANDIDATES.find((p) => existsSync(p)) || null);
 
 export const NO_CHROME = "Chrome ou Chromium est introuvable sur le serveur : installez-le, ou indiquez son chemin dans CHROME_PATH.";
 

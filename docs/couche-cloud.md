@@ -2,7 +2,7 @@
 
 Document de référence pour le dépôt **privé** qui transforme le cœur open source en service multi-comptes (comptes, quotas, paiement, partage). Il décrit ce que le cœur garantit, comment l'assembler, chaque point d'extension, et ce qu'il reste à construire.
 
-État du cœur décrit ici : **version 1.10.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
+État du cœur décrit ici : **version 1.11.0**. Le cœur est sous licence Apache 2.0, sans dépendance npm ; la couche hébergée est un dépôt à part qui l'embarque (sous-module Git ou dépendance Git) et peut, elle, avoir des dépendances (`pg`, un client d'e-mail…).
 
 ## 1. Ce que le cœur garantit
 
@@ -221,7 +221,9 @@ Les fonctions qui prennent l'identifiant d'un site **déjà obtenu par `ctx.data
 
 `settingsFor(compteId)` donne la **vue fusionnée** (installation + compte) que reçoivent contrôles, messages et relevés. `getSettings()` (synchrone) est la vue du **compte implicite 1** : à ne pas utiliser dans du code multi-comptes. Un compte sans ligne a les valeurs par défaut (`accountDefaults()`). Les réglages d'un compte sont relus au bout de 30 s : une modification faite par un autre processus est vue dans ce délai.
 
-À faire côté cloud : **chiffrer les jetons Telegram** (ils sont stockés en clair dans les lignes de réglages), et décider si la rétention des contrôles devient un réglage de forfait (aujourd'hui d'installation).
+**Chiffrement des jetons Telegram.** Par défaut le jeton du bot est stocké en clair dans la ligne de réglages du compte. `configureStore({ secrets: { seal, open } })` le chiffre au repos : `seal(texte)` renvoie un texte préfixé `v1:` (AES-GCM, par exemple), `open` fait l'inverse. En mémoire et dans l'API, le jeton reste en clair ; en base, jamais. Une valeur sans préfixe est du clair d'avant le chiffrement : elle reste lisible et se chiffre à la prochaine écriture, ou tout de suite avec `sealStoredSecrets()` (à appeler au démarrage). Si la clé change ou se perd, le jeton d'un compte est considéré absent (message dans les journaux, à ressaisir) au lieu de faire tomber le service ; un jeton chiffré sans aucun codec configuré lève une erreur explicite.
+
+À décider côté cloud : si la rétention des contrôles devient un réglage de forfait (aujourd'hui d'installation).
 
 ## 6. Le moteur de base de données
 

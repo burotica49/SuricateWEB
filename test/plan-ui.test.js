@@ -81,3 +81,37 @@ test('captures hors forfait : expliquées sur la fiche du site, sans « navigate
     assert.ok(!/Navigateur introuvable/.test(await page.run('document.body.textContent')));
   });
 });
+
+test('boutons par groupe et par site : annoncés par le serveur (scopeLinks), réglés sur le bon groupe ou site, liens dangereux ignorés', { skip, timeout: 90000 }, async (t) => {
+  const g = await dbm.createGroup({ name: 'Client Dupont' });
+  const w = await dbm.createWatch({ name: 'Boutique', url: 'https://exemple.invalid/', interval: 60, groupId: g.id, config: { checks: { dns: false, tls: false, rdap: false } } });
+  const scopeLinks = [
+    { label: 'Notifications', href: '/api/account/pages/notifications', icon: 'bell' },
+    { label: 'Partage', href: '/api/account/pages/partage?x=1', icon: 'share' },
+    { label: 'Piège', href: 'javascript:alert(1)', icon: 'bell' },
+    { label: 'Ailleurs', href: '//evil.example/', icon: 'bell' },
+    { label: 'Icône inconnue', href: '/ok', icon: 'constructor' },
+  ];
+  await withPage(t, { capabilities: { scopeLinks } }, async (page) => {
+    await page.run("T.until(() => document.querySelector('.grp-head'))");
+    const grp = await page.run("[...document.querySelectorAll('.grp-actions a')].filter((a) => /scope=group/.test(a.getAttribute('href'))).map((a) => [a.getAttribute('href'), a.getAttribute('title')])");
+    assert.deepEqual(grp, [
+      [`/api/account/pages/notifications?scope=group&id=${g.id}`, 'Notifications de ce groupe'],
+      [`/api/account/pages/partage?x=1&scope=group&id=${g.id}`, 'Partage de ce groupe'],
+      [`/ok?scope=group&id=${g.id}`, 'Icône inconnue de ce groupe'],
+    ], 'ni « javascript: » ni un autre site ; un paramètre existant est conservé');
+    assert.equal(await page.run("document.querySelector('.grp-actions a[href*=\"scope=group\"] svg') !== null"), true, 'une icône, jamais de HTML venu du serveur');
+    await page.run(`location.hash = '#/sites/${w.id}'`);
+    await page.run("T.until(() => [...document.querySelectorAll('.actions a')].some((a) => /Notifications/.test(a.textContent)))");
+    const site = await page.run("[...document.querySelectorAll('.actions a')].filter((a) => /scope=site/.test(a.getAttribute('href'))).map((a) => [a.textContent, a.getAttribute('href')])");
+    assert.deepEqual(site, [
+      ['Notifications', `/api/account/pages/notifications?scope=site&id=${w.id}`],
+      ['Partage', `/api/account/pages/partage?x=1&scope=site&id=${w.id}`],
+      ['Icône inconnue', `/ok?scope=site&id=${w.id}`],
+    ]);
+  });
+  await withPage(t, {}, async (page) => {
+    await page.run("T.until(() => document.querySelector('.grp-head'))");
+    assert.equal(await page.run("document.querySelectorAll('.grp-actions a[href*=\"scope=\"]').length"), 0, 'cœur auto-hébergé : aucun bouton de ce genre');
+  });
+});

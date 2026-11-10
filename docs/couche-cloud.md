@@ -203,6 +203,7 @@ Fusionné dans `GET /api/capabilities` (public), avec `{ mode: 'self-hosted', mu
 |---|---|
 | `accountLinks: [{ label, href }]` | liens affichés sous le menu de la barre latérale (ex. « Mon forfait »). `href` : un chemin du même site (`/…`), tout autre lien est ignoré |
 | `usageUrl: '/api/…'` | jauge d'usage : l'interface fait `GET` sur cette adresse (avec la session) et lit `{ plan: { name }, usage: { sites: { active, max } } }` ; `max: null` = illimité. Elle se rafraîchit à chaque changement de page, au plus toutes les 4 s |
+| `scopeLinks: [{ label, href, icon }]` | boutons **par groupe** (dans l'en-tête du groupe) et **par site** (sur sa fiche), pour gérer à cet endroit des réglages que le serveur porte (notifications, partage…). Le bouton ouvre `href?scope=group&id=N` ou `href?scope=site&id=N` (`&` si `href` a déjà un paramètre) : la page du serveur s'ouvre réglée sur ce groupe ou ce site. `href` : un chemin du même site ; `icon` : un nom d'icône de l'interface (`bell`, `share`, `settings`…), `external` par défaut ; texte seulement |
 
 Sans ces clés (cœur auto-hébergé), rien n'est affiché.
 

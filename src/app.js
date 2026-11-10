@@ -23,6 +23,7 @@
 //     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true }). L'interface lit aussi :
 //                       accountLinks  [{ label, href }]  liens affichés sous le menu (ex. « Mon forfait »), chemins du même site seulement
 //                       usageUrl      '/api/…'  jauge d'usage : GET renvoie { plan: { name }, usage: { sites: { active, max } } } (max null = illimité)
+//                       scopeLinks    [{ label, href, icon }]  boutons par groupe (en-tête) et par site (fiche) ; mènent à `href?scope=group|site&id=N`
 //     home,           async ({ req, res, identity }) → booléen : appelé pour GET et HEAD « / » (et pour eux seuls), avant le service du
 //                     dossier public/. `identity` = auth.authenticate(req), ou null sans session valide. Renvoie true s'il a répondu
 //                     (ex. une page de présentation pour les visiteurs) ; false : l'application est servie, comme sans cette option.

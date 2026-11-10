@@ -41,8 +41,13 @@ export default function register({ route }) {
     if (Array.isArray(b.builtinKeywords)) patch.builtinKeywords = b.builtinKeywords.map((s) => String(s).trim()).filter(Boolean).slice(0, 300);
 
     // Adresse publique : propre à l'installation (liens des boutons Telegram). Vérifier le droit AVANT d'écrire quoi que ce soit.
-    if (b.baseUrl !== undefined) await ctx.require('instance:write');
-    if (b.baseUrl !== undefined) await saveInstanceSettings({ baseUrl: String(b.baseUrl).trim().replace(/\/+$/, '') });
+    // Le formulaire de l'interface renvoie TOUJOURS ce champ, même inchangé : le droit n'est donc exigé que si la valeur CHANGE.
+    // Sans cela, un compte client de la version hébergée (qui n'a pas instance:write) aurait un « Accès refusé » à chaque enregistrement
+    // des réglages, y compris pour son bot Telegram.
+    const cleanBase = (v) => String(v ?? '').trim().replace(/\/+$/, '');
+    const baseChanged = b.baseUrl !== undefined && cleanBase(b.baseUrl) !== cleanBase(cur.baseUrl);
+    if (baseChanged) await ctx.require('instance:write');
+    if (baseChanged) await saveInstanceSettings({ baseUrl: cleanBase(b.baseUrl) });
     await saveAccountSettings(accountId, patch);
     if (keepAll !== null && keepAll !== cur.retention.screenshots) await pruneAllShots(accountId); // limite abaissée : appliquée aux sites du compte
     return await publicSettings(ctx);

@@ -144,6 +144,15 @@ test('adresse publique : réglage d\'installation, réservé au droit instance:w
   assert.equal((await call('bob', 'GET', '/api/settings')).json.baseUrl, 'https://suricate.example');
   // les écritures du compte, sans baseUrl, restent permises
   assert.equal((await call('alice', 'PUT', '/api/settings', { defaultInterval: 50 })).status, 200);
+  // Le formulaire renvoie l'adresse même inchangée (à la barre oblique finale près) : l'enregistrer ne doit pas exiger le droit d'installation.
+  const same = await call('alice', 'PUT', '/api/settings', { baseUrl: 'https://suricate.example/', telegram: { chatId: '123456' }, defaultInterval: 51 });
+  assert.equal(same.status, 200);
+  assert.equal(same.json.telegram.chatId, '123456');
+  // … mais la modifier reste refusé, et n'écrit toujours rien.
+  const changed = await call('alice', 'PUT', '/api/settings', { baseUrl: 'https://autre.example', defaultInterval: 77 });
+  assert.equal(changed.status, 403);
+  assert.equal(dbm.getInstanceSettings().baseUrl, 'https://suricate.example');
+  assert.equal((await call('alice', 'GET', '/api/settings')).json.defaultInterval, 51);
 });
 
 test('la rétention des contrôles et le secret de session ne sont jamais modifiables par un compte', async () => {

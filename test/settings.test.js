@@ -120,3 +120,13 @@ test('SCREENSHOT_KEEP_DEFAULT : défaut de conservation des captures (168 sans l
     if (before === undefined) delete process.env.SCREENSHOT_KEEP_DEFAULT; else process.env.SCREENSHOT_KEEP_DEFAULT = before;
   }
 });
+
+test('SCREENSHOT_KEEP_DEFAULT défini AU CHARGEMENT du module (cas de l\'image hébergée) : le cœur démarre et applique le défaut', async () => {
+  // Régression : une constante lue avant sa déclaration faisait planter le démarrage dès que la variable était définie (ReferenceError).
+  const { spawnSync } = await import('node:child_process');
+  const out = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e',
+    "const db = await import('./src/db.js'); console.log('KEEP=' + (await db.settingsFor(1)).retention.screenshots); db.db.close();"],
+  { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, DATA_DIR: mkdtempSync(join(tmpdir(), 'suricate-keep-')), SCREENSHOT_KEEP_DEFAULT: '24' }, encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /KEEP=24/);
+});

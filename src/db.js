@@ -77,6 +77,10 @@ const instanceDefaults = () => ({
   sessionSecret: '',
 });
 
+// Déclarée ICI, avant tout usage : accountDefaults() est appelée dès le chargement du module (réglages), et une `const` lue avant sa déclaration plante.
+/** Plafond de la limite de captures conservées par site. */
+export const MAX_KEEP = 2000;
+
 /**
  * Captures planifiées conservées par site, par défaut : 168 (7 jours à une capture par heure). `SCREENSHOT_KEEP_DEFAULT` change ce défaut
  * (ex. : la version hébergée garde 24 pour limiter le stockage) ; chaque compte reste libre de choisir autrement dans les réglages.
@@ -333,9 +337,6 @@ function pageList(v) {
 }
 
 const strList = (v, max = 100) => (Array.isArray(v) ? v : String(v ?? '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, max);
-
-/** Plafond de la limite de captures conservées par site. */
-export const MAX_KEEP = 2000;
 
 export function normalizeConfig(input = {}) {
   const d = defaultConfig();

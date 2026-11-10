@@ -17,6 +17,8 @@
 //     hooks,          { onWatchCreated(ctx, site), onWatchUpdated(ctx, site), onWatchDeleted(ctx, id), onStart(app), onStop(app) }
 //                     — informatifs : une erreur y est journalisée, jamais renvoyée au client
 //     notifier,       { resolveChannels(site, alertes, réglages) } : canaux de notification (src/notify.js)
+//     telegram,       { accounts(): [idCompte], chats?(idCompte): [conversations] } : un lecteur de boutons « Marquer comme lu » PAR COMPTE (chacun a son bot) au
+//                     lieu du lecteur unique du compte implicite ; `chats` ajoute des conversations autorisées pour le bot du compte (src/telegram-poll.js)
 //     netGuard,       garde réseau (src/net-guard.js) : createNetGuard({ enabled, allowedPorts, allowHosts }) ou ses options.
 //                     Défaut : celle de l'environnement (SURICATE_NET_GUARD=1), sinon inerte. À ACTIVER dès que des inconnus ajoutent des sites.
 //     scheduler,      { concurrency, pickDue(now, limite) } : planificateur (src/extensions.js)
@@ -42,9 +44,10 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSettings, getInstanceSettings, markAlertsReadUpTo, GroupError } from './db.js';
+import { getSettings, getInstanceSettings, settingsFor, getWatch, markAlertsReadUpTo, GroupError } from './db.js';
 import { startScheduler } from './scheduler.js';
-import { startTelegramPoller } from './telegram-poll.js';
+import { startShotPurge } from './screenshot.js';
+import { startTelegramPoller, startAccountPollers } from './telegram-poll.js';
 import { configureExtensions } from './extensions.js';
 import { createNetGuard, netGuardFromEnv } from './net-guard.js';
 import { bus } from './events.js';
@@ -89,6 +92,7 @@ export function createApp({
   notifier,
   scheduler,
   netGuard,
+  telegram = null,
   capabilities = {},
   home = null,
   root = CORE_ROOT,
@@ -184,7 +188,7 @@ export function createApp({
         req, res, params, query: url.searchParams, body: {}, headers: {}, app,
         user: identity?.user ?? null, account: identity?.account ?? null,
         /** Accès aux données limité au compte de l'utilisateur (src/scoped.js) ; null sur une route publique. */
-        data: identity ? scopedData(identity.account?.id) : null,
+        data: identity ? scopedData(identity.account?.id, identity.access ?? null) : null,
       };
       /** Le droit d'effectuer `action` (sur `resource`, si l'extension en tient compte) ? */
       ctx.can = async (action, resource) => !!(await authorize(ctx, action, resource));
@@ -211,6 +215,7 @@ export function createApp({
 
   let poller = null;
   let schedulerTimer = null;
+  let stopShotPurge = null;
 
   const handle = {
     server, info, auth,
@@ -229,16 +234,24 @@ export function createApp({
     /** Planificateur et lecteur des boutons Telegram. TELEGRAM_POLL=0 désactive le second ; inutile en mode démo. */
     startBackground() {
       schedulerTimer = startScheduler();
+      stopShotPurge = startShotPurge();
       if (env.SURICATE_DEMO !== '1' && env.TELEGRAM_POLL !== '0') {
-        poller = startTelegramPoller({
-          settings: () => getSettings().telegram,
-          onRead: async (watchId, upTo) => {
-            const rows = await markAlertsReadUpTo(watchId, upTo);
-            if (rows.some((r) => r.type === 'rdap_expiring')) await rememberDomainAck(watchId); // comme « Tout est normal »
-            if (rows.length) bus.emit('event', { type: 'ack', watchId });
-            return rows.length;
-          },
-        });
+        // « Marquer comme lu » : marque les alertes d'un site jusqu'à la dernière du message, comme « Tout est normal » dans l'interface.
+        const markRead = async (watchId, upTo) => {
+          const rows = await markAlertsReadUpTo(watchId, upTo);
+          if (rows.some((r) => r.type === 'rdap_expiring')) await rememberDomainAck(watchId);
+          if (rows.length) bus.emit('event', { type: 'ack', watchId });
+          return rows.length;
+        };
+        poller = typeof telegram?.accounts === 'function'
+          // Version hébergée : un lecteur par compte, chacun avec son bot. Le site visé doit appartenir au compte du bot.
+          ? startAccountPollers({
+            accounts: telegram.accounts,
+            settingsOf: async (accountId) => (await settingsFor(accountId)).telegram,
+            chatsOf: telegram.chats,
+            onRead: async (accountId, watchId, upTo) => ((await getWatch(watchId))?.accountId === accountId ? markRead(watchId, upTo) : 0),
+          })
+          : startTelegramPoller({ settings: () => getSettings().telegram, onRead: markRead });
       }
       return app.emit('onStart', handle);
     },
@@ -247,6 +260,7 @@ export function createApp({
     async stop() {
       poller?.stop();
       if (schedulerTimer) clearInterval(schedulerTimer);
+      stopShotPurge?.();
       // Le flux temps réel (SSE) garde des connexions ouvertes : sans les fermer, server.close() n'aboutirait jamais.
       server.closeAllConnections?.();
       await new Promise((resolve) => (server.listening ? server.close(resolve) : resolve()));

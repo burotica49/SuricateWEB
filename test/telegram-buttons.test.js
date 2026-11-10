@@ -47,7 +47,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 process.env.TELEGRAM_API = `http://127.0.0.1:${server.address().port}`;
 
 const tg = await import('../src/telegram.js');
-const { startTelegramPoller, parseCallback, readKeyboard } = await import('../src/telegram-poll.js');
+const { startTelegramPoller, startAccountPollers, parseCallback, readKeyboard } = await import('../src/telegram-poll.js');
 const dbm = await import('../src/db.js');
 
 const reset = () => Object.assign(fake, { sent: [], answers: [], edits: [], polls: [], queue: [], rejectUrl: false, rejectMarkup: false, chatNotFound: false, getUpdatesStatus: null, once: false });
@@ -271,3 +271,72 @@ test('serveur : le lecteur démarre, suit les réglages enregistrés et répond 
 });
 
 test.after(() => { server.close(); dbm.db.close(); });
+
+test('un lecteur par compte : seuls les comptes avec un bot sont lus, conversations supplémentaires autorisées, compte retiré ou sans bot arrêté', async () => {
+  reset();
+  const state = {
+    accounts: [1, 2],
+    s: { 1: { token: 'M1:ACC', chatId: '42', enabled: true, buttons: true }, 2: { token: '', chatId: '', enabled: true, buttons: true } },
+    chats: { 1: ['-100777'] },
+  };
+  const reads = [];
+  const p = startAccountPollers({
+    accounts: async () => state.accounts, settingsOf: async (id) => state.s[id], chatsOf: async (id) => state.chats[id] ?? [],
+    onRead: (accountId, w, u) => { reads.push([accountId, w, u]); return 1; },
+    refreshMs: 40, pollSeconds: 0, idleMs: 20, log: { warn() {}, error() {} },
+  });
+  try {
+    await until(() => pollsOf('M1:ACC').length > 0);
+    assert.equal(fake.polls.every((q) => q.token === 'M1:ACC'), true, 'le compte 2 n\'a pas de bot : aucune connexion ouverte pour lui');
+
+    // Un clic de la conversation des réglages, puis d'une conversation supplémentaire du même compte : tous deux acceptés, avec l'identifiant du compte.
+    fake.queue = [click('lu:5:42', { update_id: 20 })];
+    await until(() => reads.length === 1);
+    fake.queue = [click('lu:6:50', { update_id: 21, chat: -100777 })];
+    await until(() => reads.length === 2);
+    assert.deepEqual(reads, [[1, 5, 42], [1, 6, 50]]);
+    // Une conversation inconnue reste refusée.
+    fake.queue = [click('lu:5:60', { update_id: 22, chat: 999 })];
+    await until(() => fake.answers.some((a) => a.callback_query_id === 'cq22'));
+    assert.equal(fake.answers.find((a) => a.callback_query_id === 'cq22').text, 'Action non autorisée.');
+    assert.equal(reads.length, 2);
+
+    // Le compte 2 configure son bot : pris en compte au tour suivant, sans redémarrage.
+    state.s[2] = { token: 'M2:ACC', chatId: '43', enabled: true, buttons: true };
+    await until(() => pollsOf('M2:ACC').length > 0);
+    // Le compte 1 coupe ses boutons, puis le compte 2 disparaît : plus aucune connexion ne se rouvre pour eux.
+    state.s[1] = { ...state.s[1], buttons: false };
+    state.accounts = [1];
+    await new Promise((r) => setTimeout(r, 150));
+    const before = fake.polls.length;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(fake.polls.length, before, 'plus de lecture une fois les comptes arrêtés');
+  } finally { p.stop(); }
+});
+
+test('application avec l\'option telegram.accounts : le clic marque les alertes du compte du bot, jamais celles d\'un autre compte', async () => {
+  reset();
+  const { createApp } = await import('../src/app.js');
+  const A = 301;
+  const B = 302;
+  const mine = await dbm.createWatch({ name: 'Mon site', url: 'https://a.test/', interval: 5, accountId: A, enabled: false, config: { checks: { dns: false, tls: false, rdap: false }, screenshot: { enabled: false } } });
+  const theirs = await dbm.createWatch({ name: 'Site d\'un autre', url: 'https://b.test/', interval: 5, accountId: B, enabled: false, config: { checks: { dns: false, tls: false, rdap: false }, screenshot: { enabled: false } } });
+  const mineAlert = await dbm.insertAlert({ watchId: mine.id, severity: 'warning', type: 'content_changed', title: 'a' });
+  const theirAlert = await dbm.insertAlert({ watchId: theirs.id, severity: 'warning', type: 'content_changed', title: 'b' });
+  await dbm.saveAccountSettings(A, { telegram: { token: 'M9:APP', chatId: '42', enabled: true, buttons: true } });
+  const app = createApp({ env: { ...process.env, SURICATE_DEMO: '0', TELEGRAM_POLL: '1' }, auth: { authenticate: () => null, register: ({ route }) => route('GET', '/api/auth', () => ({}), { public: true }) }, telegram: { accounts: async () => [A] } });
+  await app.listen(0, '127.0.0.1');
+  await dbm.db.run('UPDATE watches SET enabled = 0'); // le planificateur démarre aussi : aucun contrôle réseau des sites des autres tests
+  app.startBackground();
+  try {
+    await until(() => pollsOf('M9:APP').length > 0, 6000);
+    // Le titulaire du bot fabrique un bouton visant le site d'un AUTRE compte : sans effet.
+    fake.queue = [click(`lu:${theirs.id}:${theirAlert}`, { update_id: 30 })];
+    await until(() => fake.answers.some((a) => a.callback_query_id === 'cq30'));
+    assert.equal((await dbm.markAlertsReadUpTo(theirs.id, theirAlert)).length, 1, 'l\'alerte de l\'autre compte était toujours non lue');
+    // Son propre site : marqué comme lu.
+    fake.queue = [click(`lu:${mine.id}:${mineAlert}`, { update_id: 31 })];
+    await until(() => fake.answers.some((a) => a.callback_query_id === 'cq31'));
+    assert.deepEqual(await dbm.markAlertsReadUpTo(mine.id, mineAlert), [], 'déjà marquée comme lue par le clic');
+  } finally { await app.stop(); }
+});

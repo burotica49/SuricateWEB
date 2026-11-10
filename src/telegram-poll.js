@@ -36,7 +36,10 @@ export function startTelegramPoller({ settings, onRead, pollSeconds = 25, idleMs
     const reply = (text, alert = false) => tg.answerCallbackQuery(t.token, cq.id, text, alert).catch(() => {});
     // Seule la conversation configurée a le droit d'agir : un clic venu d'ailleurs est refusé.
     const chatId = String(cq.message?.chat?.id ?? '');
-    if (!chatId || chatId !== String(t.chatId)) return reply('Action non autorisée.', true);
+    // Les réglages désignent UNE conversation ; la version hébergée peut en ajouter d'autres (`chatIds` : identifiants ou @canal) pour le même bot.
+    const username = cq.message?.chat?.username ? `@${String(cq.message.chat.username).toLowerCase()}` : '';
+    const allowed = [t.chatId, ...(Array.isArray(t.chatIds) ? t.chatIds : [])].map((c) => String(c).toLowerCase());
+    if (!chatId || !(allowed.includes(chatId) || (username && allowed.includes(username)))) return reply('Action non autorisée.', true);
     if (cq.data === 'ok') return reply('Déjà marqué comme lu.');
     const cb = parseCallback(cq.data);
     if (!cb) return reply('Ce bouton n’est plus valable.');
@@ -88,4 +91,50 @@ export function startTelegramPoller({ settings, onRead, pollSeconds = 25, idleMs
   }
   loop();
   return { stop() { stopped = true; abort?.abort(); wake?.(); } };
+}
+
+/**
+ * Un lecteur par COMPTE (version hébergée : chaque compte a son propre bot). Les comptes à lire sont redemandés toutes les `refreshMs` :
+ * un compte qui configure son bot est pris en compte au tour suivant, sans redémarrage, et un compte qui disparaît est arrêté.
+ *  - `accounts()`            → identifiants de comptes à surveiller ;
+ *  - `settingsOf(accountId)` → réglages Telegram du compte (token, chatId, enabled, buttons) ;
+ *  - `chatsOf(accountId)`    → (facultatif) autres conversations autorisées pour le même bot ;
+ *  - `onRead(accountId, watchId, upTo)` → nombre d'alertes marquées lues (DOIT vérifier que le site est bien au compte : un titulaire de bot
+ *    peut fabriquer n'importe quel `callback_data`, donc viser le site d'un autre compte).
+ * @returns {{ stop(): void }}
+ */
+export function startAccountPollers({ accounts, settingsOf, chatsOf = async () => [], onRead, refreshMs = 30_000, pollSeconds = 25, idleMs = 5000, log = console } = {}) {
+  const pollers = new Map(); // compte → { poller, cfg }
+  let stopped = false;
+  let timer = null;
+  let refreshing = false;
+
+  async function refresh() {
+    if (stopped || refreshing) return;
+    refreshing = true;
+    try {
+      const ids = new Set((await accounts()).map(Number));
+      for (const [id, p] of pollers) if (!ids.has(id)) { p.poller.stop(); pollers.delete(id); }
+      for (const id of ids) {
+        const t = await settingsOf(id).catch(() => null);
+        // Rien à lire sans bot : pas de connexion ouverte pour ce compte (elle démarrera au tour suivant où le bot sera configuré).
+        const usable = !!(t?.token && t.chatId && t.enabled && t.buttons !== false);
+        const cur = pollers.get(id);
+        if (!usable) { if (cur) { cur.poller.stop(); pollers.delete(id); } continue; }
+        const cfg = { ...t, chatIds: await chatsOf(id).catch(() => []) };
+        if (cur) { cur.cfg = cfg; continue; }
+        const entry = { cfg };
+        entry.poller = startTelegramPoller({ settings: () => entry.cfg, onRead: (watchId, upTo) => onRead(id, watchId, upTo), pollSeconds, idleMs, log });
+        pollers.set(id, entry);
+      }
+    } catch (e) {
+      log.error?.(`[telegram] comptes : ${e.message}`);
+    } finally {
+      refreshing = false;
+    }
+  }
+  refresh();
+  timer = setInterval(refresh, refreshMs);
+  timer.unref?.();
+  return { stop() { stopped = true; clearInterval(timer); for (const p of pollers.values()) p.poller.stop(); pollers.clear(); } };
 }

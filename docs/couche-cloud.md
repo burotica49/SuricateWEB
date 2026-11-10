@@ -105,6 +105,8 @@ C'est ici que vit le partage d'accès : un invité « rapport » n'a que `report
 
 > `authorize` décide du *droit*, pas de l'*appartenance* : un site d'un autre compte reste introuvable (404) quel que soit le droit. Pour qu'un invité voie les sites d'un autre compte, il faudra élargir `ctx.data` (§4) — c'est le point le plus délicat du partage d'accès.
 
+**Accès limité (invité)** — cœur ≥ 1.21. `auth.authenticate(req)` peut renvoyer, en plus de `{ user, account }`, `access: { groupIds: [...], siteIds: [...] }` : l'utilisateur n'a alors accès qu'à ces groupes (avec les sites qu'ils contiennent, y compris ceux ajoutés plus tard) et à ces sites. `ctx.data` (§4) ne montre que ce périmètre : le reste est **introuvable** (404, comme chez un autre compte), les alertes, chiffres du tableau de bord, captures et flux temps réel (`/api/events`) sont filtrés de même, et toute écriture de structure (création de site ou de groupe, disposition) y est refusée (403), en plus du droit que `authorize` refuse. Un utilisateur qui n'a pas `settings:write` ne voit pas la conversation Telegram ni le jeton (même masqué) des réglages du compte. Côté interface, la réponse de `usageUrl` peut porter `restricted: true` : le cœur cache alors Réglages, Telegram, les liens de compte des capacités et tout bouton qui crée, modifie, supprime ou règle (classe `w-only`) ; le serveur reste l'autorité. Le périmètre d'un invité est celui d'un site ou d'un groupe du **même compte** : ni lecture ni écriture dans un autre compte.
+
 ### 3.3 `entitlements` — les quotas du forfait
 
 ```js

@@ -515,6 +515,10 @@ export async function screenshotsToPrune(watchId, keep, keepOther = 100) {
   return [...(await sel("kind = 'scheduled'", keep)), ...(await sel("kind != 'scheduled'", keepOther))];
 }
 
+/** Un lot de captures (lignes seulement) après l'identifiant `afterId`, pour vérifier que leurs fichiers existent encore (purge). */
+export const screenshotRowsAfter = async (afterId, limit = 500) =>
+  await db.all('SELECT id, file, thumb FROM screenshots WHERE id > ? ORDER BY id LIMIT ?', [afterId, limit]);
+
 export async function deleteScreenshotRows(ids) {
   for (const id of ids) await db.run('DELETE FROM screenshots WHERE id = ?', [id]);
 }
@@ -807,11 +811,17 @@ export async function domainExpiryAlertState(accountId = null) {
   return map;
 }
 
-/** Alertes filtrées, les plus récentes d'abord, avec le nom du site. Filtres : accountId, watchId, severity, unread, before (id), limit. */
-export async function queryAlerts({ accountId = null, watchId = null, severity = '', unread = false, before = null, limit = 50 } = {}) {
+/** Alertes filtrées, les plus récentes d'abord, avec le nom du site. Filtres : accountId, watchId, watchIds, severity, unread, before (id), limit. */
+export async function queryAlerts({ accountId = null, watchId = null, watchIds = null, severity = '', unread = false, before = null, limit = 50 } = {}) {
   const where = [];
   const args = [];
   if (accountId !== null) (where.push('w.account_id = ?'), args.push(accountId));
+  // `watchIds` : limiter à ces sites (accès partagé par groupe ou par site). Une liste vide ne donne rien.
+  if (watchIds !== null) {
+    if (!watchIds.length) return [];
+    where.push(`a.watch_id IN (${watchIds.map(() => '?').join(',')})`);
+    args.push(...watchIds);
+  }
   if (watchId !== null) (where.push('a.watch_id = ?'), args.push(watchId));
   if (severity) (where.push('a.severity = ?'), args.push(severity));
   if (unread) where.push('a.read = 0');
@@ -832,15 +842,27 @@ export const markEveryAlertRead = async (accountId = null) =>
     ? db.run('UPDATE alerts SET read = 1')
     : db.run('UPDATE alerts SET read = 1 WHERE watch_id IN (SELECT id FROM watches WHERE account_id = ?)', [accountId]);
 
+/** Toutes les alertes de CES sites passent en lu (« Tout marquer comme lu » d'un accès limité à quelques sites). */
+export async function markWatchesAlertsRead(watchIds) {
+  if (!watchIds.length) return;
+  await db.run(`UPDATE alerts SET read = 1 WHERE watch_id IN (${watchIds.map(() => '?').join(',')})`, watchIds);
+}
+
 /**
  * Marque ces alertes comme lues. Retourne les sites qui avaient parmi elles une alerte d'échéance du domaine :
  * l'appelant doit alors mémoriser l'acquittement, comme pour « Tout est normal ».
+ * `watchIds` (accès limité à quelques sites) : une alerte d'un autre site est ignorée en silence, comme celle d'un autre compte.
  */
-export async function markAlertsRead(ids, accountId = null) {
+export async function markAlertsRead(ids, accountId = null, watchIds = null) {
   if (!ids.length) return [];
   // Avec un compte, une alerte d'un autre compte est ignorée en silence (comme si elle n'existait pas).
-  const mine = accountId === null ? '' : ' AND watch_id IN (SELECT id FROM watches WHERE account_id = ?)';
+  let mine = accountId === null ? '' : ' AND watch_id IN (SELECT id FROM watches WHERE account_id = ?)';
   const extra = accountId === null ? [] : [accountId];
+  if (watchIds !== null) {
+    if (!watchIds.length) return [];
+    mine += ` AND watch_id IN (${watchIds.map(() => '?').join(',')})`;
+    extra.push(...watchIds);
+  }
   for (const id of ids) await db.run(`UPDATE alerts SET read = 1 WHERE id = ?${mine}`, [id, ...extra]);
   const marks = ids.map(() => '?').join(',');
   return (await db.all(`SELECT DISTINCT watch_id FROM alerts WHERE type = 'rdap_expiring' AND id IN (${marks})${mine}`, [...ids, ...extra])).map((r) => r.watch_id);

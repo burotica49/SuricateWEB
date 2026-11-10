@@ -184,3 +184,21 @@ test('SURICATE_CAPTURES=0 : le moteur de capture est indisponible, même avec un
   assert.equal(run({ SURICATE_CAPTURES: '0' }), 'false');
   assert.equal(run({ SURICATE_CAPTURES: 'false' }), 'false');
 });
+
+test('purge des captures sans fichier : seules les lignes dont l\'image a disparu partent, jamais un fichier existant', async () => {
+  const w = await mk('Purge');
+  const ids = await addShots(w.id, 'scheduled', 4);
+  const manual = await addShots(w.id, 'manual', 1);
+  const rows = (await dbm.listScreenshots(w.id, 50)).length;
+  assert.equal(rows, 5);
+  // Fichiers perdus (redéploiement sans volume) : l'image de deux captures, et la miniature seule d'une troisième.
+  const { unlinkSync } = await import('node:fs');
+  for (const id of [ids[0], manual[0]]) unlinkSync(join(dbm.SHOTS_DIR, (await dbm.getScreenshot(id)).file));
+  unlinkSync(join(dbm.SHOTS_DIR, (await dbm.getScreenshot(ids[1])).thumb));
+  const keptFile = join(dbm.SHOTS_DIR, (await dbm.getScreenshot(ids[2])).file);
+
+  assert.equal(await shots.purgeMissingShots(), 2, 'deux lignes sans image retirées');
+  assert.deepEqual((await dbm.listScreenshots(w.id, 50)).map((r) => r.id).sort((a, b) => a - b), [ids[1], ids[2], ids[3]], 'celle dont seule la miniature manque reste (l\'image est là)');
+  assert.ok(existsSync(keptFile), 'aucun fichier existant n\'est touché');
+  assert.equal(await shots.purgeMissingShots(), 0, 'idempotente');
+});

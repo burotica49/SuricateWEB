@@ -69,6 +69,29 @@ test('liens propres à l\'utilisateur : ceux de la réponse de usageUrl (ex. « 
   });
 });
 
+test('accès limité (invité) : liens du compte remplacés par ceux de l\'utilisateur, actions d\'écriture et Réglages cachés', { skip, timeout: 90000 }, async (t) => {
+  const w = await dbm.createWatch({ name: 'Site partagé', url: 'https://exemple.invalid/', interval: 60, config: { checks: { dns: false, tls: false, rdap: false } } });
+  const usage = { restricted: true, plan: { name: 'Agence' }, usage: null, accountLinks: [{ label: 'Compte : Agence Marie', href: '/api/account/pages/comptes' }] };
+  await withPage(t, {
+    capabilities: { usageUrl: '/api/account/plan', accountLinks: [{ label: 'Mon forfait', href: '/api/account/pages/forfaits' }], scopeLinks: [{ label: 'Notifications', href: '/api/account/pages/notifications', icon: 'bell' }] },
+    routes: [({ route }) => route('GET', '/api/account/plan', () => usage)],
+  }, async (page) => {
+    await page.run("T.until(() => document.body.classList.contains('restricted') && T.visible('#plan-box'))");
+    const links = await page.run("[...document.querySelectorAll('#plan-box a')].map((a) => a.textContent)");
+    assert.deepEqual(links, ['Compte : Agence Marie'], 'pas « Mon forfait » : réservé au titulaire');
+    const shown = (sel) => page.run(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return !!e && e.offsetParent !== null; })()`);
+    assert.equal(await shown('[data-nav=reglages]'), false, 'pas de Réglages');
+    assert.equal(await shown('.tg-state'), false, 'pas d\'indicateur Telegram');
+    await page.run(`location.hash = '#/sites/${w.id}'`);
+    await page.run("T.until(() => [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Vérifier maintenant')))");
+    const visible = (label) => page.run(`[...document.querySelectorAll('button, a')].some((b) => b.textContent.trim() === ${JSON.stringify(label)} && b.offsetParent !== null)`);
+    assert.equal(await visible('Vérifier maintenant'), true, 'lire et lancer un contrôle restent possibles');
+    for (const label of ['Modifier', 'Pause']) assert.equal(await visible(label), false, `« ${label} » caché`);
+    assert.equal(await page.run("[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Supprimer' && b.offsetParent !== null)"), false, 'suppression cachée');
+    assert.equal(await visible('Notifications'), false, 'boutons par site cachés');
+  });
+});
+
 test('forfait illimité : pas de barre, « illimité » ; sans capacités : rien n\'est affiché', { skip, timeout: 90000 }, async (t) => {
   await withPage(t, {
     capabilities: { usageUrl: '/api/account/plan' },

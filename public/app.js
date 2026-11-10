@@ -322,7 +322,10 @@ function mountShell() {
 // Tout vient des capacités annoncées par le serveur (GET /api/capabilities) : `accountLinks` et `usageUrl`. Le cœur auto-hébergé n'en
 // annonce aucune, et rien n'est affiché. Les liens sont des chemins du même site (localHref) et tout passe par textContent.
 // Liens PROPRES À L'UTILISATEUR (ex. « Administration » pour un administrateur) : la réponse de `usageUrl` peut aussi porter `accountLinks`, ajoutés à ceux des capacités.
-const planLinks = () => [...(S.caps?.accountLinks ?? []), ...(Array.isArray(S.plan?.accountLinks) ? S.plan.accountLinks : [])].map((l) => [localHref(l?.href), String(l?.label ?? '').slice(0, 40)]).filter(([href, label]) => href && label);
+// Accès limité (invité, version hébergée) : la réponse de `usageUrl` porte `restricted: true`. L'interface cache alors tout ce qui crée, modifie, supprime
+// ou règle (classe `w-only`, réglages, Telegram) et ne garde que les liens propres à l'utilisateur : les droits restent refusés par le serveur de toute façon.
+const restricted = () => S.plan?.restricted === true;
+const planLinks = () => [...(restricted() ? [] : S.caps?.accountLinks ?? []), ...(Array.isArray(S.plan?.accountLinks) ? S.plan.accountLinks : [])].map((l) => [localHref(l?.href), String(l?.label ?? '').slice(0, 40)]).filter(([href, label]) => href && label);
 // Boutons « par groupe » et « par site » (capabilities.scopeLinks : [{ label, href, icon }]) : ils mènent à une page du serveur (notifications, partage…)
 // déjà réglée sur ce groupe ou ce site, par `?scope=group|site&id=N`. Même règles que les liens de compte : chemin du même site seulement, texte seulement,
 // icône prise dans notre liste (sinon « external »). Le cœur auto-hébergé n'en annonce aucun.
@@ -340,6 +343,7 @@ async function refreshPlan() {
   paintPlanBox();
 }
 function paintPlanBox() {
+  document.body.classList.toggle('restricted', restricted());
   const box = $('#plan-box');
   if (!box) return;
   const links = planLinks();
@@ -472,11 +476,11 @@ async function viewDashboard() {
         b.firstChild.classList.add('spin');
         await route();
       }) }, ic('refresh'), 'Rafraîchir'),
-      h('button', { class: 'btn primary', onclick: () => openSiteForm() }, ic('plus'), 'Ajouter un site'))));
+      h('button', { class: 'btn primary w-only', onclick: () => openSiteForm() }, ic('plus'), 'Ajouter un site'))));
 
   if (!list.length) {
     const input = h('input', { class: 'input', placeholder: 'https://www.monsite.fr', 'aria-label': 'Adresse du site', onkeydown: (e) => e.key === 'Enter' && go.click() });
-    const go = h('button', { class: 'btn primary', onclick: () => openSiteForm(null, input.value) }, ic('plus'), 'Surveiller');
+    const go = h('button', { class: 'btn primary w-only', onclick: () => openSiteForm(null, input.value) }, ic('plus'), 'Surveiller');
     root.append(empty('shield', 'Aucun site surveillé pour le moment',
       "Ajoutez votre premier site : SuricateWeb détecte les défigurations, les scripts injectés, les redirections suspectes, les changements de DNS ou de certificat, et vous prévient sur Telegram.",
       h('div', { class: 'quick-add' }, input, go)));
@@ -529,7 +533,7 @@ async function viewDashboard() {
   const renderList = () => {
     // Réorganiser une liste filtrée est ambigu (des sites sont cachés) : le glisser-déposer n'est actif que sans filtre.
     const filtering = !!(S.q.trim() || S.tag || S.filter !== 'all');
-    const canDnd = S.view === 'groups' && !filtering;
+    const canDnd = S.view === 'groups' && !filtering && !restricted();
     listBox.className = `sections${canDnd ? ' dnd' : ''}`;
     hintBox.textContent = canDnd
       ? (S.groups.length ? 'Glissez ⠿ pour réorganiser vos sites et vos groupes — ou ↑ ↓ au clavier sur la poignée.' : 'Créez un groupe pour organiser vos sites, puis glissez ⠿ pour les réordonner.')
@@ -582,7 +586,7 @@ async function viewDashboard() {
       renderList();
     } }, l)));
   root.append(h('div', { class: 'toolbar sub' }, viewSeg,
-    h('button', { class: 'btn sm', onclick: guard(async () => {
+    h('button', { class: 'btn sm w-only', onclick: guard(async () => {
       const r = await groupDialog();
       if (!r) return;
       const g = await api('/groups', { method: 'POST', body: r });
@@ -640,15 +644,15 @@ function groupSection({ group, all, shown }, { canDnd, filtering }) {
     summary,
     group ? h('div', { class: 'grp-actions' },
       all.length ? h('a', { class: 'btn ghost icon sm', href: `/api/groups/${gid}/report?tz=${tzParam()}`, target: '_blank', rel: 'noopener noreferrer', title: 'Rapport mensuel du groupe (tous ses sites)', 'aria-label': `Rapport mensuel du groupe « ${group.name} » (nouvel onglet)` }, ic('file')) : null,
-      ...scopeLinks().map((l) => h('a', { class: 'btn ghost icon sm', href: scopeHref(l, 'group', gid), title: `${l.label} de ce groupe`, 'aria-label': `${l.label} du groupe « ${group.name} »` }, ic(l.icon))),
-      h('button', { class: 'btn ghost icon sm', title: 'Ajouter un site dans ce groupe', 'aria-label': `Ajouter un site dans « ${group.name} »`, onclick: () => openSiteForm(null, '', gid) }, ic('plus')),
-      h('button', { class: 'btn ghost icon sm', title: 'Renommer, changer la couleur', 'aria-label': `Modifier le groupe « ${group.name} »`, onclick: guard(async () => {
+      ...scopeLinks().map((l) => h('a', { class: 'btn ghost icon sm w-only', href: scopeHref(l, 'group', gid), title: `${l.label} de ce groupe`, 'aria-label': `${l.label} du groupe « ${group.name} »` }, ic(l.icon))),
+      h('button', { class: 'btn ghost icon sm w-only', title: 'Ajouter un site dans ce groupe', 'aria-label': `Ajouter un site dans « ${group.name} »`, onclick: () => openSiteForm(null, '', gid) }, ic('plus')),
+      h('button', { class: 'btn ghost icon sm w-only', title: 'Renommer, changer la couleur', 'aria-label': `Modifier le groupe « ${group.name} »`, onclick: guard(async () => {
         const r = await groupDialog(group);
         if (!r) return;
         Object.assign(group, await api(`/groups/${gid}`, { method: 'PUT', body: r }));
         S.redraw();
       }) }, ic('edit')),
-      h('button', { class: 'btn ghost icon sm danger', title: 'Supprimer le groupe', 'aria-label': `Supprimer le groupe « ${group.name} »`, onclick: guard(async () => {
+      h('button', { class: 'btn ghost icon sm danger w-only', title: 'Supprimer le groupe', 'aria-label': `Supprimer le groupe « ${group.name} »`, onclick: guard(async () => {
         const ok = await confirmDialog({
           title: `Supprimer le groupe « ${group.name} » ?`, confirm: 'Supprimer le groupe', danger: true,
           text: all.length ? `Les ${plural(all.length, 'site', 'sites')} de ce groupe ne sont pas supprimés : ils passent dans « Sans groupe ».` : 'Ce groupe est vide.',
@@ -908,13 +912,13 @@ async function viewDetail(id, tab, tok, openSnap) {
       h('div', { class: 'actions', style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
         unread || domainOpen ? h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/ack`, { method: 'POST' }); toast('Marqué comme vérifié'); route(); }) }, ic('check'), 'Tout est normal') : null,
         h('button', { class: 'btn', onclick: doCheck }, ic('refresh'), 'Vérifier maintenant'),
-        h('button', { class: 'btn', onclick: guard(async () => { await api(`/watches/${id}/toggle`, { method: 'POST' }); toast(w.enabled ? 'Surveillance mise en pause' : 'Surveillance reprise'); route(); }) }, ic(w.enabled ? 'pause' : 'play'), w.enabled ? 'Pause' : 'Reprendre'),
+        h('button', { class: 'btn w-only', onclick: guard(async () => { await api(`/watches/${id}/toggle`, { method: 'POST' }); toast(w.enabled ? 'Surveillance mise en pause' : 'Surveillance reprise'); route(); }) }, ic(w.enabled ? 'pause' : 'play'), w.enabled ? 'Pause' : 'Reprendre'),
         h('button', { class: 'btn', title: 'Planifier une maintenance : alertes retenues pendant la fenêtre', onclick: guard(async () => { if (await maintenanceDialog(w)) { toast('Maintenance enregistrée'); route(); } }) }, ic('wrench'), 'Maintenance'),
         // Rapport mensuel : une page HTML à imprimer ou enregistrer en PDF (Imprimer → Enregistrer au format PDF), mois précédent par défaut.
         w.mode !== 'domain' ? h('a', { class: 'btn', href: `/api/watches/${id}/report?tz=${tzParam()}`, target: '_blank', rel: 'noopener noreferrer', title: 'Rapport mensuel client : disponibilité, incidents, mises à jour' }, ic('file'), 'Rapport') : null,
-        ...scopeLinks().map((l) => h('a', { class: 'btn', href: scopeHref(l, 'site', id), title: `${l.label} de ce site` }, ic(l.icon), l.label)),
-        h('button', { class: 'btn', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier'),
-        h('button', { class: 'btn icon danger', title: 'Supprimer', 'aria-label': 'Supprimer', onclick: guard(async () => {
+        ...scopeLinks().map((l) => h('a', { class: 'btn w-only', href: scopeHref(l, 'site', id), title: `${l.label} de ce site` }, ic(l.icon), l.label)),
+        h('button', { class: 'btn w-only', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier'),
+        h('button', { class: 'btn icon danger w-only', title: 'Supprimer', 'aria-label': 'Supprimer', onclick: guard(async () => {
           if (!(await confirmDialog({ title: `Supprimer « ${w.name} » ?`, text: "L'historique, les versions enregistrées et les alertes de ce site seront définitivement effacés.", confirm: 'Supprimer', danger: true }))) return;
           await api(`/watches/${id}`, { method: 'DELETE' });
           toast('Site supprimé');
@@ -1196,7 +1200,7 @@ async function capturesTab(w) {
         h('div', { class: 'muted', style: { fontSize: '13px' } }, d.enabled ? (d.capturing ? 'Capture en cours…' : `Prochaine ${rel(d.nextShot)} · ${w.config.screenshot.width}×${w.config.screenshot.height}${w.config.screenshot.fullPage ? ', page entière' : ''}`) : 'Activez-les dans « Modifier › Capture d\'écran ».',
         h('div', { class: 'muted', style: { fontSize: '13px' }, title: 'Les captures manuelles et d\'alerte ont leur propre quota : elles ne sont jamais écrasées par les planifiées.' },
           `Conservation : ${d.keep} captures planifiées par site (et jusqu'à ${d.keepOther} manuelles ou d'alerte) · en stock : ${d.count} · ${fmtBytes(d.bytes)}`))),
-      d.enabled ? captureNowButton(w) : h('button', { class: 'btn sm', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier')));
+      d.enabled ? captureNowButton(w) : h('button', { class: 'btn sm w-only', onclick: () => openSiteForm(w) }, ic('edit'), 'Modifier')));
   }
   if (d.error) root.append(h('div', { class: 'incident warn' }, ic('alert'), h('div', {}, h('b', {}, 'Dernière capture en échec'), h('p', {}, d.error))));
   if (!d.items.length) {

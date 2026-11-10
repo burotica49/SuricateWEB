@@ -27,7 +27,10 @@ export default function register({ route }) {
     const on = (e) => {
       queue = queue
         .then(async () => {
-          if (!closed && (await accountOf(e)) === mine) res.write(`data: ${JSON.stringify(e)}\n\n`);
+          if (closed || (await accountOf(e)) !== mine) return;
+          // Accès limité (invité) : pas l'activité des sites qui ne lui sont pas partagés.
+          if (ctx.data.restricted && e.watchId != null && !(await ctx.data.getWatch(e.watchId))) return;
+          res.write(`data: ${JSON.stringify(e)}\n\n`);
         })
         .catch(() => {});
     };

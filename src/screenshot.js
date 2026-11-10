@@ -5,11 +5,11 @@
 // au lieu d'en lancer un. Chrome vit alors hors du serveur, sans accès à sa base ni à ses secrets.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, unlink, readdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getExtensions } from './extensions.js';
-import { getWatch, listWatches, settingsFor, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows } from './db.js';
+import { getWatch, listWatches, settingsFor, SHOTS_DIR, insertScreenshot, setShotState, screenshotsToPrune, deleteScreenshotRows, screenshotRowsAfter } from './db.js';
 import { bus } from './events.js';
 
 const CANDIDATES = [
@@ -490,6 +490,40 @@ export async function pruneWatchShots(id) {
   await deleteScreenshotRows(rows.map((r) => r.id));
   for (const r of rows) for (const f of [r.file, r.thumb]) if (f) await unlink(join(SHOTS_DIR, f)).catch(() => {});
   return rows.length;
+}
+
+/**
+ * Retire les captures dont le FICHIER a disparu (volume non monté, redéploiement, disque vidé) : leur ligne reste en base et la fiche du site
+ * afficherait des miniatures cassées jusqu'à l'expiration de la rétention. Ne touche jamais un fichier : seules les lignes sans image partent.
+ * À lancer par l'instance qui écrit les captures (celle qui a le disque) : une instance qui ne fait que servir l'interface ne les voit pas
+ * toutes. Retourne le nombre de lignes retirées. `SCREENSHOT_PURGE=0` désactive la tâche périodique.
+ */
+export async function purgeMissingShots() {
+  let last = 0;
+  let purged = 0;
+  for (;;) {
+    const rows = await screenshotRowsAfter(last, 500);
+    if (!rows.length) break;
+    last = rows[rows.length - 1].id;
+    const gone = [];
+    for (const r of rows) if (!(await access(join(SHOTS_DIR, r.file)).then(() => true, () => false))) gone.push(r);
+    if (gone.length) {
+      await deleteScreenshotRows(gone.map((r) => r.id));
+      for (const r of gone) if (r.thumb) await unlink(join(SHOTS_DIR, r.thumb)).catch(() => {}); // miniature orpheline éventuelle
+      purged += gone.length;
+    }
+  }
+  return purged;
+}
+
+/** Tâche périodique de la purge ci-dessus : une minute après le démarrage, puis toutes les 6 heures. Retourne un arrêt (ou null si désactivée). */
+export function startShotPurge() {
+  if (/^(0|false|no)$/i.test(process.env.SCREENSHOT_PURGE || '') || process.env.SURICATE_DEMO === '1') return null;
+  const run = () => purgeMissingShots().then((n) => { if (n) console.log(`[captures] ${n} capture(s) sans fichier retirée(s) de la liste`); }, (e) => console.error('[captures] purge :', e.message));
+  const first = setTimeout(run, 60_000);
+  const every = setInterval(run, 6 * 3600_000);
+  first.unref?.(); every.unref?.();
+  return () => { clearTimeout(first); clearInterval(every); };
 }
 
 /** Applique les limites aux sites d'un compte, ou à tous (après un changement du réglage général de conservation). */

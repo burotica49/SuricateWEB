@@ -476,6 +476,9 @@ details.acc > .in { padding: 4px 14px 14px; }
 .skeleton { height: 70px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2), var(--surface), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s infinite; margin-bottom: 10px; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+/* Accès limité (invité) : rien de ce qui crée, modifie, supprime ou règle ; ni Réglages ni Telegram. Les droits sont de toute façon refusés par le serveur. */
+.restricted .w-only, .restricted [data-nav="reglages"], .restricted .tg-state, .restricted .handle { display: none !important; }
+
 /* ───── Responsive ───── */
 @media (max-width: 1100px) {
   .ov-top { grid-template-columns: 1fr; }

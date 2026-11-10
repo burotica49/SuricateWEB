@@ -114,6 +114,7 @@ SURICATE_PASSWORD="un mot de passe solide"     # 8 caractères minimum ; guillem
 | `CHROME_WS_URL` | — | Chrome **distant** (`ws://hôte:port?token=…`, ex. conteneur Browserless) : le serveur s'y connecte au lieu de lancer Chrome |
 | `SCREENSHOT_CONCURRENCY` | `2` | Captures simultanées au maximum |
 | `SCREENSHOT_KEEP_DEFAULT` | `168` | Captures planifiées conservées par site, par défaut (chaque compte peut choisir autrement dans les réglages) |
+| `SCREENSHOT_PURGE` | `1` | `0` désactive la purge périodique (toutes les 6 h) des captures dont le fichier a disparu : leurs lignes sont retirées de la liste, aucun fichier n'est jamais supprimé |
 | `ENV_FILE` | `./.env` | Emplacement alternatif du fichier d'environnement |
 | `TELEGRAM_API` | `https://api.telegram.org` | Adresse de l'API Telegram (utile pour les tests ou un relais) |
 | `TELEGRAM_POLL` | — | `0` : n'écoute pas les clics sur les boutons Telegram (voir [Boutons sous les alertes](#boutons-sous-les-alertes)) |

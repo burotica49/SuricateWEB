@@ -157,8 +157,12 @@ export const maskToken = (t) => (t ? t.slice(0, 4) + '••••••••' 
 /** Réglages tels que l'interface les voit (jeton Telegram masqué). `ctx` apporte l'utilisateur connecté et les infos de l'application. */
 export async function publicSettings(ctx) {
   const s = await settingsFor(ctx.account.id); // installation + réglages du compte
+  // Qui ne peut pas modifier les réglages (invité) n'a pas à voir la conversation Telegram ni le jeton (même masqué) du titulaire.
+  const mayEdit = ctx.can ? await ctx.can('settings:write') : true;
   return {
-    telegram: { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) },
+    telegram: mayEdit
+      ? { ...s.telegram, token: '', tokenSet: !!s.telegram.token, tokenMasked: maskToken(s.telegram.token) }
+      : { ...s.telegram, token: '', chatId: '', tokenSet: false, tokenMasked: '' },
     baseUrl: s.baseUrl, defaultInterval: s.defaultInterval, userAgent: s.userAgent, builtinKeywords: s.builtinKeywords,
     retention: s.retention, cmsAfterDays: s.cmsAfterDays, authUser: ctx.user?.name ?? '', defaultKeywords: DEFAULT_KEYWORDS,
     screenshots: { available: engine.available(), allowed: (await ctx.limits()).screenshots !== false, browser: browserLabel(), usage: await ctx.data.screenshotUsage() },

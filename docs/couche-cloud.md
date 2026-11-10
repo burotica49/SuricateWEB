@@ -158,6 +158,8 @@ function registerBilling({ route, app, HttpError, HANDLED, send, sendHtml }) {
   }, { public: true, raw: true });
   ```
 
+  Guide complet pour Stripe (création du point de terminaison, route idempotente, test local, mise en production) : [webhook-stripe.md](webhook-stripe.md).
+
 ### 3.5 `hooks`
 
 `onWatchCreated(ctx, site)`, `onWatchUpdated(ctx, site)`, `onWatchDeleted(ctx, id)`, `onStart(handle)`, `onStop(handle)`. Informatifs : une erreur est journalisée (`[hook nom]`) et **jamais** renvoyée au client. Ils servent à mesurer l'usage, pas à refuser (pour refuser : `entitlements`).
@@ -342,7 +344,7 @@ Chaque besoin dit où il s'accroche. Le plan détaillé, les forfaits et les dé
 | **Comptes et utilisateurs** : inscription, vérification d'e-mail, sessions, mot de passe oublié, 2FA, invitations | `auth`, migrations ≥ 1000, routes |
 | **Durcissement** : garde réseau, Chrome isolé, secrets chiffrés, anti-abus | `netGuard`, worker de capture |
 | **Quotas et droits** : limites par compte, jauges d'usage | `entitlements`, `authorize`, `capabilities`, `hooks`, routes |
-| **Paiement** : webhooks idempotents, rétrogradation sans suppression | routes (`{ public: true, raw: true }` : signature sur le corps brut), `entitlements` |
+| **Paiement** : webhooks idempotents, rétrogradation sans suppression (guide : [webhook-stripe.md](webhook-stripe.md)) | routes (`{ public: true, raw: true }` : signature sur le corps brut), `entitlements` |
 | **Partage et notifications** : accès par groupe ou site, canaux multiples | `authorize` + élargissement de `ctx.data`, `notifier`, routes |
 | **Exploitation** : séparation web/worker, équité du planificateur, sauvegardes, effacement et export de données, pages légales | `scheduler`, hooks, déploiement |
 

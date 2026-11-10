@@ -547,6 +547,7 @@ test/                node --test (unitaires, API réelle, et bout en bout dans u
 test-support/        lancement d'un serveur de test et pilotage de Chrome (tests et captures)
 scripts/docs/        mode démo : faux sites, données fictives, génération des captures de ce README
 docs/couche-cloud.md référence pour construire une version hébergée (points d'extension, comptes, base, sécurité, limites)
+docs/webhook-stripe.md guide pour créer le webhook Stripe (point de terminaison, route signée et idempotente, test local)
 docs/screenshots/    images de ce README (régénérables avec npm run docs:screenshots)
 ```
 

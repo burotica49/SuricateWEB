@@ -57,6 +57,18 @@ test('jauge et lien « Mon forfait » : annoncés par le serveur, texte seulemen
   });
 });
 
+test('liens propres à l\'utilisateur : ceux de la réponse de usageUrl (ex. « Administration ») s\'ajoutent à ceux des capacités, dangereux ignorés', { skip, timeout: 90000 }, async (t) => {
+  const usage = { plan: { name: 'Agence' }, usage: { sites: { active: 1, total: 1, max: null } }, accountLinks: [{ label: 'Administration', href: '/api/account/pages/admin' }, { label: 'Piège', href: 'javascript:alert(1)' }, { label: 'Ailleurs', href: '//exemple.invalid/' }] };
+  await withPage(t, {
+    capabilities: { usageUrl: '/api/account/plan', accountLinks: [{ label: 'Mon forfait', href: '/api/account/pages/forfaits' }] },
+    routes: [({ route }) => route('GET', '/api/account/plan', () => usage)],
+  }, async (page) => {
+    await page.run("T.until(() => T.visible('#plan-box') && document.querySelectorAll('#plan-box a').length >= 2)");
+    const links = await page.run("[...document.querySelectorAll('#plan-box a')].map((a) => [a.textContent, a.getAttribute('href')])");
+    assert.deepEqual(links, [['Mon forfait', '/api/account/pages/forfaits'], ['Administration', '/api/account/pages/admin']]);
+  });
+});
+
 test('forfait illimité : pas de barre, « illimité » ; sans capacités : rien n\'est affiché', { skip, timeout: 90000 }, async (t) => {
   await withPage(t, {
     capabilities: { usageUrl: '/api/account/plan' },
@@ -154,5 +166,44 @@ test('sans forfait annoncé (cœur auto-hébergé) : toutes les fréquences rest
     await page.run("T.until(() => [...document.querySelectorAll('.field')].some((x) => x.querySelector('label')?.textContent === 'Fréquence par défaut'))");
     const values = await page.run("[...[...document.querySelectorAll('.field')].find((x) => x.querySelector('label')?.textContent === 'Fréquence par défaut').querySelector('select').options].map((o) => Number(o.value))");
     assert.ok(values.includes(1) && values.includes(5) && values.includes(15), `choix complets : ${values}`);
+    assert.ok(!/Notifications par e-mail/.test(await page.run('document.body.textContent')), 'sans capacité emailAlerts : pas de section e-mail');
+  });
+});
+
+test('Réglages › Notifications par e-mail : annoncée par le serveur (emailAlerts), enregistrée avec la page, testée, lien « plus » du même site seulement', { skip, timeout: 90000 }, async (t) => {
+  const state = { address: 'marie@exemple.fr', enabled: false, minSeverity: 'warning', sendRecovery: true, lastSentAt: null, lastError: null };
+  const calls = [];
+  await withPage(t, {
+    capabilities: { emailAlerts: { url: '/api/account/email-alerts', moreUrl: '/api/account/pages/notifications' } },
+    routes: [({ route }) => {
+      route('GET', '/api/account/email-alerts', () => state);
+      route('PUT', '/api/account/email-alerts', (ctx) => { calls.push(['PUT', ctx.body]); Object.assign(state, ctx.body); return state; });
+      route('POST', '/api/account/email-alerts/test', () => { calls.push(['TEST']); return { ok: true }; });
+    }],
+  }, async (page) => {
+    await page.run("location.hash = '#/reglages'");
+    await page.run("T.until(() => /Notifications par e-mail/.test(document.body.textContent))");
+    const section = "[...document.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'Notifications par e-mail')";
+    assert.match(await page.run(`${section}.textContent`), /marie@exemple\.fr, l'adresse de votre compte/);
+    assert.equal(await page.run(`${section}.querySelector('input[type=checkbox]').checked`), false, 'désactivé tant qu\'on ne l\'a pas demandé');
+    assert.deepEqual(await page.run(`[...${section}.querySelectorAll('a')].map((a) => a.getAttribute('href'))`), ['/api/account/pages/notifications']);
+
+    // Cocher puis enregistrer la page : la section part avec le reste des réglages.
+    await page.run(`${section}.querySelector('input[type=checkbox]').click()`);
+    await page.run("[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Enregistrer').click()");
+    await page.run('T.until(() => true)');
+    for (let i = 0; i < 50 && !calls.some((c) => c[0] === 'PUT'); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(calls.find((c) => c[0] === 'PUT')[1], { enabled: true, sendRecovery: true, minSeverity: 'warning' });
+
+    // « Tester » : enregistre d'abord, puis envoie le message de test.
+    calls.length = 0;
+    await page.run("location.hash = '#/alertes'");
+    await page.run("location.hash = '#/reglages'");
+    await page.run("T.until(() => /Notifications par e-mail/.test(document.body.textContent))");
+    await page.run(`${section}.querySelector('select').value = 'critical'`);
+    await page.run(`[...${section}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Tester').click()`);
+    for (let i = 0; i < 50 && !calls.some((c) => c[0] === 'TEST'); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(calls.map((c) => c[0]), ['PUT', 'TEST']);
+    assert.equal(calls[0][1].minSeverity, 'critical');
   });
 });

@@ -23,7 +23,10 @@
 //     capabilities,   fusionné dans GET /api/capabilities (ex. { mode: 'cloud', billing: true }). L'interface lit aussi :
 //                       accountLinks  [{ label, href }]  liens affichés sous le menu (ex. « Mon forfait »), chemins du même site seulement
 //                       usageUrl      '/api/…'  jauge d'usage : GET renvoie { plan: { name, limits?: { minIntervalMin } }, usage: { sites: { active, max } } } (max null = illimité ;
-//                                     `limits.minIntervalMin` : l'interface ne propose aucune fréquence de contrôle ou de capture en dessous)
+//                                     `limits.minIntervalMin` : l'interface ne propose aucune fréquence de contrôle ou de capture en dessous ;
+//                                     la réponse peut aussi porter `accountLinks: [{ label, href }]`, propres à l'utilisateur (ex. « Administration »), ajoutés aux liens ci-dessus)
+//                       emailAlerts   { url, moreUrl? }  Réglages › « Notifications par e-mail » (adresse du compte) : GET url → { address, enabled, minSeverity, sendRecovery,
+//                                     lastError? }, PUT url { enabled, minSeverity, sendRecovery }, POST url/test ; `moreUrl` : page des adresses supplémentaires
 //                       scopeLinks    [{ label, href, icon }]  boutons par groupe (en-tête) et par site (fiche) ; mènent à `href?scope=group|site&id=N`
 //     home,           async ({ req, res, identity }) → booléen : appelé pour GET et HEAD « / » (et pour eux seuls), avant le service du
 //                     dossier public/. `identity` = auth.authenticate(req), ou null sans session valide. Renvoie true s'il a répondu

@@ -321,7 +321,8 @@ function mountShell() {
 // ───── Forfait (version hébergée) : liens de compte et jauge d'usage ─────
 // Tout vient des capacités annoncées par le serveur (GET /api/capabilities) : `accountLinks` et `usageUrl`. Le cœur auto-hébergé n'en
 // annonce aucune, et rien n'est affiché. Les liens sont des chemins du même site (localHref) et tout passe par textContent.
-const planLinks = () => (S.caps?.accountLinks ?? []).map((l) => [localHref(l?.href), String(l?.label ?? '').slice(0, 40)]).filter(([href, label]) => href && label);
+// Liens PROPRES À L'UTILISATEUR (ex. « Administration » pour un administrateur) : la réponse de `usageUrl` peut aussi porter `accountLinks`, ajoutés à ceux des capacités.
+const planLinks = () => [...(S.caps?.accountLinks ?? []), ...(Array.isArray(S.plan?.accountLinks) ? S.plan.accountLinks : [])].map((l) => [localHref(l?.href), String(l?.label ?? '').slice(0, 40)]).filter(([href, label]) => href && label);
 // Boutons « par groupe » et « par site » (capabilities.scopeLinks : [{ label, href, icon }]) : ils mènent à une page du serveur (notifications, partage…)
 // déjà réglée sur ce groupe ou ce site, par `?scope=group|site&id=N`. Même règles que les liens de compte : chemin du même site seulement, texte seulement,
 // icône prise dans notre liste (sinon « external »). Le cœur auto-hébergé n'en annonce aucun.
@@ -1900,6 +1901,12 @@ async function viewSettings() {
   const s = await api('/settings');
   S.settings = s;
   const t = s.telegram;
+  // Alertes par e-mail à l'adresse du compte : annoncées par le serveur (capacité `emailAlerts` { url, moreUrl }) ; le cœur auto-hébergé n'en annonce
+  // aucune et la section n'apparaît pas. Un échec de lecture masque simplement la section : les autres réglages restent utilisables.
+  const mailUrl = localHref(S.caps?.emailAlerts?.url);
+  const mailMore = localHref(S.caps?.emailAlerts?.moreUrl);
+  let mail = null;
+  if (mailUrl) { try { const r = await fetch(mailUrl); if (r.ok) mail = await r.json(); } catch { /* section masquée */ } }
   const f = {
     token: h('input', { class: 'input mono', placeholder: t.tokenSet ? t.tokenMasked + '  (déjà enregistré)' : '123456789:AAF…', autocomplete: 'off', spellcheck: false }),
     chat: h('input', { class: 'input mono', placeholder: 'ex. 123456789 ou -1001234567890', value: t.chatId }),
@@ -1920,6 +1927,23 @@ async function viewSettings() {
   const chats = h('div', { class: 'chat-list' });
 
   const tgBody = () => ({ token: f.token.value.trim(), chatId: f.chat.value.trim() });
+  // E-mail : champs et appels (JSON sur l'adresse annoncée). Les valeurs viennent du serveur ; texte seulement dans l'interface.
+  const mailCall = async (method, path, body) => {
+    const res = await fetch(path, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Une erreur est survenue.');
+    return data;
+  };
+  const m = mail ? {
+    on: h('input', { type: 'checkbox', checked: mail.enabled }),
+    recovery: h('input', { type: 'checkbox', checked: mail.sendRecovery }),
+    sev: h('select', { class: 'input', value: mail.minSeverity }, h('option', { value: 'info' }, 'Tout, y compris les infos'), h('option', { value: 'warning' }, 'Attention et critique (recommandé)'), h('option', { value: 'critical' }, 'Critique uniquement')),
+  } : null;
+  const saveMail = async () => { if (m) mail = await mailCall('PUT', mailUrl, { enabled: m.on.checked, sendRecovery: m.recovery.checked, minSeverity: m.sev.value }); };
+  const testMail = guard(async (e) => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await saveMail(); await mailCall('POST', `${mailUrl}/test`); toast(`E-mail de test envoyé à ${mail.address}`); } finally { b.disabled = false; }
+  });
   const detect = guard(async (e) => {
     const b = e.currentTarget; b.disabled = true;
     try {
@@ -1938,6 +1962,7 @@ async function viewSettings() {
       telegram: { token: f.token.value.trim(), chatId: f.chat.value.trim(), enabled: f.enabled.checked, sendRecovery: f.recovery.checked, includeDiff: f.diff.checked, sendScreenshot: f.photo.checked, buttons: f.buttons.checked, minSeverity: f.minSev.value },
       baseUrl: f.base.value, defaultInterval: Number(f.interval.value), retention: { screenshots: Number(f.keepAll.value) }, cmsAfterDays: Number(f.cmsDays.value), userAgent: f.ua.value, builtinKeywords: f.kw.value.split('\n'),
     } });
+    await saveMail();
     toast('Réglages enregistrés');
     mountShell(); route();
   });
@@ -1967,6 +1992,15 @@ async function viewSettings() {
         toggle(f.buttons, 'Boutons « Marquer comme lu » et « Ouvrir dans SuricateWeb »', 'Sous chaque alerte Telegram. « Marquer comme lu » est reçu par SuricateWeb en interrogeant Telegram : aucune adresse publique n’est nécessaire. « Ouvrir dans SuricateWeb » apparaît si l’adresse publique de SuricateWeb, plus bas, est utilisable.'),
         h('div', { class: 'field', style: { marginTop: '14px' } }, h('label', {}, 'Niveau minimal des notifications'), f.minSev),
         h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', {}, 'Adresse de SuricateWeb (optionnel)'), f.base, h('span', { class: 'hint' }, 'Donne son adresse au bouton « Ouvrir dans SuricateWeb » sous chaque message. Elle doit être joignable depuis un téléphone : pas de localhost ni de réseau local.'))),
+      mail ? h('section', { class: 'card card-pad' },
+        h('h2', { style: { marginBottom: '4px' } }, 'Notifications par e-mail'),
+        h('p', { class: 'muted', style: { marginBottom: '16px' } }, `Les alertes arrivent aussi dans votre boîte aux lettres : ${mail.address}, l'adresse de votre compte.`),
+        toggle(m.on, 'Alertes par e-mail actives', 'Un message par alerte, sans extrait du contenu de vos pages. Chaque message permet de se désabonner.'),
+        toggle(m.recovery, 'Prévenir du rétablissement', 'Message « Rétabli » quand un incident disparaît.'),
+        h('div', { class: 'field', style: { marginTop: '14px' } }, h('label', {}, 'Niveau minimal des notifications'), m.sev),
+        mail.lastError ? h('p', { class: 'hint', style: { color: 'var(--crit)' } }, `Dernière erreur : ${mail.lastError}`) : null,
+        h('div', { class: 'input-group' }, h('button', { class: 'btn', onclick: testMail }, ic('send'), 'Tester'), h('span', { class: 'hint' }, 'Enregistre ces réglages puis envoie un message de test.')),
+        mailMore ? h('p', { class: 'hint', style: { marginTop: '12px' } }, 'Pour écrire à d\'autres adresses, par groupe ou par site : ', h('a', { href: mailMore }, 'page Notifications'), ' (selon votre forfait).') : null) : null,
       h('section', { class: 'card card-pad' },
         h('h2', { style: { marginBottom: '14px' } }, 'Détection'),
         h('div', { class: 'row' }, h('div', { class: 'field' }, h('label', {}, 'Fréquence par défaut'), f.interval), h('div', { class: 'field' }, h('label', {}, 'User-Agent par défaut'), f.ua)),

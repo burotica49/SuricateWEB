@@ -178,6 +178,8 @@ export async function watchInput(ctx, body, existing) {
   const url = body.url !== undefined ? normalizeUrl(body.url) : existing.url;
   assertUrlAllowed(url);
   validateConfig(cfg, url);
+  // Une capture n'a pas à être plus fréquente que le contrôle le plus fréquent permis par le forfait : même plancher (jamais un refus).
+  if (limits.minIntervalMin > 1) cfg.screenshot.interval = Math.max(cfg.screenshot.interval, limits.minIntervalMin);
   // Adresse de la page de statut : un jeton aléatoire, propre à ce site (jamais deux sites avec le même).
   const st = cfg.statusPage;
   if (st.enabled && !st.token) st.token = randomBytes(18).toString('base64url');

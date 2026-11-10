@@ -115,3 +115,44 @@ test('boutons par groupe et par site : annoncés par le serveur (scopeLinks), r�
     assert.equal(await page.run("document.querySelectorAll('.grp-actions a[href*=\"scope=\"]').length"), 0, 'cœur auto-hébergé : aucun bouton de ce genre');
   });
 });
+
+test('fréquences proposées selon le forfait : réglages, contrôle d\'un site et captures n\'offrent rien en dessous du minimum annoncé', { skip, timeout: 90000 }, async (t) => {
+  const w = await dbm.createWatch({ name: 'Fréquences', url: 'https://exemple.invalid/', interval: 15, config: { checks: { dns: false, tls: false, rdap: false }, screenshot: { enabled: true, interval: 5 } } });
+  const usage = { plan: { name: 'Perso', limits: { minIntervalMin: 60 } }, usage: { sites: { active: 1, total: 1, max: 5 } } };
+  const options = (label) => `(() => { const f = [...document.querySelectorAll('.field')].find((x) => x.querySelector('label')?.textContent === ${JSON.stringify(label)}); const s = f?.querySelector('select'); return s ? { values: [...s.options].map((o) => Number(o.value)), value: Number(s.value) } : null; })()`;
+  await withPage(t, {
+    capabilities: { usageUrl: '/api/account/plan' },
+    routes: [({ route }) => route('GET', '/api/account/plan', () => usage)],
+    entitlements: { check() {}, limits: () => ({ minIntervalMin: 60 }) },
+  }, async (page) => {
+    await page.run("T.until(() => T.visible('#plan-box'))"); // le forfait est connu de l'interface
+
+    // Réglages : « Fréquence par défaut » (15 min enregistrées par défaut, ramenées à 60 min).
+    await page.run("location.hash = '#/reglages'");
+    await page.run(`T.until(() => ${options('Fréquence par défaut')})`);
+    const def = await page.run(options('Fréquence par défaut'));
+    assert.ok(def.values.every((v) => v >= 60), `rien sous 60 min : ${def.values}`);
+    assert.equal(def.value, 60, 'la valeur affichée est celle qui sera réellement appliquée');
+
+    // Fiche du site › Modifier : « Fréquence de contrôle » et, dans « Capture d'écran », « Fréquence ».
+    await page.run(`location.hash = '#/sites/${w.id}'`);
+    await page.run("T.until(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Modifier'))");
+    await page.run("[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Modifier').click()");
+    await page.run(`T.until(() => ${options('Fréquence de contrôle')})`);
+    const check = await page.run(options('Fréquence de contrôle'));
+    assert.ok(check.values.every((v) => v >= 60), `contrôle : rien sous 60 min : ${check.values}`);
+    assert.equal(check.value, 60);
+    const shot = await page.run(options('Fréquence'));
+    assert.ok(shot.values.every((v) => v >= 60), `capture : rien sous 60 min : ${shot.values}`);
+    assert.equal(shot.value, 60);
+  });
+});
+
+test('sans forfait annoncé (cœur auto-hébergé) : toutes les fréquences restent proposées', { skip, timeout: 90000 }, async (t) => {
+  await withPage(t, {}, async (page) => {
+    await page.run("location.hash = '#/reglages'");
+    await page.run("T.until(() => [...document.querySelectorAll('.field')].some((x) => x.querySelector('label')?.textContent === 'Fréquence par défaut'))");
+    const values = await page.run("[...[...document.querySelectorAll('.field')].find((x) => x.querySelector('label')?.textContent === 'Fréquence par défaut').querySelector('select').options].map((o) => Number(o.value))");
+    assert.ok(values.includes(1) && values.includes(5) && values.includes(15), `choix complets : ${values}`);
+  });
+});

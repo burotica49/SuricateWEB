@@ -1227,8 +1227,9 @@ function openLightbox(items, start, w) {
     const cur = items[i];
     const prev = items[i + 1];
     const [label, cls] = SHOT_KIND[cur.kind] || SHOT_KIND.scheduled;
-    title.replaceChildren(h('b', {}, w.name), h('span', {}, `${dt(cur.ts)} · ${rel(cur.ts)}`),
-      cur.finalUrl ? h('span', { class: 'muted', title: cur.finalUrl }, `${host(cur.finalUrl)}${cur.title ? ` — « ${cur.title} »` : ''}`) : null, shotOffSite(cur, w) ? h('span', { class: 'pill warn' }, 'Autre domaine que le site') : null, cls ? h('span', { class: `pill ${cls}` }, label) : null, h('span', { class: 'muted' }, `${i + 1} / ${items.length}`));
+    // replaceChildren écrit un `null` en TEXTE : les éléments absents (domaine, pastille) sont retirés avant, sinon « null » s'affiche dans la barre.
+    title.replaceChildren(...[h('b', {}, w.name), h('span', {}, `${dt(cur.ts)} · ${rel(cur.ts)}`),
+      cur.finalUrl ? h('span', { class: 'muted', title: cur.finalUrl }, `${host(cur.finalUrl)}${cur.title ? ` — « ${cur.title} »` : ''}`) : null, shotOffSite(cur, w) ? h('span', { class: 'pill warn' }, 'Autre domaine que le site') : null, cls ? h('span', { class: `pill ${cls}` }, label) : null, h('span', { class: 'muted' }, `${i + 1} / ${items.length}`)].filter(Boolean));
     const two = compare && prev;
     stage.className = `lb-stage${two ? ' two' : ''}`;
     stage.replaceChildren(...(two ? [fig('Avant', prev), fig('Après', cur)] : [fig(null, cur)]));
@@ -1642,6 +1643,19 @@ function drawer(title, body, foot) {
 
 const INTERVALS = [[1, '1 minute'], [5, '5 minutes'], [10, '10 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [180, '3 heures'], [360, '6 heures'], [720, '12 heures'], [1440, '24 heures']];
 
+// Fréquences proposées selon le forfait : le serveur annonce la plus courte autorisée (`limits.minIntervalMin` dans la réponse de `usageUrl`) et
+// ramène de toute façon une valeur plus courte à ce minimum. L'interface ne propose donc pas ce qu'elle ne pourra pas accorder. Le cœur
+// auto-hébergé n'annonce rien : aucune limite.
+const minEvery = () => { const m = Number(S.plan?.plan?.limits?.minIntervalMin); return Number.isFinite(m) && m > 1 ? Math.round(m) : 1; };
+/** { options, value } : les choix de `list` au moins égaux au minimum du forfait, et la valeur courante ramenée à ce minimum (toujours présente dans la liste). */
+function everyChoices(list, current) {
+  const min = minEvery();
+  const value = Math.max(Number(current) || 0, min);
+  const options = list.filter(([v]) => v >= min);
+  if (!options.some(([v]) => v === value)) options.push([value, `${value} minutes`]);
+  return { options: options.sort((x, y) => x[0] - y[0]), value };
+}
+
 function openSiteForm(w, presetUrl = '', presetGroup = null) {
   const c = w?.config || { mode: 'site', checks: Object.fromEntries(Object.values(CHECK_DEFS).flat().map(([k]) => [k, true])), selector: '', excludeSelector: '', ignoreRegex: [], images: false, userAgent: '', timeoutS: 20, headers: {}, allowedHosts: [], failThreshold: 2, forbidden: [], required: [], minChangePct: 0, notify: true, minSeverity: '', screenshot: { enabled: true, interval: 60, fullPage: false, width: 1280, height: 800, delay: 3, interact: true, hideBanners: true } };
   const sc = c.screenshot;
@@ -1653,7 +1667,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
   const f = {
     url: h('input', { class: 'input', placeholder: 'https://www.monsite.fr', value: w?.url || presetUrl, autocomplete: 'off', spellcheck: false }),
     name: h('input', { class: 'input', placeholder: 'Déduit de l\'adresse si vide', value: w?.name || '' }),
-    interval: h('select', { class: 'input', value: String(interval) }, ...(INTERVALS.some(([v]) => v === interval) ? INTERVALS : [...INTERVALS, [interval, `${interval} minutes`]]).map(([v, l]) => h('option', { value: String(v) }, `Toutes les ${l}`.replace('Toutes les 1 minute', 'Chaque minute').replace('Toutes les 1 heure', 'Toutes les heures'))), ),
+    interval: h('select', { class: 'input', value: String(everyChoices(INTERVALS, interval).value) }, ...everyChoices(INTERVALS, interval).options.map(([v, l]) => h('option', { value: String(v) }, `Toutes les ${l}`.replace('Toutes les 1 minute', 'Chaque minute').replace('Toutes les 1 heure', 'Toutes les heures'))), ),
     tags: h('input', { class: 'input', placeholder: 'client-dupont, e-commerce', value: (w?.tags || []).join(', ') }),
     group: h('select', { class: 'input', value: String(w ? (w.groupId ?? '') : (presetGroup ?? '')) },
       h('option', { value: '' }, 'Sans groupe'),
@@ -1668,7 +1682,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     ua: h('input', { class: 'input', placeholder: S.settings?.userAgent || '', value: c.userAgent }),
     shotOn: h('input', { type: 'checkbox', checked: sc.enabled }),
     shotKeep: h('select', { class: 'input', value: String(sc.keep || 0) }, h('option', { value: '0' }, `Réglage général (${S.settings?.retention?.screenshots ?? 168})`), ...keepOptions(sc.keep).map((v) => h('option', { value: String(v) }, `${v} captures`))),
-    shotEvery: h('select', { class: 'input', value: String(sc.interval) }, ...(SHOT_EVERY.some(([v]) => v === sc.interval) ? SHOT_EVERY : [...SHOT_EVERY, [sc.interval, `${sc.interval} minutes`]]).map(([v, l]) => h('option', { value: String(v) }, `Toutes les ${l}`.replace('Toutes les 1 heure', 'Toutes les heures')))),
+    shotEvery: h('select', { class: 'input', value: String(everyChoices(SHOT_EVERY, sc.interval).value) }, ...everyChoices(SHOT_EVERY, sc.interval).options.map(([v, l]) => h('option', { value: String(v) }, `Toutes les ${l}`.replace('Toutes les 1 heure', 'Toutes les heures')))),
     shotSize: h('select', { class: 'input', value: curSize }, ...(SHOT_SIZES.some(([v]) => v === curSize) ? SHOT_SIZES : [...SHOT_SIZES, [curSize, `${sc.width} × ${sc.height}`]]).map(([v, l]) => h('option', { value: v }, l))),
     shotFull: h('input', { type: 'checkbox', checked: sc.fullPage }),
     shotDelay: h('select', { class: 'input', value: String(sc.delay) }, ...(SHOT_DELAYS.some(([v]) => v === sc.delay) ? SHOT_DELAYS : [...SHOT_DELAYS, [sc.delay, `${sc.delay} secondes`]]).map(([v, l]) => h('option', { value: String(v) }, l))),
@@ -1896,7 +1910,7 @@ async function viewSettings() {
     buttons: h('input', { type: 'checkbox', checked: t.buttons !== false }),
     minSev: h('select', { class: 'input', value: t.minSeverity }, h('option', { value: 'info' }, 'Tout, y compris les infos'), h('option', { value: 'warning' }, 'Attention et critique (recommandé)'), h('option', { value: 'critical' }, 'Critique uniquement')),
     base: h('input', { class: 'input', placeholder: 'http://monserveur:3000 (pour les liens dans les messages)', value: s.baseUrl }),
-    interval: h('select', { class: 'input', value: String(s.defaultInterval) }, ...INTERVALS.map(([v, l]) => h('option', { value: String(v) }, l))),
+    interval: h('select', { class: 'input', value: String(everyChoices(INTERVALS, s.defaultInterval).value) }, ...everyChoices(INTERVALS, s.defaultInterval).options.map(([v, l]) => h('option', { value: String(v) }, l))),
     ua: h('input', { class: 'input', value: s.userAgent }),
     keepAll: h('select', { class: 'input', value: String(s.retention.screenshots) }, ...keepOptions(s.retention.screenshots).map((v) => h('option', { value: String(v) }, `${v} captures`))),
     cmsDays: h('select', { class: 'input', value: String(s.cmsAfterDays) }, ...[...new Set([1, 3, 7, 14, 30, s.cmsAfterDays])].sort((a, b) => a - b).map((v) => h('option', { value: String(v) }, `${v} ${v > 1 ? 'jours' : 'jour'}${v === 7 ? ' (par défaut)' : ''}`))),

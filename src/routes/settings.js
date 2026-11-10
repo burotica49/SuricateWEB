@@ -5,7 +5,7 @@
 // SuricateWeb) ne se modifient qu'avec le droit « instance:write » : accordé par défaut dans le cœur, refusé aux comptes clients
 // de la version hébergée, qui ne doivent pas changer l'adresse de tout le monde.
 import { HttpError } from '../http.js';
-import { settingsFor, saveAccountSettings, saveInstanceSettings, MAX_KEEP } from '../db.js';
+import { settingsFor, saveAccountSettings, saveInstanceSettings, accountDefaults, MAX_KEEP } from '../db.js';
 import { pruneAllShots } from '../screenshot.js';
 import * as tg from '../telegram.js';
 import { clamp } from '../util.js';
@@ -33,8 +33,10 @@ export default function register({ route }) {
       };
       if (t.clearToken) patch.telegram.token = '';
     }
-    if (b.defaultInterval !== undefined) patch.defaultInterval = clamp(b.defaultInterval, 1, 10080, 15);
-    const keepAll = b.retention?.screenshots !== undefined ? Math.round(clamp(b.retention.screenshots, 1, MAX_KEEP, 168)) : null;
+    // Fréquence par défaut des nouveaux sites : jamais plus courte que ce que le forfait autorise (sinon elle serait ramenée au minimum à chaque création).
+    const minEvery = Math.max(1, (await ctx.limits()).minIntervalMin ?? 1);
+    if (b.defaultInterval !== undefined) patch.defaultInterval = clamp(b.defaultInterval, minEvery, 10080, Math.max(15, minEvery));
+    const keepAll = b.retention?.screenshots !== undefined ? Math.round(clamp(b.retention.screenshots, 1, MAX_KEEP, accountDefaults().retention.screenshots)) : null;
     if (keepAll !== null) patch.retention = { screenshots: keepAll };
     if (b.cmsAfterDays !== undefined) patch.cmsAfterDays = Math.round(clamp(b.cmsAfterDays, 1, 90, 7));
     if (b.userAgent !== undefined) patch.userAgent = String(b.userAgent).trim() || cur.userAgent;

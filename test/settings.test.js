@@ -106,3 +106,17 @@ test('v7 : le User-Agent par défaut de l\'ancien nom suit le renommage, un User
 });
 
 test.after(() => dbm.db.close());
+
+test('SCREENSHOT_KEEP_DEFAULT : défaut de conservation des captures (168 sans la variable), borné, sans effet sur ce qu\'un compte a choisi', async () => {
+  const keep = () => dbm.accountDefaults().retention.screenshots;
+  const before = process.env.SCREENSHOT_KEEP_DEFAULT;
+  try {
+    delete process.env.SCREENSHOT_KEEP_DEFAULT;
+    assert.equal(keep(), 168);
+    process.env.SCREENSHOT_KEEP_DEFAULT = '24';
+    assert.equal(keep(), 24);
+    for (const bad of ['0', '-5', 'abc', '', '999999']) { process.env.SCREENSHOT_KEEP_DEFAULT = bad; assert.equal(keep(), 168, `valeur absurde « ${bad} » : défaut habituel`); }
+  } finally {
+    if (before === undefined) delete process.env.SCREENSHOT_KEEP_DEFAULT; else process.env.SCREENSHOT_KEEP_DEFAULT = before;
+  }
+});

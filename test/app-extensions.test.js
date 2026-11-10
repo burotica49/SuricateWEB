@@ -363,3 +363,19 @@ test('cœur auto-hébergé : les captures sont « allowed » par défaut', async
   const w = await dbm.createWatch({ name: 'Cap2', url: 'https://cap2.test/', interval: 5, accountId: 70, config: SITE.config });
   assert.equal((await call('GET', `/api/watches/${w.id}/screenshots`, { as: 'alice' })).json.allowed, true);
 });
+
+test('limits().minIntervalMin : fréquence par défaut des réglages et fréquence des captures ramenées au minimum du forfait, comme celle des contrôles', async () => {
+  const { call } = await start({ auth: fakeAuth(), entitlements: { check() {}, limits: () => ({ minIntervalMin: 30 }) } });
+  const put = await call('PUT', '/api/settings', { as: 'alice', body: { defaultInterval: 5 } });
+  assert.equal(put.status, 200);
+  assert.equal(put.json.defaultInterval, 30, 'la fréquence par défaut ne descend pas sous le forfait');
+  assert.equal((await call('PUT', '/api/settings', { as: 'alice', body: { defaultInterval: 120 } })).json.defaultInterval, 120, 'une fréquence plus longue est respectée');
+
+  const w = await call('POST', '/api/watches', { as: 'alice', body: { ...SITE, name: 'Capt', interval: 60, config: { ...SITE.config, screenshot: { enabled: true, interval: 5 } } } });
+  assert.equal(w.status, 200);
+  await settle(w.json.id);
+  assert.equal((await dbm.getWatch(w.json.id)).config.screenshot.interval, 30, 'capture toutes les 5 min ramenée à 30 min');
+  const slow = await call('POST', '/api/watches', { as: 'alice', body: { ...SITE, name: 'Capt2', interval: 60, config: { ...SITE.config, screenshot: { enabled: true, interval: 360 } } } });
+  await settle(slow.json.id);
+  assert.equal((await dbm.getWatch(slow.json.id)).config.screenshot.interval, 360, 'une capture plus espacée est respectée');
+});

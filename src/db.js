@@ -77,13 +77,19 @@ const instanceDefaults = () => ({
   sessionSecret: '',
 });
 
+/**
+ * Captures planifiées conservées par site, par défaut : 168 (7 jours à une capture par heure). `SCREENSHOT_KEEP_DEFAULT` change ce défaut
+ * (ex. : la version hébergée garde 24 pour limiter le stockage) ; chaque compte reste libre de choisir autrement dans les réglages.
+ */
+const defaultShotKeep = () => { const n = Math.round(Number(process.env.SCREENSHOT_KEEP_DEFAULT)); return Number.isFinite(n) && n >= 1 && n <= MAX_KEEP ? n : 168; };
+
 export const accountDefaults = () => ({
   // buttons : boutons « Marquer comme lu » / « Ouvrir dans SuricateWeb » sous chaque message.
   telegram: { token: '', chatId: '', enabled: true, minSeverity: 'warning', sendRecovery: true, includeDiff: true, sendScreenshot: true, buttons: true },
   defaultInterval: 15,
   userAgent: 'Mozilla/5.0 (compatible; SuricateWeb/1.0; surveillance de site)',
   builtinKeywords: [...DEFAULT_KEYWORDS],
-  retention: { screenshots: 168 },
+  retention: { screenshots: defaultShotKeep() },
   // Une mise à jour du CMS en attente depuis plus de N jours déclenche une alerte.
   cmsAfterDays: 7,
 });

@@ -349,7 +349,8 @@ function paintPlanBox() {
     );
   }
   for (const [href, label] of links) kids.push(h('a', { href }, label));
-  box.replaceChildren(...kids);
+  // replaceChildren transforme un `null` en TEXTE « null » : forfait illimité (pas de barre) = élément absent, jamais null dans la liste.
+  box.replaceChildren(...kids.filter(Boolean));
   box.hidden = false;
 }
 

@@ -65,6 +65,7 @@ test('forfait illimité : pas de barre, « illimité » ; sans capacités : rien
     await page.run("T.until(() => T.visible('#plan-box'))");
     assert.match(await page.run("T.text('#plan-box')"), /Forfait Agence[\s\S]*12 sites surveillés · illimité/);
     assert.equal(await page.run("!!document.querySelector('#plan-box .gauge')"), false);
+    assert.ok(!/null|undefined/.test(await page.run("T.text('#plan-box')")), 'jamais « null » affiché (forfait illimité : pas de barre, mais pas de texte parasite)');
   });
   await withPage(t, {}, async (page) => {
     await page.run("T.until(() => document.querySelector('#plan-box'))");

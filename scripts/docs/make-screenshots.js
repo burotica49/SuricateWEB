@@ -138,6 +138,11 @@ try {
   await fit({ max: 2000 });
   await save('mises-a-jour.png', await page.screenshot());
 
+  // Onglet « Sécurité » : intégrité des fichiers WordPress et comptes administrateurs.
+  await go(`#/sites/${id('Cabinet Martin')}/securite`, '.table');
+  await fit({ max: 2000 });
+  await save('securite.png', await page.screenshot());
+
   await go(`#/sites/${id('Nova Boutique')}/mises-a-jour`, '.table');
   await fit({ max: 2000 });
   await save('mises-a-jour-prestashop.png', await page.screenshot());

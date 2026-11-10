@@ -377,6 +377,8 @@ SuricateWeb alerte comme pour un certificat qui expire : **une fois à l'apparit
 
 SuricateWeb voit le HTML d'un site, pas ses fichiers. Le plugin comble ce manque : il lit les fichiers **depuis le site**, là où ils sont. L'onglet **Sécurité** (sites WordPress et PrestaShop) en présente le résultat.
 
+![Onglet Sécurité d'un site WordPress : noyau conforme, extensions vérifiées, aucun fichier PHP dans uploads et comptes administrateurs inchangés](docs/screenshots/securite.png)
+
 ### Intégrité des fichiers
 
 | Contrôle | Ce que le plugin fait | Alerte |

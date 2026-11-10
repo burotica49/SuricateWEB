@@ -66,6 +66,18 @@ const CMS_REPORTS = {
       item('Cabinet Martin (thème enfant)', 'cabinet-martin-child', '2.4.0'),
       item('Twenty Twenty-Five', 'twentytwentyfive', '1.0', '1.3', { active: false, age: 8 }),
     ],
+    // Onglet « Sécurité » : tout est conforme (aucune alerte de plus dans la démo), une extension premium n'est pas vérifiable. `checkedAt` est ajouté à la création de l'état.
+    integrity: {
+      core: { version: '6.7.1', known: true, checked: 3412, modified: [], added: [], missing: [], more: 0 },
+      plugins: [
+        ['Yoast SEO', 'wordpress-seo', '24.2', 612], ['Contact Form 7', 'contact-form-7', '5.9.8', 188], ['Complianz', 'complianz-gdpr', '7.4.0', 301],
+        ['Akismet Anti-spam', 'akismet', '5.3.5', 24], ['Redirection', 'redirection', '5.5.0', 96], ['Hello Dolly', 'hello-dolly', '1.7.2', 3],
+      ].map(([name, slug, version, checked]) => ({ name, slug, version, known: true, checked, modified: [], added: [], missing: [], more: 0, skipped: false }))
+        .concat([{ name: 'Carte des agences Pro', slug: 'agency-map-pro', version: '3.2.1', known: false, checked: 0, modified: [], added: [], missing: [], more: 0, skipped: false }]),
+      uploads: { php: [], more: 0, scanned: 1284, truncated: false },
+      dirs: [], partial: false,
+    },
+    admins: { count: 2, windowDays: 30, recent: [] },
   },
   nova: {
     php: '8.2.27', cms: 'prestashop', cmsVersion: '8.1.7',
@@ -218,6 +230,7 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     };
     if (REPORT[w.slug]) {
       state.cms = { ...REPORT[w.slug], checkedAt: now - 3 * H, ok: true, error: null };
+      if (state.cms.integrity) state.cms.integrity = { ...state.cms.integrity, checkedAt: now - 3 * H, ok: true, error: null };
       for (const i of cmsIncidents(state.cms, { afterDays: 7, now })) state.incidents[i.key] = { severity: i.severity, title: i.title, detail: i.detail, since: now - (AGO[w.slug]?.[i.key] ?? D) };
     }
     if (w.slug !== 'domain') state.tls = { fp: hex(32, 77 + w.i), issuer: "Let's Encrypt", subject: domainName, expires: tlsExpires, authorized: true, protocol: 'TLSv1.3' };

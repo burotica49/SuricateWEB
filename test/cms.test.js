@@ -17,7 +17,7 @@ const TOKEN = 'jeton-de-test-assez-long';
 
 test('config CMS : défauts, domaine seul, chemin invalide', () => {
   const d = normalizeConfig({});
-  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true });
+  assert.deepEqual(d.cms, { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true, codeScan: true });
   const wp = normalizeConfig({ cms: { type: 'wordpress', token: TOKEN, path: '/blog/', intervalMin: 10 } });
   assert.equal(wp.cms.type, 'wordpress');
   assert.equal(wp.cms.path, 'blog');

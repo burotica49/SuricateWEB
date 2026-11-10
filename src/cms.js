@@ -2,13 +2,15 @@
 import { getWatch, settingsFor, setCmsReport, updateWatch, wakeWatch } from './db.js';
 import { describeError } from './checker.js';
 import { getExtensions } from './extensions.js';
-import { carrySince, carryAdmins, carryHistory, acceptAdmins } from './cms-alerts.js';
+import { carrySince, carryAdmins, carryHistory, acceptAdmins, carryCode, acceptCode, codeAlertFiles } from './cms-alerts.js';
 
 const MAX_BODY = 1024 * 1024;
 const MAX_ITEMS = 400;
 const TIMEOUT_S = 20;
 /** Le contrôle d'intégrité lit tous les fichiers du site : il peut être long sur un hébergement lent. */
 const INTEGRITY_TIMEOUT_S = 90;
+/** Le plugin s'arrête de lui-même à 45 s (et reprend au relevé suivant) : on lui laisse un peu plus pour répondre. */
+const CODE_TIMEOUT_S = 90;
 const RETRY_MS = 30 * 60 * 1000;
 
 const running = new Set();
@@ -32,7 +34,7 @@ export function cmsConfigError(cms) {
 
 /**
  * Adresse appelée : toujours l'origine du site + un chemin fixe. Jamais une URL libre.
- * `scope` : « status » (versions, administrateurs) ou « integrity » (sommes de contrôle des fichiers).
+ * `scope` : « status » (versions, administrateurs), « integrity » (sommes de contrôle des fichiers) ou « code » (recherche de code suspect).
  */
 export function cmsEndpoint(pageUrl, cms, scope = 'status') {
   if (cms?.type !== 'wordpress' && cms?.type !== 'prestashop') return null;
@@ -49,10 +51,10 @@ export function cmsEndpoint(pageUrl, cms, scope = 'status') {
   if (cms.type === 'wordpress') {
     // Fonctionne avec ou sans permaliens réécrits.
     url.pathname = `${base}/`.replace(/\/{2,}/g, '/');
-    url.search = `rest_route=/suricateweb/v1/${scope === 'integrity' ? 'integrity' : 'status'}`;
+    url.search = `rest_route=/suricateweb/v1/${['integrity', 'code'].includes(scope) ? scope : 'status'}`;
   } else {
     url.pathname = `${base}/modules/suricateweb/status.php`.replace(/\/{2,}/g, '/');
-    url.search = scope === 'integrity' ? 'scope=integrity' : '';
+    url.search = ['integrity', 'code'].includes(scope) ? `scope=${scope}` : '';
   }
   url.hash = '';
   return url.href;
@@ -157,6 +159,48 @@ export function parseIntegrityReport(body, expectedType) {
   };
 }
 
+const CODE_LEVELS = new Set(['strong', 'review', 'vendor']);
+const HIT_ID = /^[a-z_]{1,40}$/;
+const SHORT_HASH = /^[0-9a-f]{6,16}$/;
+
+/**
+ * Réponse de la route « code », bornée. Le plugin n'envoie JAMAIS le contenu d'un fichier : un chemin, des identifiants de motifs
+ * (liste fermée côté plugin) et une empreinte courte. Tout le reste est écarté ici, quoi que le site réponde.
+ * `{ enabled: false }` : l'analyse est coupée côté site (en-tête de désactivation).
+ */
+export function parseCodeReport(body, expectedType) {
+  const data = typeof body === 'string' ? JSON.parse(body) : body;
+  if (!data || typeof data !== 'object' || Array.isArray(data) || data.cms !== expectedType) throw new Error('Réponse invalide');
+  const c = data.code;
+  if (!c || typeof c !== 'object') throw Object.assign(new Error(`${expectedType === 'prestashop' ? 'Module' : 'Plugin'} trop ancien : mettez-le à jour (version 1.3 ou plus) pour rechercher le code suspect.`), { code: 'PLUGIN_OLD' });
+  if (c.enabled === false) return { enabled: false };
+  const files = [];
+  for (const f of Array.isArray(c.files) ? c.files : []) {
+    if (!f || typeof f !== 'object' || files.length >= 60) continue;
+    const path = pathOf(f.path);
+    if (!path || !CODE_LEVELS.has(f.level)) continue;
+    files.push({
+      path,
+      level: f.level,
+      hits: (Array.isArray(f.hits) ? f.hits : []).map((h) => String(h)).filter((h) => HIT_ID.test(h)).slice(0, 12),
+      hash: SHORT_HASH.test(String(f.hash)) ? String(f.hash) : '',
+      origin: f.origin === 'change' ? 'change' : 'baseline',
+    });
+  }
+  const d = c.drift && typeof c.drift === 'object' ? c.drift : {};
+  return {
+    enabled: true,
+    files,
+    more: count(c.more) ?? 0,
+    drift: { files: pathList(d.files), more: count(d.more) ?? 0, days: count(d.days) ?? 14 },
+    inventory: count(c.inventory) ?? 0,
+    baseline: c.baseline === true,
+    partial: c.partial === true,
+    // Sans stockage inscriptible côté site, chaque relevé repart de zéro : aucun « changement » ne peut être constaté.
+    persistent: c.persistent !== false,
+  };
+}
+
 async function readLimited(res) {
   if (!res.body) return Buffer.alloc(0);
   const reader = res.body.getReader();
@@ -235,6 +279,8 @@ export async function pollCms(id, { refresh = false } = {}) {
   let report = null;
   let integrity = null;
   let integrityError = null;
+  let code = null;
+  let codeError = null;
   try {
     if (!cms.token) throw new Error('Jeton manquant : copiez-le dans le plugin.');
     const target = cmsEndpoint(w.url, cms);
@@ -253,6 +299,19 @@ export async function pollCms(id, { refresh = false } = {}) {
         integrity = parseIntegrityReport(sum, cms.type);
       } catch (e) {
         integrityError = e instanceof SyntaxError ? 'Réponse invalide' : describeError(e).message || 'Contrôle d’intégrité impossible';
+      }
+      if (cms.codeScan !== false) {
+        // Troisième relevé, lui aussi isolé : un plugin sans cette route (avant 1.3) garde ses versions et son intégrité.
+        try {
+          const txt = await fetchReport(cmsEndpoint(w.url, cms, 'code'), cms.token, refresh, {
+            timeoutS: CODE_TIMEOUT_S,
+            userAgent,
+            notFound: `${cms.type === 'prestashop' ? 'Module' : 'Plugin'} trop ancien : mettez-le à jour (version 1.3 ou plus) pour rechercher le code suspect.`,
+          });
+          code = parseCodeReport(txt, cms.type);
+        } catch (e) {
+          codeError = e instanceof SyntaxError ? 'Réponse invalide' : describeError(e).message || 'Recherche de code suspect impossible';
+        }
       }
     }
   } catch (e) {
@@ -273,6 +332,13 @@ export async function pollCms(id, { refresh = false } = {}) {
       // Un contrôle d'intégrité qui échoue garde le dernier résultat réussi, avec l'erreur : pas de « tout va bien » inventé.
       if (integrity) report.integrity = { ...integrity, checkedAt: now, ok: true, error: null };
       else report.integrity = { ...(prev.integrity || {}), ok: false, error: integrityError, ...(prev.integrity?.checkedAt ? {} : { checkedAt: now }) };
+      if (cms.codeScan !== false) {
+        // Même règle que l'intégrité : une erreur garde le dernier résultat réussi (et ses acquittements), jamais un « tout va bien » inventé.
+        if (code?.enabled) report.code = carryCode(prev.code, { ...code, checkedAt: now, ok: true, error: null }, now);
+        else if (code) report.code = { enabled: false, checkedAt: now, ok: true, error: null }; // coupé côté site
+        else if (prev.code) report.code = { ...prev.code, ok: false, error: codeError, ...(prev.code.checkedAt ? {} : { checkedAt: now }) };
+        else report.code = { enabled: true, files: [], more: 0, drift: { files: [], more: 0, days: 14 }, inventory: 0, baseline: false, partial: false, persistent: true, acks: [], ok: false, error: codeError, checkedAt: now };
+      }
     }
   }
   const saved = report
@@ -294,6 +360,25 @@ export async function acceptCmsAdmins(id) {
   if (state.incidents?.cms_admins) {
     state.incidents = { ...state.incidents };
     delete state.incidents.cms_admins;
+  }
+  return await updateWatch(id, { state });
+}
+
+/**
+ * « Je connais ce fichier » : le fichier (chemin + empreinte) est reconnu ; sans chemin, tous les fichiers actuellement signalés.
+ * Une nouvelle modification du fichier change son empreinte : il redevient une alerte.
+ */
+export async function acceptCmsCode(id, path = '') {
+  const w = await getWatch(id);
+  const code = w?.state.cms?.code;
+  if (!code?.files) return null;
+  const next = acceptCode(code, path);
+  if (!next) return null;
+  const state = { ...w.state, cms: { ...w.state.cms, code: next } };
+  // L'incident est reconstruit au prochain contrôle ; s'il ne reste plus rien à signaler, on le retire tout de suite, sans message « rétabli ».
+  if (state.incidents?.cms_integrity_code && !codeAlertFiles(next).length) {
+    state.incidents = { ...state.incidents };
+    delete state.incidents.cms_integrity_code;
   }
   return await updateWatch(id, { state });
 }

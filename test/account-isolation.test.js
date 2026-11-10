@@ -99,7 +99,7 @@ const MATRIX = [
   ['POST', '/api/watches/:id/toggle', 'site'], ['POST', '/api/watches/:id/check', 'site'], ['POST', '/api/watches/:id/ack', 'site'],
   ['GET', '/api/watches/:id/uptime', 'site'], ['GET', '/api/watches/:id/series', 'site'], ['GET', '/api/watches/:id/domain', 'site'],
   ['GET', '/api/watches/:id/history', 'site'], ['GET', '/api/watches/:id/screenshots', 'site'], ['POST', '/api/watches/:id/screenshot', 'site'],
-  ['POST', '/api/watches/:id/cms', 'site'], ['POST', '/api/watches/:id/cms/admins/accept', 'site'], ['GET', '/api/watches/:id/report', 'site'],
+  ['POST', '/api/watches/:id/cms', 'site'], ['POST', '/api/watches/:id/cms/admins/accept', 'site'], ['POST', '/api/watches/:id/cms/code/accept', 'site'], ['GET', '/api/watches/:id/report', 'site'],
   ['POST', '/api/watches/:id/maintenance', 'site', { minutes: 30 }],
   ['GET', '/api/snapshots/:id/diff', 'snap'], ['GET', '/api/snapshots/:id/text', 'snap'],
   ['GET', '/api/screenshots/:id/image', 'shot'], ['DELETE', '/api/maintenance/:id', 'maint'],

@@ -1407,6 +1407,79 @@ function integritySection(title, sec, hint) {
       : hint ? h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, hint)) : null);
 }
 
+// Libellés des motifs de code suspect (mêmes identifiants que le scanner des plugins ; un test vérifie qu'aucun ne manque).
+const CODE_LABELS = {
+  eval_decode: 'code décodé puis exécuté (eval + base64, gzinflate…)',
+  request_exec: 'exécute ce qu’envoie le visiteur',
+  request_func: 'appelle une fonction choisie par le visiteur',
+  preg_e: 'preg_replace avec le modificateur /e (exécute du code)',
+  write_php: 'écrit du code PHP sur le disque',
+  create_function: 'create_function (fonction créée à partir d’un texte)',
+  eval_var: 'eval d’une variable',
+  long_encoded: 'très longue chaîne encodée',
+  chr_chain: 'texte reconstruit caractère par caractère',
+  js_obfuscated: 'JavaScript obfusqué',
+  obfuscated_names: 'noms de variables illisibles',
+  goto_chain: 'enchaînement de goto (code brouillé)',
+  long_line: 'ligne démesurée',
+  cloaking: 'contenu différent pour les robots de recherche',
+  auto_prepend: 'code exécuté avant chaque page (auto_prepend_file)',
+  handler_media: 'PHP exécuté dans des images ou des fichiers texte',
+  htaccess_cloak: 'réécriture selon le visiteur (robots de recherche)',
+  vendor_encoder: 'code chiffré par un éditeur (ionCube, Zend Guard…)',
+};
+
+/** Carte « Code suspect » de l'onglet Sécurité : fichiers signalés (chemin + motif, jamais le contenu), reconnaissance par fichier, dérive récente. */
+function codeCard(w, kind) {
+  const code = w.cms?.code;
+  const card = h('div', { class: 'card', style: { marginBottom: '16px' } });
+  const head = (...extra) => h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, 'Code suspect'), h('span', { class: 'muted' }, code?.checkedAt ? `analysé ${rel(code.checkedAt)}${code.inventory ? ` · ${plural(code.inventory, 'fichier suivi', 'fichiers suivis')}` : ''}` : 'en attente de la première analyse')), ...extra);
+  if (w.config.cms.codeScan === false) {
+    card.append(head(h('span', { class: 'pill mute' }, 'Désactivé')), h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, 'La recherche de code suspect est désactivée pour ce site. Réactivez-la dans « Modifier › WordPress / PrestaShop ».')));
+    return card;
+  }
+  if (!code) {
+    card.append(head(), h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, `Aucune analyse pour le moment. Cliquez sur « Actualiser » ; ${shopWord(kind)} doit être en version 1.3 ou plus.`)));
+    return card;
+  }
+  if (code.enabled === false) {
+    card.append(head(h('span', { class: 'pill mute' }, 'Coupée sur le site')), h('div', { class: 'card-pad' }, h('p', { class: 'muted', style: { margin: 0 } }, 'L’analyse est désactivée côté site (en-tête X-Suricate-Code).')));
+    return card;
+  }
+  const files = code.files || [];
+  const alerting = files.filter((f) => !f.known && f.level !== 'vendor' && (f.level === 'strong' || f.origin === 'change'));
+  const critical = alerting.some((f) => f.level === 'strong' && f.origin === 'change');
+  const status = alerting.length ? h('span', { class: `pill ${critical ? 'crit' : 'warn'}` }, plural(alerting.length, 'à vérifier', 'à vérifier')) : files.some((f) => !f.known && f.level !== 'vendor') ? h('span', { class: 'pill mute' }, 'À relire') : h('span', { class: 'pill ok' }, 'Rien de suspect');
+  const body = h('div', { class: 'card-pad' });
+  if (code.error) body.append(h('div', { class: 'callout', style: { marginBottom: '12px' } }, ic('alert'), h('div', {}, code.error, code.files?.length || code.inventory ? h('span', { class: 'muted' }, ' Les résultats ci-dessous sont ceux de la dernière analyse réussie.') : null)));
+  if (code.persistent === false) body.append(h('div', { class: 'callout', style: { marginBottom: '12px' } }, ic('alert'), h('div', {}, `${shopWord(kind)} ne peut pas enregistrer son inventaire (dossier non inscriptible) : les fichiers modifiés ne peuvent pas être détectés, seuls les motifs connus le sont.`)));
+  if (code.baseline) body.append(h('p', { class: 'muted', style: { margin: '0 0 8px' } }, 'Première analyse : l’état actuel du site sert de référence. Les fichiers ajoutés ou modifiés ensuite (hors mise à jour d’une extension, d’un thème ou du CMS) seront signalés comme nouveaux.'));
+  if (code.partial) body.append(h('p', { class: 'muted', style: { margin: '0 0 8px' } }, 'Analyse interrompue (délai) : elle reprend au prochain relevé, là où elle s’est arrêtée.'));
+  const LEVEL = { strong: ['crit', 'Motif fort'], review: ['warn', 'À relire'], vendor: ['mute', 'Chiffré par un éditeur'] };
+  if (files.length) {
+    body.append(h('ul', { class: 'plain', style: { margin: '0 0 8px', padding: 0, listStyle: 'none' } }, ...files.map((f) => h('li', { style: { padding: '8px 0', borderTop: '1px solid var(--line)' } },
+      h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+        h('span', { class: 'mono', style: { wordBreak: 'break-all' } }, f.path),
+        h('span', { class: `pill ${LEVEL[f.level][0]}` }, LEVEL[f.level][1]),
+        f.level !== 'vendor' ? h('span', { class: 'pill mute' }, f.origin === 'change' ? 'Nouveau ou modifié' : 'Déjà présent') : null,
+        f.known ? h('span', { class: 'pill ok' }, 'Reconnu') : null,
+        !f.known && f.level !== 'vendor' && f.hash ? h('button', { class: 'btn', style: { marginLeft: 'auto' }, onclick: guard(async () => { await api(`/watches/${w.id}/cms/code/accept`, { method: 'POST', body: { path: f.path } }); toast('Fichier reconnu'); route(); }) }, ic('check'), 'Je connais ce fichier') : null),
+      h('div', { class: 'muted', style: { fontSize: '13px' } }, (f.hits || []).map((id) => CODE_LABELS[id] || id).join(' · ') || 'motif suspect')))));
+    if (code.more) body.append(h('p', { class: 'muted' }, `… et ${code.more} autre(s) non listé(s).`));
+  } else if (!code.baseline) {
+    body.append(h('p', { style: { margin: '0 0 8px' } }, 'Aucun fichier ne présente de motif de porte dérobée ou de code injecté.'));
+  }
+  if (code.drift?.files?.length) {
+    body.append(h('details', { style: { margin: '8px 0' } }, h('summary', {}, `${plural(code.drift.files.length + (code.drift.more || 0), 'fichier PHP ajouté ou modifié', 'fichiers PHP ajoutés ou modifiés')} ces ${code.drift.days} derniers jours, sans motif suspect`),
+      h('ul', { class: 'plain', style: { margin: '6px 0 0', paddingLeft: '18px' } }, ...code.drift.files.map((p) => h('li', { class: 'mono' }, p))),
+      code.drift.more ? h('p', { class: 'muted' }, `… et ${code.drift.more} autre(s).`) : null));
+  }
+  body.append(h('p', { class: 'muted', style: { margin: '8px 0 0' } }, `${shopWord(kind)} compare les fichiers PHP aux signatures de code injecté (code décodé puis exécuté, commandes envoyées par le visiteur, noms illisibles…) et suit leurs empreintes d’un relevé à l’autre. Seuls le chemin du fichier et le motif reconnu quittent le site : jamais son contenu. Un motif fort est un indice sérieux, pas une preuve : vérifiez le fichier avant d’agir.`));
+  card.append(head(status), body);
+  return card;
+}
+const shopWord = (kind) => (kind === 'PrestaShop' ? 'Le module' : 'Le plugin');
+
 function securityTab(w) {
   const report = w.cms;
   const shop = w.config.cms.type === 'prestashop';
@@ -1460,6 +1533,8 @@ function securityTab(w) {
   } else if (!integ?.error) {
     root.append(h('div', { class: 'empty', style: { padding: '28px' } }, h('p', {}, 'Aucun contrôle d’intégrité pour le moment. Cliquez sur « Actualiser » ; le plugin doit être en version 1.1 ou plus.')));
   }
+
+  root.append(codeCard(w, kind));
 
   // Comptes administrateurs
   const flagged = (admins?.added?.length || 0) + (admins?.extra || 0);
@@ -1706,6 +1781,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     cmsAlerts: h('input', { type: 'checkbox', checked: c.cms?.alerts !== false }),
     cmsEvery: h('select', { class: 'input', value: String(c.cms?.intervalMin || 720) }, ...[[60, 'Toutes les heures'], [360, 'Toutes les 6 heures'], [720, 'Toutes les 12 heures'], [1440, 'Toutes les 24 heures'], [10080, 'Tous les 7 jours']].map(([v, l]) => h('option', { value: String(v) }, l))),
     cmsSecurity: h('input', { type: 'checkbox', checked: c.cms?.security !== false }),
+    cmsCode: h('input', { type: 'checkbox', checked: c.cms?.codeScan !== false }),
     pages: h('textarea', { class: 'input mono', rows: 4, placeholder: '/panier | Panier\n/contact\n/mon-compte | Connexion', value: (c.pages || []).map((p) => (p.label ? `${p.url} | ${p.label}` : p.url)).join('\n') }),
     statusOn: h('input', { type: 'checkbox', checked: !!c.statusPage?.enabled }),
     statusTitle: h('input', { class: 'input', placeholder: 'Nom affiché sur la page (par défaut : le nom du site)', maxlength: 80, value: c.statusPage?.title || '' }),
@@ -1777,6 +1853,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
     h('div', { class: 'field' }, h('label', {}, 'Adresse interrogée'), cmsEndpointEl),
     toggle(f.cmsAlerts, 'Alerter si des mises à jour tardent ou si PHP n’est plus maintenu', 'Alerte Telegram quand une mise à jour reste en attente plus longtemps que le délai réglé dans Réglages, ou quand la version de PHP ne reçoit plus de correctifs de sécurité. À couper si vous ne maîtrisez pas ces versions (hébergement mutualisé, site client).'),
     toggle(f.cmsSecurity, 'Surveiller l’intégrité des fichiers et les comptes administrateurs', 'Alerte Telegram si un fichier du noyau ou d’une extension du dépôt officiel ne correspond plus aux sommes de contrôle de wordpress.org, si un fichier PHP apparaît dans le dossier des téléversements, ou si un nouvel administrateur est créé. Sous PrestaShop, seuls les dossiers d’images et de téléversements sont contrôlés. Nécessite la version 1.1 du plugin.'),
+    toggle(f.cmsCode, 'Rechercher le code suspect (portes dérobées, code obfusqué)', 'Le plugin analyse les fichiers PHP du site (thèmes, extensions, modules, configuration du serveur) et signale les motifs typiques d’une intrusion, ainsi que les fichiers ajoutés ou modifiés hors mise à jour. Seuls le chemin et le nom du motif sont transmis, jamais le contenu. Nécessite la version 1.3 du plugin ; sans effet si la surveillance de sécurité est coupée.'),
     h('p', {}, 'Téléchargez le plugin ', h('span', { 'data-cms-kind': '' }, ''), ', installez-le, activez-le, puis collez le jeton.',
       h('span', {}, ' '),
       h('a', { href: '/api/plugins/wordpress.zip' }, 'WordPress'), ' · ', h('a', { href: '/api/plugins/prestashop.zip' }, 'PrestaShop')),
@@ -1870,7 +1947,7 @@ function openSiteForm(w, presetUrl = '', presetGroup = null) {
           selector: f.selector.value, excludeSelector: f.exclude.value, ignoreRegex: list(f.ignore), images: f.images.checked,
           forbidden: list(f.forbidden), required: list(f.required), userAgent: f.ua.value, timeoutS: Number(f.timeout.value), failThreshold: Number(f.fails.value),
           minChangePct: Number(f.minPct.value), allowedHosts: list(f.allowed, /[,\n]/), headers, notify: f.notify.checked, minSeverity: f.minSev.value,
-          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value), alerts: f.cmsAlerts.checked, security: f.cmsSecurity.checked },
+          cms: mode === 'domain' ? { type: '' } : { type: f.cmsType.value, token: f.cmsToken.value, path: f.cmsPath.value, intervalMin: Number(f.cmsEvery.value), alerts: f.cmsAlerts.checked, security: f.cmsSecurity.checked, codeScan: f.cmsCode.checked },
           pages: mode === 'domain' ? [] : list(f.pages),
           statusPage: { enabled: mode !== 'domain' && f.statusOn.checked, token: statusToken, title: f.statusTitle.value },
         },

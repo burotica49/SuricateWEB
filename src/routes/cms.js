@@ -1,7 +1,7 @@
 // Connecteur WordPress / PrestaShop : téléchargement des plugins, relevé à la demande, « Je connais ces comptes ».
 import { HttpError } from '../http.js';
 import { join } from 'node:path';
-import { pollCms, acceptCmsAdmins } from '../cms.js';
+import { pollCms, acceptCmsAdmins, acceptCmsCode } from '../cms.js';
 import { zipDirectory } from '../zip.js';
 import { bus } from '../events.js';
 
@@ -31,6 +31,15 @@ export default function register({ route }) {
   route('POST', '/api/watches/:id/cms/admins/accept', async (ctx) => {
     const w = await ctx.data.requireWatch(Number(ctx.params.id));
     if (!await acceptCmsAdmins(w.id)) throw new HttpError(400, 'Aucun relevé des administrateurs pour ce site');
+    bus.emit('event', { type: 'ack', watchId: w.id });
+    return { ok: true };
+  }, { perm: 'site:ack' });
+
+  // « Je connais ce fichier » : un fichier signalé (chemin dans le corps) ou, sans chemin, tous ceux qui le sont, reconnus avec leur empreinte actuelle.
+  route('POST', '/api/watches/:id/cms/code/accept', async (ctx) => {
+    const w = await ctx.data.requireWatch(Number(ctx.params.id));
+    const path = typeof ctx.body?.path === 'string' ? ctx.body.path.slice(0, 200) : '';
+    if (!await acceptCmsCode(w.id, path)) throw new HttpError(400, 'Aucun fichier signalé à reconnaître pour ce site');
     bus.emit('event', { type: 'ack', watchId: w.id });
     return { ok: true };
   }, { perm: 'site:ack' });

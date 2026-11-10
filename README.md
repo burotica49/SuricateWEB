@@ -54,7 +54,7 @@ Pour un site WordPress ou PrestaShop, un petit plugin permet de lire la **versio
 
 ### Sécurité du CMS, pages sensibles, rapport client
 
-- **Intégrité des fichiers WordPress** : le plugin compare le noyau et les extensions du dépôt officiel aux sommes de contrôle de wordpress.org, et repère un fichier modifié, un fichier PHP ajouté (porte dérobée) ou un fichier PHP dans `uploads/`. Alerte aussi quand un **nouvel administrateur** apparaît. [Détails](#sécurité-du-cms-intégrité-des-fichiers-et-administrateurs).
+- **Intégrité des fichiers WordPress** : le plugin compare le noyau et les extensions du dépôt officiel aux sommes de contrôle de wordpress.org, et repère un fichier modifié, un fichier PHP ajouté (porte dérobée) ou un fichier PHP dans `uploads/`. Cherche aussi du **code suspect** (porte dérobée, code obfusqué) dans les thèmes, extensions et modules, et alerte quand un **nouvel administrateur** apparaît. [Détails](#sécurité-du-cms-intégrité-des-fichiers-et-administrateurs).
 - **Plusieurs pages par site** : panier, connexion, contact… surveillés pour les scripts, iframes, formulaires détournés et textes suspects. [Détails](#plusieurs-pages-par-site).
 - **Rapport mensuel client** (disponibilité, incidents, mises à jour, à imprimer ou enregistrer en PDF) et **page de statut** publique en lecture seule. [Détails](#rapport-mensuel-et-page-de-statut).
 
@@ -335,13 +335,13 @@ Le relevé se fait **depuis le site**, là où ces informations existent : un pe
 3. Collez le jeton dans les réglages du plugin (WordPress : *Réglages › SuricateWeb* ; PrestaShop : *Modules › Gestionnaire de modules › SuricateWeb › Configurer*).
 4. Ouvrez l'onglet **Mises à jour** et cliquez sur **Actualiser**.
 
-**Mise à jour du plugin** : un plugin installé avant la version 1.1 continue de fournir les versions, mais pas l'intégrité des fichiers ni les administrateurs ; l'onglet *Sécurité* indique alors « plugin trop ancien ». Remplacez le plugin par la nouvelle archive (le jeton est conservé).
+**Mise à jour du plugin** : un plugin installé avant la version 1.1 continue de fournir les versions, mais pas l'intégrité des fichiers ni les administrateurs (ni, avant la 1.3, la recherche de code suspect) ; l'onglet *Sécurité* indique alors « plugin trop ancien ». Remplacez le plugin par la nouvelle archive (le jeton est conservé).
 
 L'adresse appelée est toujours celle du site surveillé, suivie d'un chemin fixe : `/?rest_route=/suricateweb/v1/status` pour WordPress (avec ou sans permaliens), `/modules/suricateweb/status.php` pour PrestaShop. Le téléchargement du plugin n'est possible que connecté à SuricateWeb ; l'archive est fabriquée à la demande depuis le dossier `plugins/`.
 
 ### Ce qui circule, et les garde-fous
 
-- **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Depuis la version 1.1, il renvoie aussi le **nombre d'administrateurs** (avec, sous WordPress, l'identifiant de connexion et la date de création de ceux créés depuis 30 jours) et, pour le contrôle d'intégrité, des **chemins de fichiers** (jamais leur contenu). Ni e-mail, ni mot de passe, ni contenu, ni donnée client.
+- **Le plugin ne renvoie que** la version de PHP, la version du CMS et, pour chaque extension, module ou thème : son nom, son identifiant, sa version installée, la version disponible et son état (actif ou non). Depuis la version 1.1, il renvoie aussi le **nombre d'administrateurs** (avec, sous WordPress, l'identifiant de connexion et la date de création de ceux créés depuis 30 jours) et, pour le contrôle d'intégrité, des **chemins de fichiers** (jamais leur contenu) et, depuis la version 1.3, pour le code suspect : un chemin, l'identifiant du motif reconnu et une empreinte courte. Ni e-mail, ni mot de passe, ni contenu, ni donnée client.
 - **Cette liste reste sensible** : elle indique à un attaquant quelles failles tenter. Sans jeton valide (comparé en temps constant), le plugin répond « non autorisé » et ne renvoie aucune donnée. Gardez le jeton secret et surveillez un site **en HTTPS** : en HTTP, le jeton transiterait en clair.
 - Le jeton est envoyé dans l'en-tête `Authorization`, jamais dans l'adresse.
 - SuricateWeb ne suit une redirection que vers le **même nom de domaine** (4 au maximum), refuse les réponses de plus de 1 Mo et abandonne après 20 secondes.
@@ -393,6 +393,26 @@ SuricateWeb voit le HTML d'un site, pas ses fichiers. Le plugin comble ce manque
 - **Une alerte qui grossit est annoncée de nouveau** : un deuxième fichier suspect apparaissant alors que le premier est déjà signalé déclenche un nouveau message. Quand tout est conforme, « ✅ Rétabli ».
 - **PrestaShop : couverture partielle.** PrestaShop ne publie pas de sommes de contrôle exploitables pour son cœur ni pour ses modules : le module cherche seulement des fichiers PHP dans `img/`, `upload/` et `download/` (hors les `index.php` de redirection livrés par PrestaShop).
 
+### Code suspect (plugin 1.3)
+
+Les sommes de contrôle ne couvrent ni les thèmes sur mesure, ni les extensions premium, ni PrestaShop. Le plugin cherche donc aussi, **dans les fichiers PHP du site**, ce qui ressemble à du code injecté (souvent obfusqué), et suit leurs empreintes d'un relevé à l'autre.
+
+| Famille | Ce que le plugin cherche | Niveau |
+|---|---|---|
+| **Motifs forts** | `eval(base64_decode(…))` et variantes, exécution de ce qu'envoie le visiteur (`system($_POST[…])`, `$_GET['x']('…')`), `preg_replace` avec `/e`, fichier PHP écrit sur le disque ; côté serveur : `auto_prepend_file`, PHP exécuté dans des images (`.htaccess`, `.user.ini`) | **fort** |
+| **Indices à cumuler** | très longues chaînes encodées, texte reconstruit avec `chr()`, noms de variables illisibles, `goto` en série, lignes démesurées, JavaScript obfusqué, réécriture selon le visiteur (cloaking) ; un seul indice ne suffit pas | **à relire** (score cumulé) |
+| **Code chiffré par un éditeur** (ionCube, Zend Guard, Source Guardian) | reconnu à part : illisible mais légitime | **jamais d'alerte** |
+| **Dérive** | fichier PHP **ajouté ou modifié** hors mise à jour d'une extension, d'un thème, du CMS ou d'un module (un changement de version rend les changements attendus) | listé 14 jours, sans alerte |
+
+Périmètre : thèmes, extensions non vérifiables par wordpress.org, `mu-plugins`, drop-ins (`object-cache.php`…), racine du site, `wp-config.php`, `.htaccess` et `.user.ini` ; sous PrestaShop : modules, thèmes, `override/`, `classes/`, `controllers/`, `config/`, racine et fichiers de configuration des dossiers de médias.
+
+- **Alertes** : motif fort **apparu ou modifié depuis la dernière analyse** = **critique** ; motif fort déjà présent à la première analyse, ou fichier « à relire » apparu ou modifié = **avertissement** ; un fichier « à relire » déjà présent à la première analyse est seulement listé. Un seul incident regroupe les fichiers.
+- **La première analyse fixe la référence** : les fichiers déjà présents ne sont jamais des « changements », ce qui évite une avalanche d'alertes sur un site existant.
+- **Je connais ce fichier** (onglet Sécurité) : le fichier est reconnu **avec son empreinte** ; s'il est modifié ensuite, il redevient une alerte. Le code chiffré par un éditeur n'a rien à reconnaître.
+- **Rien du contenu ne quitte le site** : le plugin n'envoie que le **chemin** du fichier, l'**identifiant du motif** reconnu (liste fermée) et une empreinte courte. Pas d'extrait de code, pas de texte. L'interrupteur **Rechercher le code suspect** (formulaire du site, actif par défaut) coupe l'analyse sans toucher au reste de la sécurité.
+- **Coût borné** : fichiers lus sur 1 Mo au plus, 45 secondes par relevé ; si le site est volumineux, l'analyse reprend au relevé suivant, par ordre d'ancienneté. L'inventaire est gardé dans une option WordPress (`suricateweb_code_inventory`) ou dans `var/suricateweb-code.json` (PrestaShop) ; sans dossier inscriptible, seuls les motifs connus sont détectés.
+- **Un motif fort est un indice, pas une preuve** : une extension légitime peut contenir du code comparable. Vérifiez le fichier avant d'agir ; l'absence d'alerte ne prouve pas non plus que le site est sain (code très bien dissimulé, ou plugin lui-même compromis).
+
 ### Comptes administrateurs
 
 Un nouvel administrateur est un classique après une intrusion. Le plugin ne renvoie **qu'un compteur et les créations récentes**, sans mot de passe ni e-mail :
@@ -404,7 +424,7 @@ Le **premier relevé fixe la référence**, sans alerte. Ensuite, SuricateWeb al
 
 ### Réglages et limites
 
-- Le bloc *WordPress / PrestaShop* du formulaire a un interrupteur propre, **Surveiller l'intégrité des fichiers et les comptes administrateurs** (actif par défaut), distinct de celui des alertes de mises à jour : couper l'un ne coupe pas l'autre, et les alertes éteintes disparaissent sans message « rétabli ».
+- Le bloc *WordPress / PrestaShop* du formulaire a un interrupteur propre, **Surveiller l'intégrité des fichiers et les comptes administrateurs** (actif par défaut), distinct de celui des alertes de mises à jour : couper l'un ne coupe pas l'autre, et les alertes éteintes disparaissent sans message « rétabli ». **Rechercher le code suspect** se coupe séparément (il dépend du précédent).
 - **Le contrôle tourne sur le site lui-même.** Un attaquant qui en a pris le contrôle peut fausser la réponse du plugin, voire le désactiver. Une absence d'anomalie est un bon signe, pas une preuve : elle ne remplace ni une sauvegarde saine ni une analyse externe. Un plugin qui cesse de répondre n'est pas signalé (voir [Limites](#limites-à-connaître)).
 - Un fichier modifié à la main (retouche d'une extension, correctif d'hébergeur) est signalé comme tout autre : c'est voulu, ces retouches sautent à la prochaine mise à jour.
 

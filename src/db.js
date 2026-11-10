@@ -310,7 +310,8 @@ export const defaultConfig = () => ({
   },
   // Connecteur WordPress / PrestaShop : SuricateWeb interroge le plugin (intervalMin en minutes).
   // alerts : mises à jour en retard / PHP en fin de support · security : intégrité des fichiers et comptes administrateurs.
-  cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true },
+  // codeScan : recherche de code suspect (porte dérobée, code obfusqué) dans le groupe « security » ; désactivable seul (lecture de tous les fichiers PHP du site).
+  cms: { type: '', token: '', path: '', intervalMin: 720, alerts: true, security: true, codeScan: true },
   // Pages supplémentaires du même site (panier, contact, connexion…) : [{ url, label }], 10 au plus.
   pages: [],
   // Page de statut publique en lecture seule, à l'adresse /status/<jeton>.
@@ -382,6 +383,7 @@ export function normalizeConfig(input = {}) {
     intervalMin: Math.round(clamp(rawCms.intervalMin, 60, 10080, 720)),
     alerts: rawCms.alerts !== false,
     security: rawCms.security !== false,
+    codeScan: rawCms.codeScan !== false,
   };
   c.pages = c.mode === 'domain' ? [] : pageList(input.pages);
   const rawStatus = input.statusPage && typeof input.statusPage === 'object' ? input.statusPage : {};

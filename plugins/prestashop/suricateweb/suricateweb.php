@@ -3,13 +3,15 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+require_once __DIR__ . '/scanner.php';
+
 class Suricateweb extends Module
 {
     public function __construct()
     {
         $this->name = 'suricateweb';
         $this->tab = 'administration';
-        $this->version = '1.2.0';
+        $this->version = '1.3.0';
         $this->author = 'SuricateWeb';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -77,7 +79,13 @@ class Suricateweb extends Module
         }
         try {
             $scope = isset($_GET['scope']) ? (string) $_GET['scope'] : '';
-            $report = $scope === 'integrity' ? $this->buildIntegrity() : $this->buildReport($this->wantsRefresh());
+            if ($scope === 'integrity') {
+                $report = $this->buildIntegrity();
+            } elseif ($scope === 'code') {
+                $report = $this->buildCode();
+            } else {
+                $report = $this->buildReport($this->wantsRefresh());
+            }
         } catch (Exception $e) {
             http_response_code(500);
             echo '{"error":"failed"}';
@@ -443,5 +451,89 @@ class Suricateweb extends Module
             }
         }
         return $rows;
+    }
+    /**
+     * Code suspect (dérive des fichiers + signatures) : voir scanner.php. PrestaShop ne publie pas de sommes de contrôle
+     * utilisables : c'est ici la seule vérification du contenu des modules, des thèmes et des fichiers du cœur.
+     */
+    private function buildCode()
+    {
+        @set_time_limit(90);
+        if (isset($_SERVER['HTTP_X_SURICATE_CODE']) && trim((string) $_SERVER['HTTP_X_SURICATE_CODE']) === '0') {
+            return array('cms' => 'prestashop', 'code' => array('enabled' => false));
+        }
+        $root = rtrim(_PS_ROOT_DIR_, '/\\');
+        $file = $this->codeInventoryFile($root);
+        $inventory = array();
+        if ($file !== null && is_file($file)) {
+            $data = json_decode((string) @file_get_contents($file), true);
+            $inventory = is_array($data) ? $data : array();
+        }
+        list($report, $inv) = suricateweb_scan_run($this->codeComponents($root), $inventory, time(), microtime(true) + 45, $root);
+        $saved = $file !== null && @file_put_contents($file, json_encode($inv, JSON_UNESCAPED_SLASHES), LOCK_EX) !== false;
+        // Sans dossier inscriptible, chaque relevé repart de zéro : tout est « déjà là » et rien ne peut être signalé comme un changement.
+        $report['persistent'] = $saved;
+        return array('cms' => 'prestashop', 'code' => $report);
+    }
+
+    /** Fichier d'inventaire : dans var/ (les caches s'y vident, pas ce fichier-là), à défaut cache/. Null si rien n'est inscriptible. */
+    private function codeInventoryFile($root)
+    {
+        foreach (array('/var', '/cache') as $dir) {
+            if (is_dir($root . $dir) && is_writable($root . $dir)) {
+                return $root . $dir . '/suricateweb-code.json';
+            }
+        }
+        return null;
+    }
+
+    private function codeComponents($root)
+    {
+        $c = array();
+        $themes = $root . '/themes';
+        if (is_dir($themes)) {
+            foreach (scandir($themes) as $name) {
+                if ($name === '.' || $name === '..' || !is_dir($themes . '/' . $name)) {
+                    continue;
+                }
+                $version = '';
+                $raw = (string) @file_get_contents($themes . '/' . $name . '/config/theme.yml');
+                if (preg_match('/^version:\s*[\'"]?([0-9][0-9A-Za-z.+-]*)/m', $raw, $m)) {
+                    $version = $m[1];
+                }
+                $c[] = array('id' => 'theme:' . $name, 'version' => $version, 'paths' => array(array('path' => $themes . '/' . $name, 'recursive' => true)));
+            }
+        }
+        $modules = defined('_PS_MODULE_DIR_') ? rtrim(_PS_MODULE_DIR_, '/\\') : $root . '/modules';
+        if (is_dir($modules)) {
+            foreach (scandir($modules) as $name) {
+                if ($name === '.' || $name === '..' || !is_dir($modules . '/' . $name)) {
+                    continue;
+                }
+                $version = '';
+                $raw = (string) @file_get_contents($modules . '/' . $name . '/config.xml');
+                if (preg_match('/<version>\s*(?:<!\[CDATA\[)?\s*([0-9][0-9A-Za-z.+-]*)/', $raw, $m)) {
+                    $version = $m[1];
+                }
+                $c[] = array('id' => 'module:' . $name, 'version' => $version, 'paths' => array(array('path' => $modules . '/' . $name, 'recursive' => true)));
+            }
+        }
+        // Cœur de PrestaShop et personnalisations : une mise à jour de PrestaShop (version) rend les changements attendus.
+        foreach (array('override', 'classes', 'controllers', 'config') as $dir) {
+            if (is_dir($root . '/' . $dir)) {
+                $c[] = array('id' => 'core:' . $dir, 'version' => _PS_VERSION_, 'paths' => array(array('path' => $root . '/' . $dir, 'recursive' => true)));
+            }
+        }
+        $c[] = array('id' => 'site-root', 'version' => _PS_VERSION_, 'paths' => array(array('path' => $root, 'recursive' => false)));
+        $media = array();
+        foreach (array('img', 'upload', 'download') as $dir) {
+            if (is_dir($root . '/' . $dir)) {
+                $media[] = array('path' => $root . '/' . $dir, 'recursive' => true, 'only' => 'config');
+            }
+        }
+        if ($media) {
+            $c[] = array('id' => 'media-config', 'version' => '', 'paths' => $media);
+        }
+        return $c;
     }
 }

@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: SuricateWeb
- * Description: Indique à SuricateWeb la version de PHP, les mises à jour, le nombre d'administrateurs et l'intégrité des fichiers (sommes de contrôle de wordpress.org). SuricateWeb interroge ce site ; le plugin n'envoie rien de lui-même.
- * Version: 1.2.0
+ * Description: Indique à SuricateWeb la version de PHP, les mises à jour, le nombre d'administrateurs, l'intégrité des fichiers et le code suspect (sommes de contrôle de wordpress.org). SuricateWeb interroge ce site ; le plugin n'envoie rien de lui-même.
+ * Version: 1.3.0
  * Author: SuricateWeb
  * Requires at least: 5.6
  * Requires PHP: 7.2
@@ -12,6 +12,8 @@
 if (!defined('ABSPATH')) {
     exit;
 }
+
+require_once __DIR__ . '/scanner.php';
 
 add_action('admin_menu', function () {
     add_options_page('SuricateWeb', 'SuricateWeb', 'manage_options', 'suricateweb', 'suricateweb_options_page');
@@ -64,6 +66,9 @@ function suricateweb_uninstall()
     delete_transient('suricateweb_force');
     delete_transient('suricateweb_force_int');
     delete_transient('suricateweb_integrity_cache');
+    delete_transient('suricateweb_code_cache');
+    delete_transient('suricateweb_force_code');
+    delete_option('suricateweb_code_inventory');
 }
 
 add_action('rest_api_init', function () {
@@ -76,6 +81,12 @@ add_action('rest_api_init', function () {
     register_rest_route('suricateweb/v1', '/integrity', array(
         'methods' => 'GET',
         'callback' => 'suricateweb_integrity',
+        'permission_callback' => 'suricateweb_auth',
+        'show_in_index' => false,
+    ));
+    register_rest_route('suricateweb/v1', '/code', array(
+        'methods' => 'GET',
+        'callback' => 'suricateweb_code',
         'permission_callback' => 'suricateweb_auth',
         'show_in_index' => false,
     ));
@@ -565,4 +576,91 @@ function suricateweb_integrity(WP_REST_Request $req)
     );
     set_transient('suricateweb_integrity_cache', $report, 30 * 60);
     return $report;
+}
+
+// ───────────── Code suspect (dérive des fichiers + signatures) ─────────────
+//
+// Voir scanner.php. Route séparée de l'intégrité : un contrôle long ne retarde pas la lecture des sommes de contrôle, et SuricateWeb
+// peut le couper pour un site (en-tête X-Suricate-Code: 0). On y regarde ce que les sommes de contrôle ne couvrent pas :
+// thèmes, mu-plugins, extensions premium ou sur mesure, drop-ins, wp-config.php, .htaccess et .user.ini.
+
+/** Sommes de contrôle d'une extension déjà en cache (jamais d'appel réseau ici) : si elles existent, l'extension est vérifiée autrement. */
+function suricateweb_plugin_sums_cached($slug, $version)
+{
+    $cached = get_transient('suricateweb_pl_' . md5($slug . '|' . $version));
+    return is_array($cached) && $cached;
+}
+
+function suricateweb_code_components()
+{
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    $c = array();
+    foreach (wp_get_themes() as $slug => $theme) {
+        $c[] = array('id' => 'theme:' . $slug, 'version' => (string) $theme->get('Version'), 'paths' => array(array('path' => $theme->get_stylesheet_directory(), 'recursive' => true)));
+    }
+    if (defined('WPMU_PLUGIN_DIR') && is_dir(WPMU_PLUGIN_DIR)) {
+        $c[] = array('id' => 'mu-plugins', 'version' => '', 'paths' => array(array('path' => WPMU_PLUGIN_DIR, 'recursive' => true)));
+    }
+    $official = suricateweb_official_plugins();
+    foreach (get_plugins() as $file => $p) {
+        $slug = dirname($file);
+        if ($slug === '.') {
+            continue; // extension d'un seul fichier : couverte par « plugins-root »
+        }
+        $version = isset($p['Version']) ? (string) $p['Version'] : '';
+        if (!empty($official[$file]) && $version !== '' && suricateweb_plugin_sums_cached($slug, $version)) {
+            continue; // vérifiée par les sommes de contrôle de wordpress.org : une signature de plus n'apporterait que des faux positifs
+        }
+        $c[] = array('id' => 'plugin:' . $slug, 'version' => $version, 'paths' => array(array('path' => WP_PLUGIN_DIR . '/' . $slug, 'recursive' => true)));
+    }
+    $c[] = array('id' => 'plugins-root', 'version' => '', 'paths' => array(array('path' => WP_PLUGIN_DIR, 'recursive' => false)));
+    $c[] = array('id' => 'content-root', 'version' => '', 'paths' => array(array('path' => WP_CONTENT_DIR, 'recursive' => false)));
+    $root = rtrim(ABSPATH, '/\\');
+    $site = array(
+        array('path' => ABSPATH, 'recursive' => false, 'only' => 'config'),
+        array('path' => $root . '/wp-config.php', 'recursive' => false),
+        array('path' => dirname($root) . '/wp-config.php', 'recursive' => false), // wp-config.php est parfois un dossier plus haut
+    );
+    $c[] = array('id' => 'site-root', 'version' => '', 'paths' => $site);
+    $up = wp_get_upload_dir();
+    if (!empty($up['basedir']) && is_dir($up['basedir'])) {
+        $c[] = array('id' => 'uploads-config', 'version' => '', 'paths' => array(array('path' => $up['basedir'], 'recursive' => true, 'only' => 'config')));
+    }
+    return $c;
+}
+
+function suricateweb_code_inventory_load()
+{
+    $raw = get_option('suricateweb_code_inventory', '');
+    $data = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+    return is_array($data) ? $data : array();
+}
+
+function suricateweb_code(WP_REST_Request $req)
+{
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(90);
+    }
+    if (trim((string) $req->get_header('x-suricate-code')) === '0') {
+        return array('cms' => 'wordpress', 'code' => array('enabled' => false));
+    }
+    $force = strtolower((string) $req->get_header('x-suricate-refresh')) === '1';
+    if ($force) {
+        $last = (int) get_transient('suricateweb_force_code');
+        if ($last && (time() - $last) < 15 * 60) {
+            $force = false;
+        } else {
+            set_transient('suricateweb_force_code', time(), 15 * 60);
+        }
+    }
+    $cached = get_transient('suricateweb_code_cache');
+    if (!$force && is_array($cached)) {
+        return $cached;
+    }
+    list($report, $inventory) = suricateweb_scan_run(suricateweb_code_components(), suricateweb_code_inventory_load(), time(), microtime(true) + 45, ABSPATH);
+    update_option('suricateweb_code_inventory', wp_json_encode($inventory), false);
+    $report['persistent'] = true;
+    $out = array('cms' => 'wordpress', 'code' => $report);
+    set_transient('suricateweb_code_cache', $out, 20 * 60);
+    return $out;
 }

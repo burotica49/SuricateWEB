@@ -77,6 +77,11 @@ const CMS_REPORTS = {
       uploads: { php: [], more: 0, scanned: 1284, truncated: false },
       dirs: [], partial: false,
     },
+    // Code suspect : rien d'alarmant ; une extension premium chiffrée par son éditeur est listée à part (jamais d'alerte).
+    code: {
+      enabled: true, files: [{ path: 'wp-content/plugins/agency-map-pro/includes/license.php', level: 'vendor', hits: ['vendor_encoder'], hash: '3f9a1c07be', origin: 'baseline', known: false, since: 0 }],
+      more: 0, drift: { files: [], more: 0, days: 14 }, inventory: 2140, baseline: false, partial: false, persistent: true, acks: [],
+    },
     admins: { count: 2, windowDays: 30, recent: [] },
   },
   nova: {
@@ -231,6 +236,7 @@ export async function seedDemo({ dataDir, fakeSitesBase }) {
     if (REPORT[w.slug]) {
       state.cms = { ...REPORT[w.slug], checkedAt: now - 3 * H, ok: true, error: null };
       if (state.cms.integrity) state.cms.integrity = { ...state.cms.integrity, checkedAt: now - 3 * H, ok: true, error: null };
+      if (state.cms.code) state.cms.code = { ...state.cms.code, checkedAt: now - 3 * H, ok: true, error: null };
       for (const i of cmsIncidents(state.cms, { afterDays: 7, now })) state.incidents[i.key] = { severity: i.severity, title: i.title, detail: i.detail, since: now - (AGO[w.slug]?.[i.key] ?? D) };
     }
     if (w.slug !== 'domain') state.tls = { fp: hex(32, 77 + w.i), issuer: "Let's Encrypt", subject: domainName, expires: tlsExpires, authorized: true, protocol: 'TLSv1.3' };

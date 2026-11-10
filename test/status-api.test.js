@@ -145,6 +145,15 @@ test('administrateurs : acceptation refusée sans relevé ni site', async () => 
   assert.equal(await srv.login(), 200);
 });
 
+test('code suspect : « Je connais ce fichier » refusé sans relevé, sans site, sans session', async () => {
+  const w = await create('Sans analyse de code');
+  assert.equal((await srv.post(`/api/watches/${w.id}/cms/code/accept`, { path: 'a.php' })).status, 400);
+  assert.equal((await srv.post('/api/watches/9999/cms/code/accept')).status, 404);
+  srv.logout();
+  assert.equal((await srv.post(`/api/watches/${w.id}/cms/code/accept`)).status, 401);
+  assert.equal(await srv.login(), 200);
+});
+
 test('page de statut : limitation du débit par adresse', async () => {
   let last = 0;
   for (let i = 0; i < 130; i++) last = (await publicGet('/status/abcdefghijklmnopqrstuvwx')).status;

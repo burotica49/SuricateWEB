@@ -1,5 +1,5 @@
 // Alertes tirées du relevé du plugin WordPress / PrestaShop : mises à jour qui tardent, PHP en fin de support,
-// intégrité des fichiers et nouveaux comptes administrateurs.
+// intégrité des fichiers, code suspect et nouveaux comptes administrateurs.
 // Fonctions pures (aucun accès à la base ni au réseau) : le moteur de contrôle (checker.js) les applique au dernier relevé.
 
 const DAY = 86400e3;
@@ -124,6 +124,84 @@ export function carryAdmins(prev, report, now = Date.now()) {
   return report;
 }
 
+
+/**
+ * Libellés des motifs de code suspect (identifiants de la liste fermée du scanner des plugins). Un identifiant inconnu (plugin plus récent)
+ * est affiché tel quel. Un test vérifie que chaque règle du scanner a son libellé, ici et dans l'interface.
+ */
+export const CODE_LABELS = {
+  eval_decode: 'code décodé puis exécuté (eval + base64, gzinflate…)',
+  request_exec: 'exécute ce qu’envoie le visiteur',
+  request_func: 'appelle une fonction choisie par le visiteur',
+  preg_e: 'preg_replace avec le modificateur /e (exécute du code)',
+  write_php: 'écrit du code PHP sur le disque',
+  create_function: 'create_function (fonction créée à partir d’un texte)',
+  eval_var: 'eval d’une variable',
+  long_encoded: 'très longue chaîne encodée',
+  chr_chain: 'texte reconstruit caractère par caractère',
+  js_obfuscated: 'JavaScript obfusqué',
+  obfuscated_names: 'noms de variables illisibles',
+  goto_chain: 'enchaînement de goto (code brouillé)',
+  long_line: 'ligne démesurée',
+  cloaking: 'contenu différent pour les robots de recherche',
+  auto_prepend: 'code exécuté avant chaque page (auto_prepend_file)',
+  handler_media: 'PHP exécuté dans des images ou des fichiers texte',
+  htaccess_cloak: 'réécriture selon le visiteur (robots de recherche)',
+  vendor_encoder: 'code chiffré par un éditeur (ionCube, Zend Guard…)',
+};
+const hitText = (hits) => (hits || []).map((h) => CODE_LABELS[h] || h).join(', ');
+
+/**
+ * Suite d'un relevé « code » à l'autre : chaque fichier reçoit `since` (première fois vu avec cette empreinte) et `known` (acquitté avec
+ * cette empreinte). `acks` garde les « chemin:empreinte » reconnus tant que le fichier est encore signalé (un relevé partiel les garde tous).
+ */
+export function carryCode(prev, code, now = Date.now()) {
+  const acks = new Set(prev?.acks || []);
+  const before = new Map((prev?.files || []).map((f) => [`${f.path}:${f.hash}`, f]));
+  const keep = new Set();
+  const files = code.files.map((f) => {
+    const key = `${f.path}:${f.hash}`;
+    const known = !!f.hash && acks.has(key);
+    if (known) keep.add(key);
+    return { ...f, known, since: before.get(key)?.since ?? now };
+  });
+  const all = code.partial ? [...acks] : [...keep];
+  return { ...code, files, acks: all.slice(-200) };
+}
+
+/** Reconnaît un fichier (ou tous les fichiers signalés) avec leur empreinte actuelle. null s'il n'y a rien à reconnaître. */
+export function acceptCode(code, path = '') {
+  const targets = (code.files || []).filter((f) => f.level !== 'vendor' && f.hash && (!path || f.path === path) && !f.known);
+  if (!targets.length) return null;
+  const acks = [...new Set([...(code.acks || []), ...targets.map((f) => `${f.path}:${f.hash}`)])].slice(-200);
+  const set = new Set(acks);
+  return { ...code, files: code.files.map((f) => ({ ...f, known: !!f.hash && f.level !== 'vendor' && set.has(`${f.path}:${f.hash}`) })), acks };
+}
+
+/**
+ * Fichiers qui déclenchent une alerte : fort (déjà là ou non) ou à relire APPARU/MODIFIÉ depuis la dernière analyse. Un fichier « à relire »
+ * déjà présent à la première analyse est seulement listé ; le code chiffré par un éditeur n'alerte jamais ; un fichier reconnu non plus.
+ */
+export const codeAlertFiles = (code) => (code?.enabled ? (code.files || []).filter((f) => !f.known && f.level !== 'vendor' && (f.level === 'strong' || f.origin === 'change')) : []);
+
+/** Incident « code suspect » : critique si un motif fort est apparu depuis la dernière analyse, attention sinon. */
+function codeIncidents(report) {
+  const list = codeAlertFiles(report.code);
+  if (!list.length) return [];
+  const critical = list.some((f) => f.level === 'strong' && f.origin === 'change');
+  const lines = list.slice(0, 8).map((f) => `• ${f.path} : ${hitText(f.hits) || 'motif suspect'} (${f.origin === 'change' ? 'apparu ou modifié depuis la dernière analyse' : 'déjà présent à la première analyse'})`);
+  const more = list.length - 8;
+  if (more > 0) lines.push(`… et ${more} autre(s)`);
+  const first = list[0].path;
+  return [{
+    key: 'cms_integrity_code',
+    severity: critical ? 'critical' : 'warning',
+    title: list.length === 1 ? `Code suspect : ${first}` : `Code suspect dans ${list.length} fichiers (dont ${first})`,
+    detail: [...lines, '', 'Ces fichiers contiennent des motifs fréquents dans les portes dérobées et le code injecté. Un plugin légitime en contient rarement : comparez avec une sauvegarde saine. Si vous reconnaissez un fichier, cliquez sur « Je connais ce fichier » dans l’onglet Sécurité ; il redeviendra une alerte s’il est modifié.'].join('\n'),
+    count: list.length,
+  }];
+}
+
 /** L'utilisateur déclare connaître les comptes actuels : nouvelle référence, plus d'alerte. */
 export function acceptAdmins(admins) {
   if (!admins) return admins;
@@ -234,7 +312,7 @@ function adminIncidents(report) {
 export function cmsIncidents(report, { afterDays = 7, now = Date.now(), updates = true, security = true } = {}) {
   if (!report) return [];
   const out = updates ? updateIncidents(report, afterDays, now) : [];
-  if (security) out.push(...integrityIncidents(report), ...adminIncidents(report));
+  if (security) out.push(...integrityIncidents(report), ...codeIncidents(report), ...adminIncidents(report));
   return out;
 }
 

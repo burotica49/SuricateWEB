@@ -133,6 +133,11 @@ test('sécurité du compte : mot de passe, connexions, activation puis retrait d
     // Double authentification : clé affichée, mauvais code refusé, bon code → 8 codes de secours montrés une fois.
     await page.run(`T.clickText('Activer la double authentification'); T.until(() => T.visible('#twofa-secret'))`);
     assert.equal(await page.run(`T.text('#twofa-secret')`), 'JBSWY3DPEHPK3PXP');
+    // Le code QR est dessiné (SVG) à partir de l'adresse otpauth, sans HTML construit à partir de données ; la clé reste en texte (saisie manuelle).
+    assert.equal(await page.run(`document.querySelector('#twofa-qr')?.getAttribute('role')`), 'img');
+    assert.ok((await page.run(`document.querySelector('#twofa-qr path')?.getAttribute('d')?.length`)) > 300, 'le tracé du code QR est présent');
+    assert.match(await page.run(`document.querySelector('#twofa-qr').getAttribute('viewBox')`), /^0 0 \d+ \d+$/);
+    assert.equal(await page.run(`getComputedStyle(document.querySelector('#twofa-qr')).backgroundColor`), 'rgb(255, 255, 255)', 'fond blanc : lisible même en thème sombre');
     assert.equal(await page.run(`document.querySelector('#account-security a[href^="otpauth://"]')?.textContent`), 'ouvrir dans mon application d\'authentification');
     await page.run(`T.set('#twofa-on-code', '000000'); T.submit('#twofa-on-code'); T.until(() => /Code incorrect/.test(T.text('.toast.err') || ''))`);
     await page.run(`T.set('#twofa-on-code', '123456'); T.submit('#twofa-on-code'); T.until(() => T.visible('#recovery-codes'))`);

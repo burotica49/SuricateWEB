@@ -1,8 +1,8 @@
 // SuricateWeb — coque de l'application installable.
 // Le réseau prime : le cache ne sert que hors ligne, et jamais pour l'API, le flux d'événements ni les pages de statut.
 
-const CACHE = 'suricateweb-coque-2';
-const SHELL = ['/', '/app.js', '/layout.js', '/style.css', '/manifest.webmanifest', '/favicon-32.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
+const CACHE = 'suricateweb-coque-3';
+const SHELL = ['/', '/app.js', '/layout.js', '/qr.js', '/style.css', '/manifest.webmanifest', '/favicon-32.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -1,6 +1,7 @@
 // SuricateWeb — interface. SPA sans framework ni étape de build. Tout texte dynamique passe par textContent (pas d'innerHTML sur des données).
 
 import { buildModel, moveSite, moveGroup, stepSite, stepGroup, sameModel, toPayload, applyModel, describeMove } from './layout.js';
+import { qrPath } from './qr.js';
 
 // ───────────── Utilitaires DOM ─────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -1972,7 +1973,30 @@ async function viewSettings() {
 // ───────────── Sécurité du compte (version hébergée) ─────────────
 // Affichée quand le fournisseur d'authentification annonce `accountApi: true` dans GET /api/auth (voir docs/couche-cloud.md §3.1) :
 // changer son mot de passe, fermer ses autres connexions, activer ou retirer la double authentification (TOTP).
-// Le secret TOTP s'affiche en texte et en lien otpauth:// : le cœur n'a aucune dépendance, donc pas de code QR ici.
+// Le secret TOTP s'affiche en code QR (à scanner avec le téléphone : public/qr.js, sans dépendance), en texte (saisie manuelle) et en lien
+// otpauth:// (ouvrir l'application d'authentification depuis ce téléphone).
+/**
+ * Code QR d'une adresse otpauth:// : SVG construit par le DOM (jamais de HTML), fond blanc et zone de silence fixes (un code QR sombre sur fond
+ * sombre ne se scanne pas, quel que soit le thème de l'interface). Si le texte est trop long, on n'affiche rien : la clé reste en texte.
+ */
+function qrCode(text) {
+  let q;
+  try { q = qrPath(text); } catch { return null; }
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', q.viewBox);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Code QR à scanner avec votre application d\'authentification');
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  svg.setAttribute('id', 'twofa-qr');
+  svg.style.cssText = 'display:block;width:200px;height:200px;max-width:100%;background:#fff;border-radius:8px;border:1px solid var(--border)';
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', q.d);
+  path.setAttribute('fill', '#000');
+  svg.append(path);
+  return h('div', { style: { margin: '4px 0 12px' } }, svg);
+}
+
 function accountSecurityCard() {
   const body = h('div', {});
   const card = h('section', { class: 'card card-pad', id: 'account-security' }, h('h2', { style: { marginBottom: '4px' } }, 'Sécurité du compte'), body);
@@ -2056,7 +2080,9 @@ function accountSecurityCard() {
       });
       const uri = /^otpauth:\/\//.test(reveal.otpauth) ? reveal.otpauth : null;
       return h('div', {},
-        h('p', { style: { marginBottom: '8px' } }, 'Dans votre application d\'authentification (Google Authenticator, Authy, 1Password, Bitwarden…), ajoutez un compte avec cette clé :'),
+        h('p', { style: { marginBottom: '8px' } }, 'Dans votre application d\'authentification (Google Authenticator, Authy, 1Password, Bitwarden…), ajoutez un compte en scannant ce code :'),
+        uri ? qrCode(uri) : null,
+        h('p', { class: 'hint', style: { marginBottom: '6px' } }, uri ? 'Impossible de scanner ? Saisissez cette clé à la main :' : 'Saisissez cette clé dans votre application :'),
         h('pre', { class: 'mono', id: 'twofa-secret', style: { padding: '10px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '8px', userSelect: 'all', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' } }, reveal.secret),
         uri ? h('p', { class: 'hint', style: { marginBottom: '10px' } }, 'Sur ce téléphone : ', h('a', { href: uri }, 'ouvrir dans mon application d\'authentification')) : null,
         h('form', { onsubmit: on },
